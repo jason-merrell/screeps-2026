@@ -2,6 +2,8 @@ import type { WorldSnapshot } from "../../runtime/context";
 import type { Intent } from "../../intents/types";
 import { capabilitiesOf } from "../../workforce/capabilities";
 
+const PEACETIME_TOWER_RESERVE = 400;
+
 function needsBootstrapRepair(structure: AnyStructure): boolean {
   if (!("hits" in structure) || !("hitsMax" in structure)) return false;
 
@@ -18,6 +20,14 @@ function needsBootstrapRepair(structure: AnyStructure): boolean {
       STRUCTURE_ROAD,
     ] as StructureConstant[]
   ).includes(structure.structureType) && structure.hits < structure.hitsMax * 0.5;
+}
+
+function towerNeedsReserve(tower: StructureTower, underAttack: boolean): boolean {
+  const capacity = tower.store.getCapacity(RESOURCE_ENERGY);
+  if (capacity === null) return false;
+
+  const target = underAttack ? capacity : Math.min(PEACETIME_TOWER_RESERVE, capacity);
+  return tower.store.getUsedCapacity(RESOURCE_ENERGY) < target;
 }
 
 export function planEconomy(world: WorldSnapshot): Intent[] {
@@ -45,22 +55,42 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     }
 
     if (energy > 0 && capabilities.has("haul")) {
-      const target = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
+      const reproductionTarget = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
         filter: (structure) =>
           (structure.structureType === STRUCTURE_SPAWN ||
-            structure.structureType === STRUCTURE_EXTENSION ||
-            structure.structureType === STRUCTURE_TOWER) &&
+            structure.structureType === STRUCTURE_EXTENSION) &&
           structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0,
-      }) as StructureSpawn | StructureExtension | StructureTower | null;
+      }) as StructureSpawn | StructureExtension | null;
 
-      if (target) {
+      if (reproductionTarget) {
         intents.push({
           type: "transfer",
           creepName: creep.name,
-          targetId: target.id,
+          targetId: reproductionTarget.id,
           resource: RESOURCE_ENERGY,
-          priority: 900,
-          reason: "fund spawn capacity and defense before discretionary work",
+          priority: 950,
+          reason: "fund reproduction capacity before defensive reserves",
+        });
+        continue;
+      }
+
+      const underAttack = creep.room.find(FIND_HOSTILE_CREEPS).length > 0;
+      const tower = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
+        filter: (structure) =>
+          structure.structureType === STRUCTURE_TOWER &&
+          towerNeedsReserve(structure as StructureTower, underAttack),
+      }) as StructureTower | null;
+
+      if (tower) {
+        intents.push({
+          type: "transfer",
+          creepName: creep.name,
+          targetId: tower.id,
+          resource: RESOURCE_ENERGY,
+          priority: underAttack ? 925 : 800,
+          reason: underAttack
+            ? "fill defensive tower during active threat"
+            : "maintain bounded peacetime tower reserve",
         });
         continue;
       }
