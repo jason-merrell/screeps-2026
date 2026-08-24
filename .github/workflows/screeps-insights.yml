@@ -27,7 +27,8 @@ jobs:
        (startsWith(github.event.comment.body, '/collect') ||
         startsWith(github.event.comment.body, '/scan') ||
         startsWith(github.event.comment.body, '/recommend-start') ||
-        startsWith(github.event.comment.body, '/place-start')) &&
+        startsWith(github.event.comment.body, '/place-start') ||
+        startsWith(github.event.comment.body, '/deploy-code')) &&
        github.event.comment.user.login == github.repository_owner)
     runs-on: ubuntu-latest
 
@@ -37,6 +38,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
 
       - uses: actions/setup-node@v6
         with:
@@ -95,7 +100,8 @@ jobs:
       - name: Collect Screeps insights
         if: >-
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
-          steps.request.outputs.mode != 'place-start'
+          steps.request.outputs.mode != 'place-start' &&
+          steps.request.outputs.mode != 'deploy-code'
         run: node scripts/collect-insights.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
@@ -117,6 +123,23 @@ jobs:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
           SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
+          SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
+
+      - name: Deploy code to PTR
+        if: >-
+          (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode == 'deploy-code'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile=false
+          pnpm check
+          pnpm build
+          node scripts/deploy-code-ptr.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+          SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
 
