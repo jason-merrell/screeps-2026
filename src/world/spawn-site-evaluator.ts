@@ -41,8 +41,12 @@ class MinHeap {
 
     while (index > 0) {
       const parent = Math.floor((index - 1) / 2);
-      if (this.items[parent].cost <= this.items[index].cost) break;
-      [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
+      const parentNode = this.items[parent];
+      const currentNode = this.items[index];
+      if (!parentNode || !currentNode || parentNode.cost <= currentNode.cost) break;
+
+      this.items[parent] = currentNode;
+      this.items[index] = parentNode;
       index = parent;
     }
   }
@@ -53,7 +57,7 @@ class MinHeap {
 
     const root = this.items[0];
     const tail = this.items.pop();
-    if (!tail) return root;
+    if (!root || !tail) return undefined;
     this.items[0] = tail;
 
     let index = 0;
@@ -62,18 +66,26 @@ class MinHeap {
       const right = left + 1;
       let smallest = index;
 
-      if (left < this.items.length && this.items[left].cost < this.items[smallest].cost) {
+      const smallestNode = this.items[smallest];
+      const leftNode = this.items[left];
+      if (leftNode && smallestNode && leftNode.cost < smallestNode.cost) {
         smallest = left;
       }
-      if (right < this.items.length && this.items[right].cost < this.items[smallest].cost) {
+
+      const currentSmallest = this.items[smallest];
+      const rightNode = this.items[right];
+      if (rightNode && currentSmallest && rightNode.cost < currentSmallest.cost) {
         smallest = right;
       }
+
       if (smallest === index) break;
 
-      [this.items[index], this.items[smallest]] = [
-        this.items[smallest],
-        this.items[index],
-      ];
+      const currentNode = this.items[index];
+      const nextNode = this.items[smallest];
+      if (!currentNode || !nextNode) break;
+
+      this.items[index] = nextNode;
+      this.items[smallest] = currentNode;
       index = smallest;
     }
 
@@ -134,7 +146,8 @@ const buildDistanceField = (
 
       const nextIndex = indexOf(next.x, next.y);
       const nextCost = current.cost + movementCost(terrain, next.x, next.y);
-      if (nextCost >= distance[nextIndex]) continue;
+      const knownCost = distance[nextIndex];
+      if (knownCost === undefined || nextCost >= knownCost) continue;
 
       distance[nextIndex] = nextCost;
       open.push({ ...next, cost: nextCost });
@@ -231,9 +244,9 @@ export const evaluateSpawnSitesFromAnchors = (
 
       const index = indexOf(x, y);
       const sourceCost =
-        sourceFields.reduce((sum, field) => sum + field[index], 0) /
+        sourceFields.reduce((sum, field) => sum + (field[index] ?? INF), 0) /
         sourceFields.length;
-      const controllerCost = controllerField[index];
+      const controllerCost = controllerField[index] ?? INF;
 
       const radius4 = localTerrain(terrain, x, y, 4);
       const radius3 = localTerrain(terrain, x, y, 3);
