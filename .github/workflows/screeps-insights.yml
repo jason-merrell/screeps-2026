@@ -1,0 +1,70 @@
+name: Screeps Insights
+
+on:
+  workflow_dispatch:
+    inputs:
+      room:
+        description: Optional room name to inspect, for example W1N1
+        required: false
+        type: string
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  collect:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.number == 5 &&
+       startsWith(github.event.comment.body, '/collect') &&
+       github.event.comment.user.login == github.repository_owner)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Validate Infisical configuration
+        shell: bash
+        env:
+          INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
+          INFISICAL_PROJECT_SLUG: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          INFISICAL_ENV_SLUG: ${{ vars.INFISICAL_ENV_SLUG }}
+        run: |
+          test -n "$INFISICAL_IDENTITY_ID" || (echo "Missing repository variable INFISICAL_IDENTITY_ID" && exit 1)
+          test -n "$INFISICAL_PROJECT_SLUG" || (echo "Missing repository variable INFISICAL_PROJECT_SLUG" && exit 1)
+          test -n "$INFISICAL_ENV_SLUG" || (echo "Missing repository variable INFISICAL_ENV_SLUG" && exit 1)
+
+      - name: Fetch Screeps token from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          secret-path: /deploy
+          recursive: false
+          include-imports: false
+
+      - name: Collect Screeps insights
+        run: node scripts/collect-insights.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+          SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
+          SCREEPS_ROOM: ${{ inputs.room }}
+          SCREEPS_REQUEST: ${{ github.event.comment.body }}
+
+      - name: Upload Screeps insights
+        uses: actions/upload-artifact@v5
+        with:
+          name: screeps-insights-${{ github.run_id }}
+          path: artifacts/screeps-insights.json
+          if-no-files-found: error
+          retention-days: 7
