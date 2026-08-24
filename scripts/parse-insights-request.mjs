@@ -37,6 +37,7 @@ let sector = "";
 let shard = "";
 let target = "world";
 let mode = "collect";
+let experiment = "";
 let command = "/collect";
 
 if (eventName === "issue_comment") {
@@ -52,10 +53,11 @@ if (eventName === "issue_comment") {
       "/recommend-start",
       "/place-start",
       "/deploy-code",
+      "/experiment",
     ].includes(commandToken)
   ) {
     fail(
-      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, or /deploy-code",
+      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, /deploy-code, or /experiment",
     );
   }
 
@@ -68,7 +70,9 @@ if (eventName === "issue_comment") {
           ? "place-start"
           : commandToken === "/deploy-code"
             ? "deploy-code"
-            : "collect";
+            : commandToken === "/experiment"
+              ? "experiment"
+              : "collect";
 
   const args = new Map();
   for (const token of tokens.slice(1)) {
@@ -86,7 +90,9 @@ if (eventName === "issue_comment") {
             ? ["target", "shard"]
             : mode === "deploy-code"
               ? ["target"]
-              : ["room", "shard", "target"];
+              : mode === "experiment"
+                ? ["name", "target", "shard"]
+                : ["room", "shard", "target"];
     if (!allowed.includes(key)) fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
     args.set(key, value);
@@ -116,6 +122,23 @@ if (eventName === "issue_comment") {
       fail("/deploy-code currently requires target=ptr; World deployment is intentionally disabled here");
     }
     command = "/deploy-code target=ptr";
+  } else if (mode === "experiment") {
+    target = normalizeTarget(args.get("target") || "", "");
+    if (target !== "ptr") {
+      fail("/experiment currently requires target=ptr; experiments cannot mutate or observe World");
+    }
+    experiment = (args.get("name") || "").toLowerCase();
+    if (experiment !== "bootstrap-rcl3") {
+      fail("/experiment currently requires name=bootstrap-rcl3");
+    }
+    command = [
+      "/experiment",
+      `name=${experiment}`,
+      "target=ptr",
+      shard && `shard=${shard}`,
+    ]
+      .filter(Boolean)
+      .join(" ");
   } else {
     room = normalizeRoom(args.get("room") || "");
     target = normalizeTarget(args.get("target") || "world");
@@ -151,6 +174,7 @@ const lines = [
   `sector=${sector}`,
   `shard=${shard}`,
   `target=${target}`,
+  `experiment=${experiment}`,
   `command=${command}`,
   `marker=${marker}`,
   `artifact_name=${artifactName}`,

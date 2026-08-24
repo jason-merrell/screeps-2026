@@ -1,0 +1,96 @@
+{
+  "request": {
+    "id": "5402785672",
+    "mode": "collect",
+    "command": "/collect target=ptr room=W39S23 shard=shard3",
+    "room": "W39S23",
+    "shard": "shard3",
+    "target": "ptr"
+  },
+  "collectedAt": "2026-08-24T23:18:59.876Z",
+  "target": "ptr",
+  "worldStatus": {
+    "body": {
+      "status": "normal"
+    }
+  },
+  "roomSnapshots": {
+    "W39S23": {
+      "shard": "shard3",
+      "overview": {
+        "body": {
+          "totals": {
+            "energyHarvested": 194,
+            "creepsProduced": 9,
+            "energyCreeps": 600
+          }
+        }
+      },
+      "objects": {
+        "body": {
+          "objects": [
+            {
+              "type": "source",
+              "x": 27,
+              "y": 41,
+              "energy": 2796,
+              "energyCapacity": 3000
+            },
+            {
+              "type": "source",
+              "x": 27,
+              "y": 46,
+              "energy": 3000,
+              "energyCapacity": 3000
+            },
+            {
+              "type": "controller",
+              "x": 38,
+              "y": 39,
+              "level": 1,
+              "user": "me",
+              "progress": 0,
+              "progressTotal": 0
+            },
+            {
+              "type": "spawn",
+              "x": 30,
+              "y": 34,
+              "name": "PTR-5402553686",
+              "user": "me",
+              "store": { "energy": 8 },
+              "storeCapacityResource": { "energy": 300 },
+              "spawning": {
+                "name": "worker-W39S23-82450940"
+              }
+            },
+            {
+              "type": "creep",
+              "name": "worker-W39S23-82450754",
+              "user": "me",
+              "store": { "energy": 50 },
+              "storeCapacity": 50,
+              "spawning": false
+            },
+            {
+              "type": "creep",
+              "name": "worker-W39S23-82450845",
+              "user": "me",
+              "store": { "energy": 42 },
+              "storeCapacity": 50,
+              "spawning": false
+            },
+            {
+              "type": "creep",
+              "name": "worker-W39S23-82450940",
+              "user": "me",
+              "store": { "energy": 0 },
+              "storeCapacity": 50,
+              "spawning": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}
