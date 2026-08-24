@@ -28,8 +28,9 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
 
     const capabilities = capabilitiesOf(creep);
     const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+    const freeEnergy = creep.store.getFreeCapacity(RESOURCE_ENERGY);
 
-    if (energy === 0 && capabilities.has("harvest")) {
+    if (freeEnergy > 0 && capabilities.has("harvest")) {
       const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
       if (source) {
         intents.push({
@@ -37,10 +38,10 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           creepName: creep.name,
           sourceId: source.id,
           priority: 1000,
-          reason: "worker needs energy",
+          reason: "fill worker energy before delivery or discretionary work",
         });
+        continue;
       }
-      continue;
     }
 
     if (energy > 0 && capabilities.has("haul")) {
