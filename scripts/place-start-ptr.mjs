@@ -233,7 +233,8 @@ for (const sector of sectors) {
 
 const ranking = rankStartRooms(candidates, 5);
 const best = ranking[0];
-if (!best) {
+const bestSpawn = best?.bestSpawn;
+if (!best || !bestSpawn) {
   throw new Error("PTR has no eligible neutral two-source start room in the offered sectors");
 }
 
@@ -242,8 +243,8 @@ const placement = await requestJson("/api/game/place-spawn", {
   body: {
     room: best.room,
     name: spawnName,
-    x: best.spawn.x,
-    y: best.spawn.y,
+    x: bestSpawn.x,
+    y: bestSpawn.y,
     shard: best.shard,
   },
 });
@@ -262,8 +263,8 @@ for (let attempt = 0; attempt < 5; attempt += 1) {
     (object) =>
       object.type === "spawn" &&
       object.name === spawnName &&
-      object.x === best.spawn.x &&
-      object.y === best.spawn.y,
+      object.x === bestSpawn.x &&
+      object.y === bestSpawn.y,
   );
 
   const statusResponse = await requestJson("/api/user/world-status");
@@ -285,7 +286,7 @@ for (let attempt = 0; attempt < 5; attempt += 1) {
 
 if (!verifiedSpawn) {
   throw new Error(
-    `PTR place-spawn was acknowledged but spawn ${spawnName} was not observable at ${best.room} (${best.spawn.x},${best.spawn.y})`,
+    `PTR place-spawn was acknowledged but spawn ${spawnName} was not observable at ${best.room} (${bestSpawn.x},${bestSpawn.y})`,
   );
 }
 
@@ -310,5 +311,5 @@ await writeSnapshot({
 });
 
 console.log(
-  `Placed and verified PTR spawn ${spawnName} in ${best.room} at (${best.spawn.x},${best.spawn.y}).`,
+  `Placed and verified PTR spawn ${spawnName} in ${best.room} at (${bestSpawn.x},${bestSpawn.y}).`,
 );
