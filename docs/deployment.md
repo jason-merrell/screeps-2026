@@ -22,7 +22,10 @@ Add one secret there:
 
 `SCREEPS_TOKEN`
 
-Use a persistent Screeps auth token scoped as narrowly as possible. The deployer only needs permission to write code through `POST /api/user/code`.
+Use a persistent Screeps auth token scoped as narrowly as possible. Deployment and post-deploy verification require access to:
+
+- `POST /api/user/code` to upload code
+- `GET /api/user/code` to read the uploaded branch back and verify it
 
 Do not add the token to GitHub, the repository, or a local `.env` file.
 
@@ -57,7 +60,7 @@ In GitHub, open **Settings -> Secrets and variables -> Actions -> Variables** an
 
 These are configuration values, not secret credentials.
 
-## 4. Deploy
+## 4. Deploy and verify
 
 `.github/workflows/deploy.yml` runs automatically after a commit lands on `main` and may also be invoked with `workflow_dispatch`.
 
@@ -68,17 +71,25 @@ The workflow:
 3. Runs lint, typecheck, and tests.
 4. Builds `dist/main.js`.
 5. Uploads that module to the configured Screeps code branch using `X-Token` authentication.
+6. Reads the same branch back with `GET /api/user/code`.
+7. Compares the returned `main` module byte-for-byte with the local build and fails if they differ.
 
-The deploy script never prints `SCREEPS_TOKEN`.
+Verification logs only a short SHA-256 fingerprint of the deployed module, never the module contents or `SCREEPS_TOKEN`.
 
 ## Local deployment
 
-Local deployment uses the same `pnpm deploy` command. The command expects `SCREEPS_TOKEN` in the process environment, so Infisical CLI injection can be used without creating a plaintext `.env` file.
+Local deployment uses the same scripts as CI. Both expect `SCREEPS_TOKEN` in the process environment, so Infisical CLI injection can be used without creating a plaintext `.env` file.
 
-Example:
+Deploy:
 
 ```bash
-infisical run --projectId=99abd655-8231-4ac2-8af9-ef4dbe556a5d --env=dev --path=/deploy -- pnpm deploy
+infisical run --projectId=99abd655-8231-4ac2-8af9-ef4dbe556a5d --env=dev --path=/deploy -- pnpm run deploy:screeps
+```
+
+Verify an existing build:
+
+```bash
+infisical run --projectId=99abd655-8231-4ac2-8af9-ef4dbe556a5d --env=dev --path=/deploy -- pnpm run verify:screeps
 ```
 
 Change the environment to match your Infisical setup.
