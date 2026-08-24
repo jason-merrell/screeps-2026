@@ -7,12 +7,17 @@ on:
         description: Optional room name to inspect, for example W1N1
         required: false
         type: string
+      shard:
+        description: Optional shard for the requested room, for example shard3
+        required: false
+        type: string
   issue_comment:
     types: [created]
 
 permissions:
   contents: read
   id-token: write
+  issues: write
 
 jobs:
   collect:
@@ -23,6 +28,10 @@ jobs:
        github.event.comment.user.login == github.repository_owner)
     runs-on: ubuntu-latest
 
+    concurrency:
+      group: screeps-insights-${{ github.event_name == 'issue_comment' && github.event.comment.id || github.run_id }}
+      cancel-in-progress: false
+
     steps:
       - uses: actions/checkout@v5
 
@@ -31,7 +40,33 @@ jobs:
           node-version: 22
           package-manager-cache: false
 
+      - name: Validate atomic request
+        id: request
+        run: node scripts/parse-insights-request.mjs
+        env:
+          SCREEPS_REQUEST: ${{ github.event.comment.body }}
+          SCREEPS_COMMENT_ID: ${{ github.event.comment.id }}
+          SCREEPS_INPUT_ROOM: ${{ inputs.room }}
+          SCREEPS_INPUT_SHARD: ${{ inputs.shard }}
+
+      - name: Check idempotency receipt
+        id: dedupe
+        if: github.event_name == 'issue_comment'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER: ${{ steps.request.outputs.marker }}
+        run: |
+          set -euo pipefail
+          completed=false
+          if gh api "repos/${GITHUB_REPOSITORY}/issues/5/comments" --paginate --jq '.[].body' | grep -Fq -- "$MARKER"; then
+            completed=true
+            echo "Request already completed; no collection will run."
+          fi
+          echo "completed=$completed" >> "$GITHUB_OUTPUT"
+
       - name: Validate Infisical configuration
+        if: steps.dedupe.outputs.completed != 'true'
         shell: bash
         env:
           INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
@@ -43,6 +78,7 @@ jobs:
           test -n "$INFISICAL_ENV_SLUG" || (echo "Missing repository variable INFISICAL_ENV_SLUG" && exit 1)
 
       - name: Fetch Screeps token from Infisical
+        if: steps.dedupe.outputs.completed != 'true'
         uses: Infisical/secrets-action@v1.0.12
         with:
           method: oidc
@@ -54,17 +90,37 @@ jobs:
           include-imports: false
 
       - name: Collect Screeps insights
+        if: steps.dedupe.outputs.completed != 'true'
         run: node scripts/collect-insights.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
-          SCREEPS_ROOM: ${{ inputs.room }}
-          SCREEPS_REQUEST: ${{ github.event.comment.body }}
+          SCREEPS_ROOM: ${{ steps.request.outputs.room }}
+          SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
+          SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
 
       - name: Upload Screeps insights
+        if: steps.dedupe.outputs.completed != 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: screeps-insights-${{ github.run_id }}
+          name: ${{ steps.request.outputs.artifact_name }}
           path: artifacts/screeps-insights.json
           if-no-files-found: error
           retention-days: 7
+          overwrite: true
+
+      - name: Write completion receipt
+        if: github.event_name == 'issue_comment' && steps.dedupe.outputs.completed != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER: ${{ steps.request.outputs.marker }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          COMMAND: ${{ steps.request.outputs.command }}
+          ARTIFACT: ${{ steps.request.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          printf -v BODY '%s\n✅ collected `%s`\nrequest: `%s`\nartifact: `%s`\nrun: %s/%s/actions/runs/%s' \
+            "$MARKER" "$COMMAND" "$REQUEST_ID" "$ARTIFACT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/5/comments" -f body="$BODY" >/dev/null
