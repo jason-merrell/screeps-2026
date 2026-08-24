@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { rankStartRooms } from "./lib/start-room-recommender.mjs";
 
 const token = process.env.SCREEPS_TOKEN;
 const host = process.env.SCREEPS_HOST || "https://screeps.com";
@@ -91,14 +92,21 @@ const sectorRooms = (anchor) => {
   return rooms;
 };
 
-const shard = requestedShard || defaultShard;
-let snapshot;
+const parseRoomRef = (value, fallbackShard = defaultShard) => {
+  if (typeof value !== "string" || value.length === 0) return null;
+  const qualified = value.match(/^(shard[^/]+)\/([WE]\d+[NS]\d+)$/i);
+  if (qualified) {
+    return { shard: qualified[1].toLowerCase(), room: qualified[2].toUpperCase() };
+  }
+  if (/^[WE]\d+[NS]\d+$/i.test(value)) {
+    return { shard: fallbackShard, room: value.toUpperCase() };
+  }
+  return null;
+};
 
-if (requestMode === "scan") {
-  if (!requestedSector) throw new Error("SCREEPS_SECTOR is required for sector scan");
-
+const scanSector = async (sector, shard) => {
   const candidates = [];
-  const scannedRooms = sectorRooms(requestedSector);
+  const scannedRooms = sectorRooms(sector);
 
   for (const roomName of scannedRooms) {
     const objectsResponse = await requestJson("/api/game/room-objects", {
@@ -149,6 +157,76 @@ if (requestMode === "scan") {
     });
   }
 
+  return {
+    sector,
+    shard,
+    scannedRooms: scannedRooms.length,
+    eligibleRooms: candidates.length,
+    candidates,
+  };
+};
+
+const shard = requestedShard || defaultShard;
+let snapshot;
+
+if (requestMode === "recommend") {
+  const startRoom = await requestJson("/api/user/world-start-room");
+  const refs = Array.isArray(startRoom?.body?.room) ? startRoom.body.room : [];
+  const startSectors = [];
+
+  for (const value of refs) {
+    const ref = parseRoomRef(value, defaultShard);
+    if (!ref) continue;
+    if (requestedShard && ref.shard !== requestedShard) continue;
+    if (!startSectors.some((candidate) => candidate.room === ref.room && candidate.shard === ref.shard)) {
+      startSectors.push(ref);
+    }
+  }
+
+  if (startSectors.length === 0) {
+    throw new Error("Screeps returned no usable start sectors for recommendation");
+  }
+
+  const scans = [];
+  const allCandidates = [];
+  for (const sector of startSectors) {
+    const scan = await scanSector(sector.room, sector.shard);
+    scans.push({
+      sector: scan.sector,
+      shard: scan.shard,
+      scannedRooms: scan.scannedRooms,
+      eligibleRooms: scan.eligibleRooms,
+    });
+    allCandidates.push(...scan.candidates);
+  }
+
+  const ranking = rankStartRooms(allCandidates, 5);
+  if (ranking.length === 0) {
+    throw new Error("No neutral two-source rooms were eligible in the offered start sectors");
+  }
+
+  snapshot = {
+    request: {
+      id: requestId,
+      mode: requestMode,
+      command: requestCommand,
+      shard: requestedShard || null,
+    },
+    collectedAt: new Date().toISOString(),
+    host,
+    recommendation: {
+      startSectors,
+      scans,
+      scannedRooms: scans.reduce((sum, scan) => sum + scan.scannedRooms, 0),
+      eligibleRooms: ranking.length,
+      best: ranking[0],
+      ranking,
+    },
+  };
+} else if (requestMode === "scan") {
+  if (!requestedSector) throw new Error("SCREEPS_SECTOR is required for sector scan");
+
+  const scan = await scanSector(requestedSector, shard);
   snapshot = {
     request: {
       id: requestId,
@@ -159,13 +237,7 @@ if (requestMode === "scan") {
     },
     collectedAt: new Date().toISOString(),
     host,
-    scan: {
-      sector: requestedSector,
-      shard,
-      scannedRooms: scannedRooms.length,
-      eligibleRooms: candidates.length,
-      candidates,
-    },
+    scan,
   };
 } else {
   const worldStatus = await requestJson("/api/user/world-status");
@@ -176,17 +248,8 @@ if (requestMode === "scan") {
 
   const roomTargets = new Map();
   const addRoom = (value, fallbackShard = defaultShard) => {
-    if (typeof value !== "string" || value.length === 0) return;
-
-    const match = value.match(/^(shard[^/]+)\/([WE]\d+[NS]\d+)$/i);
-    if (match) {
-      roomTargets.set(match[2].toUpperCase(), match[1]);
-      return;
-    }
-
-    if (/^[WE]\d+[NS]\d+$/i.test(value)) {
-      roomTargets.set(value.toUpperCase(), fallbackShard);
-    }
+    const ref = parseRoomRef(value, fallbackShard);
+    if (ref) roomTargets.set(ref.room, ref.shard);
   };
 
   if (requestedRoom) addRoom(requestedRoom, shard);

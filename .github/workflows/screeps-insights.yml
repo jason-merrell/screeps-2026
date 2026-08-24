@@ -24,7 +24,9 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.number == 5 &&
-       (startsWith(github.event.comment.body, '/collect') || startsWith(github.event.comment.body, '/scan')) &&
+       (startsWith(github.event.comment.body, '/collect') ||
+        startsWith(github.event.comment.body, '/scan') ||
+        startsWith(github.event.comment.body, '/recommend-start')) &&
        github.event.comment.user.login == github.repository_owner)
     runs-on: ubuntu-latest
 
