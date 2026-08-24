@@ -7,16 +7,21 @@ const defaultShard = process.env.SCREEPS_SHARD || "shard3";
 const requestedRoom = process.env.SCREEPS_ROOM || "";
 const requestedSector = process.env.SCREEPS_SECTOR || "";
 const requestedShard = process.env.SCREEPS_REQUESTED_SHARD || "";
+const requestedTarget = process.env.SCREEPS_TARGET || "world";
 const requestId = process.env.SCREEPS_REQUEST_ID || "unknown";
 const requestCommand = process.env.SCREEPS_COMMAND || "/collect";
 const requestMode = process.env.SCREEPS_MODE || "collect";
+const apiPrefix = requestedTarget === "ptr" ? "/ptr" : "";
 
 if (!token) {
   throw new Error("SCREEPS_TOKEN is required to collect insights");
 }
+if (requestedTarget !== "world" && requestedTarget !== "ptr") {
+  throw new Error(`Unsupported Screeps target '${requestedTarget}'`);
+}
 
 const requestJson = async (path, params = {}) => {
-  const url = new URL(path, host);
+  const url = new URL(`${apiPrefix}${path}`, host);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(key, String(value));
@@ -57,6 +62,7 @@ const compactObjects = (objects) =>
     };
     for (const key of [
       "_id",
+      "name",
       "user",
       "level",
       "reservation",
@@ -211,9 +217,11 @@ if (requestMode === "recommend") {
       mode: requestMode,
       command: requestCommand,
       shard: requestedShard || null,
+      target: requestedTarget,
     },
     collectedAt: new Date().toISOString(),
     host,
+    target: requestedTarget,
     recommendation: {
       startSectors,
       scans,
@@ -234,9 +242,11 @@ if (requestMode === "recommend") {
       command: requestCommand,
       sector: requestedSector,
       shard,
+      target: requestedTarget,
     },
     collectedAt: new Date().toISOString(),
     host,
+    target: requestedTarget,
     scan,
   };
 } else {
@@ -299,9 +309,11 @@ if (requestMode === "recommend") {
       command: requestCommand,
       room: requestedRoom || null,
       shard: requestedShard || null,
+      target: requestedTarget,
     },
     collectedAt: new Date().toISOString(),
     host,
+    target: requestedTarget,
     defaultShard,
     worldStatus,
     startRoom,
@@ -319,4 +331,6 @@ await writeFile(
   "utf8",
 );
 
-console.log(`Collected Screeps insights request ${requestId} (${requestMode}).`);
+console.log(
+  `Collected Screeps insights request ${requestId} (${requestMode}, target=${requestedTarget}).`,
+);

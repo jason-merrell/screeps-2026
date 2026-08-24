@@ -101,6 +101,7 @@ jobs:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
           SCREEPS_MODE: ${{ steps.request.outputs.mode }}
+          SCREEPS_TARGET: ${{ steps.request.outputs.target }}
           SCREEPS_ROOM: ${{ steps.request.outputs.room }}
           SCREEPS_SECTOR: ${{ steps.request.outputs.sector }}
           SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}

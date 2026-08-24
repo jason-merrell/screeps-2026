@@ -25,6 +25,12 @@ const normalizeShard = (value) => {
   return value.toLowerCase();
 };
 
+const normalizeTarget = (value, fallback = "world") => {
+  const target = (value || fallback).toLowerCase();
+  if (target !== "world" && target !== "ptr") fail(`invalid target '${target}'`);
+  return target;
+};
+
 let requestId;
 let room = "";
 let sector = "";
@@ -66,7 +72,7 @@ if (eventName === "issue_comment") {
           ? ["shard"]
           : mode === "place-start"
             ? ["target", "shard"]
-            : ["room", "shard"];
+            : ["room", "shard", "target"];
     if (!allowed.includes(key)) fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
     args.set(key, value);
@@ -83,7 +89,7 @@ if (eventName === "issue_comment") {
   } else if (mode === "recommend") {
     command = ["/recommend-start", shard && `shard=${shard}`].filter(Boolean).join(" ");
   } else if (mode === "place-start") {
-    target = (args.get("target") || "").toLowerCase();
+    target = normalizeTarget(args.get("target") || "", "");
     if (target !== "ptr") {
       fail("/place-start currently requires target=ptr; World placement is intentionally disabled");
     }
@@ -92,8 +98,14 @@ if (eventName === "issue_comment") {
       .join(" ");
   } else {
     room = normalizeRoom(args.get("room") || "");
+    target = normalizeTarget(args.get("target") || "world");
     if (shard && !room) fail("shard requires room");
-    command = ["/collect", room && `room=${room}`, shard && `shard=${shard}`]
+    command = [
+      "/collect",
+      target !== "world" && `target=${target}`,
+      room && `room=${room}`,
+      shard && `shard=${shard}`,
+    ]
       .filter(Boolean)
       .join(" ");
   }
