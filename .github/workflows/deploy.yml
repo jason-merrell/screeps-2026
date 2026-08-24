@@ -45,7 +45,7 @@ jobs:
           identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
           project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
           env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
-          secret-path: /screeps/deploy
+          secret-path: /deploy
           recursive: false
           include-imports: false
 
