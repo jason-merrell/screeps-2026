@@ -1,5 +1,14 @@
-export type Intent = CreepIntent | SpawnIntent;
-export type CreepIntent = HarvestIntent | TransferIntent | UpgradeIntent;
+export type Intent =
+  | CreepIntent
+  | SpawnIntent
+  | CreateConstructionSiteIntent
+  | TowerAttackIntent;
+export type CreepIntent =
+  | HarvestIntent
+  | TransferIntent
+  | BuildIntent
+  | RepairIntent
+  | UpgradeIntent;
 
 interface IntentBase {
   priority: number;
@@ -17,8 +26,18 @@ export interface HarvestIntent extends CreepIntentBase {
 
 export interface TransferIntent extends CreepIntentBase {
   type: "transfer";
-  targetId: Id<StructureSpawn | StructureExtension>;
+  targetId: Id<StructureSpawn | StructureExtension | StructureTower>;
   resource: ResourceConstant;
+}
+
+export interface BuildIntent extends CreepIntentBase {
+  type: "build";
+  targetId: Id<ConstructionSite>;
+}
+
+export interface RepairIntent extends CreepIntentBase {
+  type: "repair";
+  targetId: Id<Structure>;
 }
 
 export interface UpgradeIntent extends CreepIntentBase {
@@ -31,4 +50,18 @@ export interface SpawnIntent extends IntentBase {
   spawnName: string;
   body: BodyPartConstant[];
   name: string;
+}
+
+export interface CreateConstructionSiteIntent extends IntentBase {
+  type: "createConstructionSite";
+  roomName: string;
+  x: number;
+  y: number;
+  structureType: BuildableStructureConstant;
+}
+
+export interface TowerAttackIntent extends IntentBase {
+  type: "towerAttack";
+  towerId: Id<StructureTower>;
+  targetId: Id<Creep>;
 }
