@@ -208,7 +208,9 @@ export const evaluateSpawnSitesFromAnchors = (
     throw new Error("Spawn advisor requires at least one source position.");
   }
 
-  sources.forEach((source, index) => validatePoint(`Source ${index + 1}`, source));
+  sources.forEach((source, index) => {
+    validatePoint(`Source ${index + 1}`, source);
+  });
   validatePoint("Controller", controller);
 
   const terrain = Game.map.getRoomTerrain(roomName);
