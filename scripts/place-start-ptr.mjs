@@ -171,6 +171,11 @@ const writeSnapshot = async (snapshot) => {
   );
 };
 
+const activation = requireOk(
+  "PTR activation",
+  await requestJson("/api/user/activate-ptr", { method: "POST", body: {} }),
+);
+
 const initialStatus = requireOk(
   "PTR world status",
   await requestJson("/api/user/world-status"),
@@ -191,6 +196,7 @@ if (initialStatus.status !== "empty") {
     host,
     target: "ptr",
     result: "already-placed",
+    activation,
     spawn: existing,
     worldStatus: initialStatus,
   });
@@ -252,7 +258,7 @@ requireOk("PTR place-spawn", placement);
 
 let verifiedSpawn = null;
 let finalStatus = null;
-for (let attempt = 0; attempt < 5; attempt += 1) {
+for (let attempt = 0; attempt < 15; attempt += 1) {
   const objectsResponse = await requestJson("/api/game/room-objects", {
     params: { room: best.room, shard: best.shard },
   });
@@ -285,6 +291,17 @@ for (let attempt = 0; attempt < 5; attempt += 1) {
 }
 
 if (!verifiedSpawn) {
+  await writeSnapshot({
+    request: { id: requestId, command: requestCommand, mode: "place-start", target: "ptr" },
+    collectedAt: new Date().toISOString(),
+    host,
+    target: "ptr",
+    result: "placement-acknowledged-unverified",
+    activation,
+    recommendation: { startSectors: sectors, scans, best, ranking },
+    placement: placement.body,
+    worldStatus: { before: initialStatus, after: finalStatus },
+  });
   throw new Error(
     `PTR place-spawn was acknowledged but spawn ${spawnName} was not observable at ${best.room} (${bestSpawn.x},${bestSpawn.y})`,
   );
@@ -296,6 +313,7 @@ await writeSnapshot({
   host,
   target: "ptr",
   result: "placed-and-verified",
+  activation,
   recommendation: {
     startSectors: sectors,
     scans,
