@@ -3,6 +3,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 const token = process.env.SCREEPS_TOKEN;
 const host = process.env.SCREEPS_HOST || "https://screeps.com";
 const shard = process.env.SCREEPS_SHARD || "shard3";
+const request = process.env.SCREEPS_REQUEST || "";
+const requestedRoom = process.env.SCREEPS_ROOM || request.match(/^\/collect\s+([WE]\d+[NS]\d+)$/i)?.[1];
 
 if (!token) {
   throw new Error("SCREEPS_TOKEN is required to collect insights");
@@ -11,7 +13,9 @@ if (!token) {
 const requestJson = async (path, params = {}) => {
   const url = new URL(path, host);
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
   }
 
   try {
@@ -50,6 +54,8 @@ const branches = await requestJson("/api/user/branches");
 const stats = await requestJson("/api/user/stats", { interval: 8 });
 
 const roomNames = new Set();
+if (requestedRoom) roomNames.add(requestedRoom.toUpperCase());
+
 const startRoomName = startRoom?.body?.room?.[0];
 if (typeof startRoomName === "string") roomNames.add(startRoomName);
 
@@ -79,6 +85,7 @@ const snapshot = {
   collectedAt: new Date().toISOString(),
   host,
   shard,
+  requestedRoom: requestedRoom?.toUpperCase() || null,
   worldStatus,
   startRoom,
   rooms,
