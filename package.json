@@ -13,6 +13,7 @@
     "deploy:screeps": "pnpm build && node scripts/deploy.mjs",
     "format": "biome format --write .",
     "lint": "biome lint .",
+    "replay:bootstrap": "node scripts/replay-bootstrap.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
