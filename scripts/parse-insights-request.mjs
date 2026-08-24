@@ -45,8 +45,18 @@ if (eventName === "issue_comment") {
 
   const tokens = commentBody.trim().split(/\s+/).filter(Boolean);
   const commandToken = tokens[0];
-  if (!["/collect", "/scan", "/recommend-start", "/place-start"].includes(commandToken)) {
-    fail("command must begin with exactly /collect, /scan, /recommend-start, or /place-start");
+  if (
+    ![
+      "/collect",
+      "/scan",
+      "/recommend-start",
+      "/place-start",
+      "/deploy-code",
+    ].includes(commandToken)
+  ) {
+    fail(
+      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, or /deploy-code",
+    );
   }
 
   mode =
@@ -56,7 +66,9 @@ if (eventName === "issue_comment") {
         ? "recommend"
         : commandToken === "/place-start"
           ? "place-start"
-          : "collect";
+          : commandToken === "/deploy-code"
+            ? "deploy-code"
+            : "collect";
 
   const args = new Map();
   for (const token of tokens.slice(1)) {
@@ -72,7 +84,9 @@ if (eventName === "issue_comment") {
           ? ["shard"]
           : mode === "place-start"
             ? ["target", "shard"]
-            : ["room", "shard", "target"];
+            : mode === "deploy-code"
+              ? ["target"]
+              : ["room", "shard", "target"];
     if (!allowed.includes(key)) fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
     args.set(key, value);
@@ -96,6 +110,12 @@ if (eventName === "issue_comment") {
     command = ["/place-start", "target=ptr", shard && `shard=${shard}`]
       .filter(Boolean)
       .join(" ");
+  } else if (mode === "deploy-code") {
+    target = normalizeTarget(args.get("target") || "", "");
+    if (target !== "ptr") {
+      fail("/deploy-code currently requires target=ptr; World deployment is intentionally disabled here");
+    }
+    command = "/deploy-code target=ptr";
   } else {
     room = normalizeRoom(args.get("room") || "");
     target = normalizeTarget(args.get("target") || "world");
