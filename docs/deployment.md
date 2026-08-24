@@ -16,7 +16,7 @@ The GitHub action requires the project's **slug**, which is available in Infisic
 
 In the Infisical environment you want GitHub to deploy from, create this path:
 
-`/screeps/deploy`
+`/deploy`
 
 Add one secret there:
 
@@ -36,9 +36,9 @@ In Infisical:
 4. Configure:
    - OIDC Discovery URL: `https://token.actions.githubusercontent.com`
    - Issuer: `https://token.actions.githubusercontent.com`
-   - Subject: `repo:jason-merrell/screeps-2026:ref:refs/heads/main`
+   - Subject: `repo:jason-merrell@112509082/screeps-2026@1345400327:ref:refs/heads/main`
    - Audience: `https://github.com/jason-merrell`
-5. Grant the identity read-only secret access to the chosen environment and `/screeps/deploy` path.
+5. Grant the identity read-only secret access to the chosen environment and `/deploy` path.
 6. Copy the Machine Identity ID.
 
 Avoid repository-wide wildcard subjects unless there is a concrete need for them.
@@ -51,7 +51,7 @@ In GitHub, open **Settings -> Secrets and variables -> Actions -> Variables** an
 | --- | --- |
 | `INFISICAL_IDENTITY_ID` | Machine Identity ID from step 2 |
 | `INFISICAL_PROJECT_SLUG` | Infisical project slug |
-| `INFISICAL_ENV_SLUG` | Environment slug containing `/screeps/deploy` |
+| `INFISICAL_ENV_SLUG` | Environment slug containing `/deploy` |
 | `SCREEPS_BRANCH` | Optional. Defaults to `default` |
 | `SCREEPS_HOST` | Optional. Defaults to `https://screeps.com` |
 
@@ -64,7 +64,7 @@ These are configuration values, not secret credentials.
 The workflow:
 
 1. Authenticates to Infisical using a short-lived GitHub OIDC token.
-2. Fetches only `/screeps/deploy` from Infisical.
+2. Fetches only `/deploy` from Infisical.
 3. Runs lint, typecheck, and tests.
 4. Builds `dist/main.js`.
 5. Uploads that module to the configured Screeps code branch using `X-Token` authentication.
@@ -78,7 +78,7 @@ Local deployment uses the same `pnpm deploy` command. The command expects `SCREE
 Example:
 
 ```bash
-infisical run --projectId=99abd655-8231-4ac2-8af9-ef4dbe556a5d --env=dev --path=/screeps/deploy -- pnpm deploy
+infisical run --projectId=99abd655-8231-4ac2-8af9-ef4dbe556a5d --env=dev --path=/deploy -- pnpm deploy
 ```
 
 Change the environment to match your Infisical setup.
