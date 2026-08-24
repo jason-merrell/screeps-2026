@@ -29,6 +29,7 @@ let requestId;
 let room = "";
 let sector = "";
 let shard = "";
+let target = "world";
 let mode = "collect";
 let command = "/collect";
 
@@ -38,8 +39,8 @@ if (eventName === "issue_comment") {
 
   const tokens = commentBody.trim().split(/\s+/).filter(Boolean);
   const commandToken = tokens[0];
-  if (!["/collect", "/scan", "/recommend-start"].includes(commandToken)) {
-    fail("command must begin with exactly /collect, /scan, or /recommend-start");
+  if (!["/collect", "/scan", "/recommend-start", "/place-start"].includes(commandToken)) {
+    fail("command must begin with exactly /collect, /scan, /recommend-start, or /place-start");
   }
 
   mode =
@@ -47,7 +48,9 @@ if (eventName === "issue_comment") {
       ? "scan"
       : commandToken === "/recommend-start"
         ? "recommend"
-        : "collect";
+        : commandToken === "/place-start"
+          ? "place-start"
+          : "collect";
 
   const args = new Map();
   for (const token of tokens.slice(1)) {
@@ -57,7 +60,13 @@ if (eventName === "issue_comment") {
     const key = match[1].toLowerCase();
     const value = match[2];
     const allowed =
-      mode === "scan" ? ["sector", "shard"] : mode === "recommend" ? ["shard"] : ["room", "shard"];
+      mode === "scan"
+        ? ["sector", "shard"]
+        : mode === "recommend"
+          ? ["shard"]
+          : mode === "place-start"
+            ? ["target", "shard"]
+            : ["room", "shard"];
     if (!allowed.includes(key)) fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
     args.set(key, value);
@@ -73,6 +82,14 @@ if (eventName === "issue_comment") {
       .join(" ");
   } else if (mode === "recommend") {
     command = ["/recommend-start", shard && `shard=${shard}`].filter(Boolean).join(" ");
+  } else if (mode === "place-start") {
+    target = (args.get("target") || "").toLowerCase();
+    if (target !== "ptr") {
+      fail("/place-start currently requires target=ptr; World placement is intentionally disabled");
+    }
+    command = ["/place-start", "target=ptr", shard && `shard=${shard}`]
+      .filter(Boolean)
+      .join(" ");
   } else {
     room = normalizeRoom(args.get("room") || "");
     if (shard && !room) fail("shard requires room");
@@ -101,6 +118,7 @@ const lines = [
   `room=${room}`,
   `sector=${sector}`,
   `shard=${shard}`,
+  `target=${target}`,
   `command=${command}`,
   `marker=${marker}`,
   `artifact_name=${artifactName}`,

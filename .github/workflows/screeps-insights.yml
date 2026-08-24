@@ -26,7 +26,8 @@ jobs:
       (github.event.issue.number == 5 &&
        (startsWith(github.event.comment.body, '/collect') ||
         startsWith(github.event.comment.body, '/scan') ||
-        startsWith(github.event.comment.body, '/recommend-start')) &&
+        startsWith(github.event.comment.body, '/recommend-start') ||
+        startsWith(github.event.comment.body, '/place-start')) &&
        github.event.comment.user.login == github.repository_owner)
     runs-on: ubuntu-latest
 
@@ -63,7 +64,7 @@ jobs:
           completed=false
           if gh api "repos/${GITHUB_REPOSITORY}/issues/5/comments" --paginate --jq '.[].body' | grep -Fq -- "$MARKER"; then
             completed=true
-            echo "Request already completed; no collection will run."
+            echo "Request already completed; no operation will run."
           fi
           echo "completed=$completed" >> "$GITHUB_OUTPUT"
 
@@ -92,7 +93,9 @@ jobs:
           include-imports: false
 
       - name: Collect Screeps insights
-        if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
+        if: >-
+          (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode != 'place-start'
         run: node scripts/collect-insights.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
@@ -100,6 +103,18 @@ jobs:
           SCREEPS_MODE: ${{ steps.request.outputs.mode }}
           SCREEPS_ROOM: ${{ steps.request.outputs.room }}
           SCREEPS_SECTOR: ${{ steps.request.outputs.sector }}
+          SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
+          SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
+
+      - name: Place PTR start
+        if: >-
+          (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode == 'place-start'
+        run: node scripts/place-start-ptr.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+          SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
           SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
@@ -125,6 +140,6 @@ jobs:
           ARTIFACT: ${{ steps.request.outputs.artifact_name }}
         run: |
           set -euo pipefail
-          printf -v BODY '%s\n✅ collected `%s`\nrequest: `%s`\nartifact: `%s`\nrun: %s/%s/actions/runs/%s' \
+          printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\nartifact: `%s`\nrun: %s/%s/actions/runs/%s' \
             "$MARKER" "$COMMAND" "$REQUEST_ID" "$ARTIFACT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/5/comments" -f body="$BODY" >/dev/null
