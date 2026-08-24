@@ -2,6 +2,11 @@ name: Screeps Insights
 
 on:
   workflow_dispatch:
+    inputs:
+      room:
+        description: Optional room name to inspect, for example W1N1
+        required: false
+        type: string
   issue_comment:
     types: [created]
 
@@ -14,7 +19,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.number == 5 &&
-       github.event.comment.body == '/collect' &&
+       startsWith(github.event.comment.body, '/collect') &&
        github.event.comment.user.login == github.repository_owner)
     runs-on: ubuntu-latest
 
@@ -53,6 +58,8 @@ jobs:
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
+          SCREEPS_ROOM: ${{ inputs.room }}
+          SCREEPS_REQUEST: ${{ github.event.comment.body }}
 
       - name: Upload Screeps insights
         uses: actions/upload-artifact@v5
