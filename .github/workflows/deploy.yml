@@ -1,0 +1,57 @@
+name: Deploy Screeps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: screeps-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate Infisical configuration
+        shell: bash
+        env:
+          INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
+          INFISICAL_PROJECT_SLUG: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          INFISICAL_ENV_SLUG: ${{ vars.INFISICAL_ENV_SLUG }}
+        run: |
+          test -n "$INFISICAL_IDENTITY_ID" || (echo "Missing repository variable INFISICAL_IDENTITY_ID" && exit 1)
+          test -n "$INFISICAL_PROJECT_SLUG" || (echo "Missing repository variable INFISICAL_PROJECT_SLUG" && exit 1)
+          test -n "$INFISICAL_ENV_SLUG" || (echo "Missing repository variable INFISICAL_ENV_SLUG" && exit 1)
+
+      - name: Fetch Screeps deploy secret from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          secret-path: /screeps/deploy
+          recursive: false
+          include-imports: false
+
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm check
+      - run: pnpm deploy
+        env:
+          SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
