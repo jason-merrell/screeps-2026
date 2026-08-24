@@ -8,6 +8,14 @@ function moveIfNeeded(creep: Creep, target: RoomObject, result: ScreepsReturnCod
 
 export function execute(intents: Intent[]): void {
   for (const intent of intents) {
+    if (intent.type === "spawn") {
+      const spawn = Game.spawns[intent.spawnName];
+      if (spawn && !spawn.spawning) {
+        spawn.spawnCreep(intent.body, intent.name);
+      }
+      continue;
+    }
+
     const creep = Game.creeps[intent.creepName];
     if (!creep || creep.spawning) continue;
 
