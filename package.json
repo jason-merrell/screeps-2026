@@ -10,6 +10,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "biome lint . && tsc --noEmit && vitest run",
+    "deploy": "pnpm build && node scripts/deploy.mjs",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "test": "vitest run",
