@@ -55,3 +55,8 @@ jobs:
         env:
           SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+      - name: Verify deployed Screeps code
+        run: pnpm run verify:screeps
+        env:
+          SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
