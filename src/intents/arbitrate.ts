@@ -1,7 +1,16 @@
 import type { Intent } from "./types";
 
 function conflictKey(intent: Intent): string {
-  return intent.type === "spawn" ? `spawn:${intent.spawnName}` : `creep:${intent.creepName}`;
+  switch (intent.type) {
+    case "spawn":
+      return `spawn:${intent.spawnName}`;
+    case "createConstructionSite":
+      return `site:${intent.roomName}:${intent.x}:${intent.y}`;
+    case "towerAttack":
+      return `tower:${intent.towerId}`;
+    default:
+      return `creep:${intent.creepName}`;
+  }
 }
 
 export function arbitrate(intents: Intent[]): Intent[] {
