@@ -24,6 +24,63 @@ interface Point {
   y: number;
 }
 
+interface QueueNode extends Point {
+  cost: number;
+}
+
+class MinHeap {
+  private readonly items: QueueNode[] = [];
+
+  get size(): number {
+    return this.items.length;
+  }
+
+  push(node: QueueNode): void {
+    this.items.push(node);
+    let index = this.items.length - 1;
+
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (this.items[parent].cost <= this.items[index].cost) break;
+      [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
+      index = parent;
+    }
+  }
+
+  pop(): QueueNode | undefined {
+    if (this.items.length === 0) return undefined;
+    if (this.items.length === 1) return this.items.pop();
+
+    const root = this.items[0];
+    const tail = this.items.pop();
+    if (!tail) return root;
+    this.items[0] = tail;
+
+    let index = 0;
+    while (true) {
+      const left = index * 2 + 1;
+      const right = left + 1;
+      let smallest = index;
+
+      if (left < this.items.length && this.items[left].cost < this.items[smallest].cost) {
+        smallest = left;
+      }
+      if (right < this.items.length && this.items[right].cost < this.items[smallest].cost) {
+        smallest = right;
+      }
+      if (smallest === index) break;
+
+      [this.items[index], this.items[smallest]] = [
+        this.items[smallest],
+        this.items[index],
+      ];
+      index = smallest;
+    }
+
+    return root;
+  }
+}
+
 const indexOf = (x: number, y: number): number => y * ROOM_SIZE + x;
 
 const isInside = (x: number, y: number): boolean =>
@@ -58,7 +115,7 @@ const buildDistanceField = (
   const distance = new Float64Array(ROOM_SIZE * ROOM_SIZE);
   distance.fill(INF);
 
-  const open: Array<{ x: number; y: number; cost: number }> = [];
+  const open = new MinHeap();
 
   for (const goal of goals) {
     if (isWall(terrain, goal.x, goal.y)) continue;
@@ -67,13 +124,9 @@ const buildDistanceField = (
     open.push({ ...goal, cost: 0 });
   }
 
-  while (open.length > 0) {
-    let bestIndex = 0;
-    for (let i = 1; i < open.length; i += 1) {
-      if (open[i].cost < open[bestIndex].cost) bestIndex = i;
-    }
-
-    const current = open.splice(bestIndex, 1)[0];
+  while (open.size > 0) {
+    const current = open.pop();
+    if (!current) break;
     if (current.cost !== distance[indexOf(current.x, current.y)]) continue;
 
     for (const next of neighbors(current.x, current.y)) {
@@ -133,7 +186,7 @@ const isOccupiedByAnchor = (
   sources: Source[],
   controller: StructureController,
 ): boolean =>
-  controller.pos.x === x && controller.pos.y === y ||
+  (controller.pos.x === x && controller.pos.y === y) ||
   sources.some((source) => source.pos.x === x && source.pos.y === y);
 
 export const evaluateSpawnSites = (
