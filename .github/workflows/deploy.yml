@@ -51,7 +51,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile=false
       - run: pnpm check
-      - run: pnpm deploy
+      - run: pnpm run deploy:screeps
         env:
           SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
