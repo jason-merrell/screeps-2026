@@ -12,9 +12,38 @@ Exactly one command is accepted per comment:
 /collect
 /collect room=W35S25
 /collect room=E55N35 shard=shard3
+/scan sector=E55N35
+/scan sector=E55N35 shard=shard3
+/recommend-start
+/recommend-start shard=shard3
 ```
 
-Keys may appear only once. Supported keys are `room` and `shard`. `shard` requires `room`. Extra text, duplicate keys, unknown keys, or multiple commands are rejected.
+Command rules:
+
+- `/collect` accepts optional `room` and `shard`; `shard` requires `room`.
+- `/scan` requires `sector` and accepts optional `shard`.
+- `/recommend-start` accepts only optional `shard`.
+- Keys may appear only once.
+- Extra text, duplicate keys, unknown keys, or multiple commands are rejected.
+
+## Start recommendation
+
+`/recommend-start` is the atomic pre-spawn planning operation. It:
+
+1. Reads the current start-sector anchors offered by Screeps.
+2. Scans ordinary rooms in each offered sector.
+3. Keeps only neutral, unreserved rooms with at least two sources.
+4. Scores candidate spawn tiles using terrain-aware path cost to sources and controller, local buildable area, distance from exits, and swamp efficiency.
+5. Ranks rooms by their best spawn tile.
+6. Emits the winning room, exact spawn coordinates, score breakdown, and full room ranking in one artifact.
+
+The scorer uses the same weights as the in-game spawn advisor:
+
+- source access: 35%
+- controller access: 15%
+- buildable area: 25%
+- exit safety: 15%
+- terrain efficiency: 10%
 
 ## Transaction model
 
@@ -25,7 +54,7 @@ For issue-comment requests:
 3. Acquire GitHub Actions concurrency for that `requestId`.
 4. Check issue #5 for an existing completion receipt for that `requestId`.
 5. If already completed, exit successfully without recollecting.
-6. Otherwise collect one bounded snapshot.
+6. Otherwise execute one bounded operation.
 7. Upload `screeps-insights-request-<requestId>`.
 8. Append a completion receipt to issue #5.
 
