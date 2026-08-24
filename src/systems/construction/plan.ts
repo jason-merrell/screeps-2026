@@ -110,7 +110,7 @@ function planRoomConstruction(room: Room): Intent[] {
   const extensionSites = existingSites.filter(
     (site) => site.structureType === STRUCTURE_EXTENSION,
   ).length;
-  const extensionLimit = CONTROLLER_STRUCTURES[STRUCTURE_EXTENSION][level];
+  const extensionLimit = CONTROLLER_STRUCTURES[STRUCTURE_EXTENSION][level] ?? 0;
   let missingExtensions = Math.max(0, extensionLimit - existingExtensions - extensionSites);
 
   for (const tile of coreTiles) {
@@ -146,7 +146,7 @@ function planRoomConstruction(room: Room): Intent[] {
       filter: (structure) => structure.structureType === STRUCTURE_TOWER,
     }).length;
     const towerSites = existingSites.filter((site) => site.structureType === STRUCTURE_TOWER).length;
-    const towerLimit = CONTROLLER_STRUCTURES[STRUCTURE_TOWER][level];
+    const towerLimit = CONTROLLER_STRUCTURES[STRUCTURE_TOWER][level] ?? 0;
 
     if (existingTowers + towerSites < towerLimit) {
       const tile = coreTiles.find((candidate) => !reserved.has(tileKey(candidate.x, candidate.y)));
@@ -157,8 +157,10 @@ function planRoomConstruction(room: Room): Intent[] {
     }
   }
 
-  if (!hasStructure(room, spawn.pos.x, spawn.pos.y, STRUCTURE_RAMPART) &&
-      !hasSite(room, spawn.pos.x, spawn.pos.y, STRUCTURE_RAMPART)) {
+  if (
+    !hasStructure(room, spawn.pos.x, spawn.pos.y, STRUCTURE_RAMPART) &&
+    !hasSite(room, spawn.pos.x, spawn.pos.y, STRUCTURE_RAMPART)
+  ) {
     intents.push(
       siteIntent(room, spawn.pos.x, spawn.pos.y, STRUCTURE_RAMPART, 700, "protect primary spawn"),
     );
@@ -169,8 +171,10 @@ function planRoomConstruction(room: Room): Intent[] {
       filter: (structure) => structure.structureType === STRUCTURE_TOWER,
     }) as StructureTower[];
     for (const tower of towers) {
-      if (hasStructure(room, tower.pos.x, tower.pos.y, STRUCTURE_RAMPART) ||
-          hasSite(room, tower.pos.x, tower.pos.y, STRUCTURE_RAMPART)) {
+      if (
+        hasStructure(room, tower.pos.x, tower.pos.y, STRUCTURE_RAMPART) ||
+        hasSite(room, tower.pos.x, tower.pos.y, STRUCTURE_RAMPART)
+      ) {
         continue;
       }
       intents.push(
@@ -200,8 +204,10 @@ function planRoomConstruction(room: Room): Intent[] {
       const key = tileKey(step.x, step.y);
       if (reserved.has(key)) continue;
       if (room.getTerrain().get(step.x, step.y) === TERRAIN_MASK_WALL) continue;
-      if (hasStructure(room, step.x, step.y, STRUCTURE_ROAD) ||
-          hasSite(room, step.x, step.y, STRUCTURE_ROAD)) {
+      if (
+        hasStructure(room, step.x, step.y, STRUCTURE_ROAD) ||
+        hasSite(room, step.x, step.y, STRUCTURE_ROAD)
+      ) {
         continue;
       }
       if (room.lookForAt(LOOK_CONSTRUCTION_SITES, step.x, step.y).length > 0) continue;
