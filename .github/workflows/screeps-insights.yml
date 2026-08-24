@@ -66,7 +66,7 @@ jobs:
           echo "completed=$completed" >> "$GITHUB_OUTPUT"
 
       - name: Validate Infisical configuration
-        if: steps.dedupe.outputs.completed != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
         shell: bash
         env:
           INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
@@ -78,7 +78,7 @@ jobs:
           test -n "$INFISICAL_ENV_SLUG" || (echo "Missing repository variable INFISICAL_ENV_SLUG" && exit 1)
 
       - name: Fetch Screeps token from Infisical
-        if: steps.dedupe.outputs.completed != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
         uses: Infisical/secrets-action@v1.0.12
         with:
           method: oidc
@@ -90,7 +90,7 @@ jobs:
           include-imports: false
 
       - name: Collect Screeps insights
-        if: steps.dedupe.outputs.completed != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
         run: node scripts/collect-insights.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
@@ -101,7 +101,7 @@ jobs:
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
 
       - name: Upload Screeps insights
-        if: steps.dedupe.outputs.completed != 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
         uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.request.outputs.artifact_name }}
