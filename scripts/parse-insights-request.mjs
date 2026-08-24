@@ -37,11 +37,18 @@ if (eventName === "issue_comment") {
   requestId = commentId;
 
   const tokens = commentBody.trim().split(/\s+/).filter(Boolean);
-  if (tokens[0] !== "/collect" && tokens[0] !== "/scan") {
-    fail("command must begin with exactly /collect or /scan");
+  const commandToken = tokens[0];
+  if (!["/collect", "/scan", "/recommend-start"].includes(commandToken)) {
+    fail("command must begin with exactly /collect, /scan, or /recommend-start");
   }
 
-  mode = tokens[0] === "/scan" ? "scan" : "collect";
+  mode =
+    commandToken === "/scan"
+      ? "scan"
+      : commandToken === "/recommend-start"
+        ? "recommend"
+        : "collect";
+
   const args = new Map();
   for (const token of tokens.slice(1)) {
     const match = token.match(/^([a-z]+)=(.+)$/i);
@@ -49,8 +56,9 @@ if (eventName === "issue_comment") {
 
     const key = match[1].toLowerCase();
     const value = match[2];
-    const allowed = mode === "scan" ? ["sector", "shard"] : ["room", "shard"];
-    if (!allowed.includes(key)) fail(`unknown key '${key}' for /${mode}`);
+    const allowed =
+      mode === "scan" ? ["sector", "shard"] : mode === "recommend" ? ["shard"] : ["room", "shard"];
+    if (!allowed.includes(key)) fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
     args.set(key, value);
   }
@@ -63,6 +71,8 @@ if (eventName === "issue_comment") {
     command = ["/scan", `sector=${sector}`, shard && `shard=${shard}`]
       .filter(Boolean)
       .join(" ");
+  } else if (mode === "recommend") {
+    command = ["/recommend-start", shard && `shard=${shard}`].filter(Boolean).join(" ");
   } else {
     room = normalizeRoom(args.get("room") || "");
     if (shard && !room) fail("shard requires room");
