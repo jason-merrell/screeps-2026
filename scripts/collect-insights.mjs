@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 
 const token = process.env.SCREEPS_TOKEN;
 const host = process.env.SCREEPS_HOST || "https://screeps.com";
-const shard = process.env.SCREEPS_SHARD || "shard3";
+const defaultShard = process.env.SCREEPS_SHARD || "shard3";
 const request = process.env.SCREEPS_REQUEST || "";
 const requestedRoom = process.env.SCREEPS_ROOM || request.match(/^\/collect\s+([WE]\d+[NS]\d+)$/i)?.[1];
 
@@ -53,38 +53,57 @@ const rooms = await requestJson("/api/user/rooms", { interval: 8 });
 const branches = await requestJson("/api/user/branches");
 const stats = await requestJson("/api/user/stats", { interval: 8 });
 
-const roomNames = new Set();
-if (requestedRoom) roomNames.add(requestedRoom.toUpperCase());
+const roomTargets = new Map();
+const addRoom = (value, fallbackShard = defaultShard) => {
+  if (typeof value !== "string" || value.length === 0) return;
 
-const startRoomName = startRoom?.body?.room?.[0];
-if (typeof startRoomName === "string") roomNames.add(startRoomName);
+  const match = value.match(/^(shard[^/]+)\/([WE]\d+[NS]\d+)$/i);
+  if (match) {
+    roomTargets.set(match[2].toUpperCase(), match[1]);
+    return;
+  }
 
-if (Array.isArray(rooms?.body?.rooms)) {
-  for (const room of rooms.body.rooms) {
-    if (typeof room === "string") roomNames.add(room);
-    else if (room && typeof room._id === "string") roomNames.add(room._id);
-    else if (room && typeof room.room === "string") roomNames.add(room.room);
+  if (/^[WE]\d+[NS]\d+$/i.test(value)) {
+    roomTargets.set(value.toUpperCase(), fallbackShard);
+  }
+};
+
+if (requestedRoom) addRoom(requestedRoom, defaultShard);
+
+if (Array.isArray(startRoom?.body?.room)) {
+  for (const room of startRoom.body.room) addRoom(room, defaultShard);
+}
+
+if (rooms?.body?.shards && typeof rooms.body.shards === "object") {
+  for (const [shardName, shardRooms] of Object.entries(rooms.body.shards)) {
+    if (!Array.isArray(shardRooms)) continue;
+    for (const room of shardRooms) {
+      if (typeof room === "string") addRoom(room, shardName);
+      else if (room && typeof room._id === "string") addRoom(room._id, shardName);
+      else if (room && typeof room.room === "string") addRoom(room.room, shardName);
+    }
   }
 }
 
 const roomSnapshots = {};
-for (const roomName of [...roomNames].sort()) {
+for (const [roomName, roomShard] of [...roomTargets.entries()].sort(([a], [b]) => a.localeCompare(b))) {
   roomSnapshots[roomName] = {
-    status: await requestJson("/api/game/room-status", { room: roomName, shard }),
-    overview: await requestJson("/api/game/room-overview", { room: roomName, shard }),
+    shard: roomShard,
+    status: await requestJson("/api/game/room-status", { room: roomName }),
+    overview: await requestJson("/api/game/room-overview", { room: roomName, shard: roomShard }),
     terrain: await requestJson("/api/game/room-terrain", {
       room: roomName,
-      shard,
+      shard: roomShard,
       encoded: 1,
     }),
-    objects: await requestJson("/api/game/room-objects", { room: roomName, shard }),
+    objects: await requestJson("/api/game/room-objects", { room: roomName, shard: roomShard }),
   };
 }
 
 const snapshot = {
   collectedAt: new Date().toISOString(),
   host,
-  shard,
+  defaultShard,
   requestedRoom: requestedRoom?.toUpperCase() || null,
   worldStatus,
   startRoom,
@@ -101,4 +120,4 @@ await writeFile(
   "utf8",
 );
 
-console.log(`Collected Screeps insights for ${roomNames.size} room(s).`);
+console.log(`Collected Screeps insights for ${roomTargets.size} room(s).`);
