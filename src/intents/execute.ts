@@ -1,6 +1,6 @@
 import type { Intent } from "./types";
 
-function moveIfNeeded(creep: Creep, target: RoomObject, result: ScreepsReturnCode): void {
+function moveIfNeeded(creep: Creep, target: RoomObject, result: number): void {
   if (result === ERR_NOT_IN_RANGE) {
     creep.moveTo(target, { reusePath: 5 });
   }
