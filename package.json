@@ -9,7 +9,7 @@
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "biome check . && tsc --noEmit && vitest run",
+    "check": "biome lint . && tsc --noEmit && vitest run",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "test": "vitest run",
