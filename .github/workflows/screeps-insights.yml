@@ -24,7 +24,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.number == 5 &&
-       startsWith(github.event.comment.body, '/collect') &&
+       (startsWith(github.event.comment.body, '/collect') || startsWith(github.event.comment.body, '/scan')) &&
        github.event.comment.user.login == github.repository_owner)
     runs-on: ubuntu-latest
 
@@ -95,7 +95,9 @@ jobs:
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
+          SCREEPS_MODE: ${{ steps.request.outputs.mode }}
           SCREEPS_ROOM: ${{ steps.request.outputs.room }}
+          SCREEPS_SECTOR: ${{ steps.request.outputs.sector }}
           SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
