@@ -3,8 +3,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 const token = process.env.SCREEPS_TOKEN;
 const host = process.env.SCREEPS_HOST || "https://screeps.com";
 const defaultShard = process.env.SCREEPS_SHARD || "shard3";
-const request = process.env.SCREEPS_REQUEST || "";
-const requestedRoom = process.env.SCREEPS_ROOM || request.match(/^\/collect\s+([WE]\d+[NS]\d+)$/i)?.[1];
+const requestedRoom = process.env.SCREEPS_ROOM || "";
+const requestedShard = process.env.SCREEPS_REQUESTED_SHARD || "";
+const requestId = process.env.SCREEPS_REQUEST_ID || "unknown";
+const requestCommand = process.env.SCREEPS_COMMAND || "/collect";
 
 if (!token) {
   throw new Error("SCREEPS_TOKEN is required to collect insights");
@@ -68,7 +70,7 @@ const addRoom = (value, fallbackShard = defaultShard) => {
   }
 };
 
-if (requestedRoom) addRoom(requestedRoom, defaultShard);
+if (requestedRoom) addRoom(requestedRoom, requestedShard || defaultShard);
 
 if (Array.isArray(startRoom?.body?.room)) {
   for (const room of startRoom.body.room) addRoom(room, defaultShard);
@@ -101,10 +103,15 @@ for (const [roomName, roomShard] of [...roomTargets.entries()].sort(([a], [b]) =
 }
 
 const snapshot = {
+  request: {
+    id: requestId,
+    command: requestCommand,
+    room: requestedRoom || null,
+    shard: requestedShard || null,
+  },
   collectedAt: new Date().toISOString(),
   host,
   defaultShard,
-  requestedRoom: requestedRoom?.toUpperCase() || null,
   worldStatus,
   startRoom,
   rooms,
@@ -120,4 +127,4 @@ await writeFile(
   "utf8",
 );
 
-console.log(`Collected Screeps insights for ${roomTargets.size} room(s).`);
+console.log(`Collected Screeps insights request ${requestId} for ${roomTargets.size} room(s).`);
