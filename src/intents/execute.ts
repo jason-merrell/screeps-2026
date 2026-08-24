@@ -16,6 +16,21 @@ export function execute(intents: Intent[]): void {
       continue;
     }
 
+    if (intent.type === "createConstructionSite") {
+      const room = Game.rooms[intent.roomName];
+      if (room) {
+        room.createConstructionSite(intent.x, intent.y, intent.structureType);
+      }
+      continue;
+    }
+
+    if (intent.type === "towerAttack") {
+      const tower = Game.getObjectById(intent.towerId);
+      const target = Game.getObjectById(intent.targetId);
+      if (tower && target) tower.attack(target);
+      continue;
+    }
+
     const creep = Game.creeps[intent.creepName];
     if (!creep || creep.spawning) continue;
 
@@ -30,6 +45,18 @@ export function execute(intents: Intent[]): void {
         const target = Game.getObjectById(intent.targetId);
         if (!target) break;
         moveIfNeeded(creep, target, creep.transfer(target, intent.resource));
+        break;
+      }
+      case "build": {
+        const target = Game.getObjectById(intent.targetId);
+        if (!target) break;
+        moveIfNeeded(creep, target, creep.build(target));
+        break;
+      }
+      case "repair": {
+        const target = Game.getObjectById(intent.targetId);
+        if (!target) break;
+        moveIfNeeded(creep, target, creep.repair(target));
         break;
       }
       case "upgrade": {
