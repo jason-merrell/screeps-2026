@@ -1,3 +1,4 @@
+import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import type { WorldSnapshot } from "../../runtime/context";
 import {
@@ -44,6 +45,7 @@ export function planSpawning(world: WorldSnapshot): Intent[] {
         if (viable >= desired || room.energyAvailable < bodyCost(body)) continue;
       }
 
+      const task = viable === 0 ? "recover-workforce" : "maintain-workforce";
       intents.push({
         type: "spawn",
         spawnName: spawn.name,
@@ -54,6 +56,12 @@ export function planSpawning(world: WorldSnapshot): Intent[] {
           viable === 0
             ? "emergency bootstrap workforce recovery"
             : `workforce demand ${viable}/${desired}`,
+        trace: createIntentTrace({
+          roomName: room.name,
+          domain: "spawning",
+          task,
+          activity: `${spawn.name}:spawn-worker`,
+        }),
       });
     }
   }

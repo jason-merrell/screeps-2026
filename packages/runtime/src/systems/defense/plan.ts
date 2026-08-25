@@ -1,3 +1,4 @@
+import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import type { WorldSnapshot } from "../../runtime/context";
 
@@ -22,6 +23,12 @@ export function planDefense(world: WorldSnapshot): Intent[] {
         targetId: target.id,
         priority: 3000,
         reason: `hostile creep in ${room.name}`,
+        trace: createIntentTrace({
+          roomName: room.name,
+          domain: "defense",
+          task: "repel-hostiles",
+          activity: `${tower.id}:attack:${target.id}`,
+        }),
       });
     }
   }

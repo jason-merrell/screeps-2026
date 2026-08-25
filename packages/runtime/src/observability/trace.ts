@@ -1,5 +1,5 @@
 import type { ArbitrationRejection } from "../intents/arbitrate";
-import type { Intent } from "../intents/types";
+import type { Intent, IntentTrace } from "../intents/types";
 import { writeObservabilitySegment } from "../memory/segments";
 import type { MovementMetrics } from "../movement/traffic";
 import type { SpatialIndexMetrics } from "../world/spatial-index";
@@ -19,6 +19,7 @@ interface CompactIntentTrace {
   reason: string;
   actor: string;
   conflictKey: string;
+  trace?: IntentTrace;
 }
 
 interface CompactRejectionTrace {
@@ -123,6 +124,7 @@ function compactIntent(
     reason: intent.reason,
     actor: actorOf(intent),
     conflictKey: conflictKey(intent),
+    ...(intent.trace ? { trace: { ...intent.trace } } : {}),
   };
 }
 

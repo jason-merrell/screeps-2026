@@ -1,8 +1,18 @@
-import type { WorldSnapshot } from "../../runtime/context";
+import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
+import type { WorldSnapshot } from "../../runtime/context";
 import { capabilitiesOf } from "../../workforce/capabilities";
 
 const PEACETIME_TOWER_RESERVE = 400;
+
+function trace(roomName: string, creepName: string, task: string, activity: string) {
+  return createIntentTrace({
+    roomName,
+    domain: "economy",
+    task,
+    activity: `${creepName}:${activity}`,
+  });
+}
 
 function needsBootstrapRepair(structure: AnyStructure): boolean {
   if (!("hits" in structure) || !("hitsMax" in structure)) return false;
@@ -36,7 +46,8 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
   for (const creep of world.creeps) {
     if (creep.spawning) continue;
 
-    const spatial = world.spatial.byRoom[creep.room.name];
+    const roomName = creep.room.name;
+    const spatial = world.spatial.byRoom[roomName];
     if (!spatial) continue;
 
     const capabilities = capabilitiesOf(creep);
@@ -53,6 +64,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           sourceId: source.id,
           priority: 1000,
           reason: "fill worker energy before delivery or discretionary work",
+          trace: trace(roomName, creep.name, "maintain-energy-flow", `harvest:${source.id}`),
         });
         continue;
       }
@@ -75,6 +87,12 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           resource: RESOURCE_ENERGY,
           priority: 950,
           reason: "fund reproduction capacity before defensive reserves",
+          trace: trace(
+            roomName,
+            creep.name,
+            "fund-reproduction",
+            `transfer:${reproductionTarget.id}`,
+          ),
         });
         continue;
       }
@@ -97,6 +115,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           reason: underAttack
             ? "fill defensive tower during active threat"
             : "maintain bounded peacetime tower reserve",
+          trace: trace(roomName, creep.name, "maintain-defense-reserve", `transfer:${tower.id}`),
         });
         continue;
       }
@@ -111,6 +130,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           targetId: site.id,
           priority: 700,
           reason: "bootstrap infrastructure demand",
+          trace: trace(roomName, creep.name, "build-infrastructure", `build:${site.id}`),
         });
         continue;
       }
@@ -126,6 +146,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           targetId: repairTarget.id,
           priority: 500,
           reason: "restore critical bootstrap infrastructure",
+          trace: trace(roomName, creep.name, "restore-infrastructure", `repair:${repairTarget.id}`),
         });
         continue;
       }
@@ -138,6 +159,12 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
         controllerId: creep.room.controller.id,
         priority: 100,
         reason: "invest surplus energy in controller progression",
+        trace: trace(
+          roomName,
+          creep.name,
+          "advance-controller",
+          `upgrade:${creep.room.controller.id}`,
+        ),
       });
     }
   }
