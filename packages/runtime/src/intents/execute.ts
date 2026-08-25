@@ -127,9 +127,9 @@ export function execute(intents: Intent[]): ExecutionResult {
       case "withdraw": {
         target = Game.getObjectById(intent.targetId);
         if (target) {
-          const container = target as StructureContainer;
-          outcome = energyOutcome("energy collected", Math.min(creep.store.getFreeCapacity(intent.resource) ?? 0, container.store.getUsedCapacity(intent.resource)), creep.store.getCapacity(intent.resource) ?? 0);
-          result = creep.withdraw(container, intent.resource);
+          const storeTarget = target as StructureContainer | Tombstone | Ruin;
+          outcome = energyOutcome("energy collected", Math.min(creep.store.getFreeCapacity(intent.resource) ?? 0, storeTarget.store.getUsedCapacity(intent.resource)), creep.store.getCapacity(intent.resource) ?? 0);
+          result = creep.withdraw(storeTarget, intent.resource);
         }
         break;
       }
