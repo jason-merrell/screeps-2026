@@ -172,7 +172,9 @@ jobs:
         run: |
           set -euo pipefail
           pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
-          pnpm check
+          pnpm --filter @screeps/runtime lint
+          pnpm --filter @screeps/runtime typecheck
+          pnpm --filter @screeps/runtime test
           pnpm build:runtime
           node scripts/deploy-code-ptr.mjs
           node scripts/run-ptr-experiment.mjs
