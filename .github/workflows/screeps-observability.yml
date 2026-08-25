@@ -35,47 +35,7 @@ jobs:
           SCREEPS_REQUEST: ${{ github.event.comment.body }}
           SCREEPS_COMMENT_ID: ${{ github.event.comment.id }}
 
-      - name: Check idempotency receipt
-        id: dedupe
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MARKER: ${{ steps.request.outputs.marker }}
-        run: |
-          set -euo pipefail
-          completed=false
-          if gh api "repos/${GITHUB_REPOSITORY}/issues/5/comments" --paginate --jq '.[].body' | grep -Fq -- "$MARKER"; then
-            completed=true
-            echo "Snapshot request already completed; no collection will run."
-          fi
-          echo "completed=$completed" >> "$GITHUB_OUTPUT"
-
-      - name: Validate Infisical configuration
-        if: steps.dedupe.outputs.completed != 'true'
-        shell: bash
-        env:
-          INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
-          INFISICAL_PROJECT_SLUG: ${{ vars.INFISICAL_PROJECT_SLUG }}
-          INFISICAL_ENV_SLUG: ${{ vars.INFISICAL_ENV_SLUG }}
-        run: |
-          test -n "$INFISICAL_IDENTITY_ID" || (echo "Missing repository variable INFISICAL_IDENTITY_ID" && exit 1)
-          test -n "$INFISICAL_PROJECT_SLUG" || (echo "Missing repository variable INFISICAL_PROJECT_SLUG" && exit 1)
-          test -n "$INFISICAL_ENV_SLUG" || (echo "Missing repository variable INFISICAL_ENV_SLUG" && exit 1)
-
-      - name: Fetch collector secrets from Infisical
-        if: steps.dedupe.outputs.completed != 'true'
-        uses: Infisical/secrets-action@v1.0.12
-        with:
-          method: oidc
-          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
-          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
-          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
-          secret-path: /deploy
-          recursive: false
-          include-imports: false
-
-      - name: Mint short-lived Supabase ingest identity
-        if: steps.dedupe.outputs.completed != 'true'
+      - name: Mint short-lived Supabase control-plane identity
         shell: bash
         run: |
           set -euo pipefail
@@ -87,8 +47,56 @@ jobs:
           echo "::add-mask::$token"
           printf 'GITHUB_OIDC_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
 
+      - name: Register authoritative command
+        id: command
+        shell: bash
+        env:
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          COMMAND: ${{ steps.request.outputs.command }}
+          TARGET: ${{ steps.request.outputs.target }}
+          ROOM: ${{ steps.request.outputs.room }}
+          SHARD: ${{ steps.request.outputs.shard }}
+          SUPABASE_CONTROL_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
+        run: |
+          set -euo pipefail
+          payload="$(node -e 'console.log(JSON.stringify({operation:"register_command",requestId:process.env.REQUEST_ID,commandType:"snapshot",command:process.env.COMMAND,target:process.env.TARGET,room:process.env.ROOM,shard:process.env.SHARD}))')"
+          response="$(curl -fsSL -X POST "$SUPABASE_CONTROL_URL" \
+            -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$payload")"
+          status="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>process.stdout.write(JSON.parse(s).command.status))')"
+          echo "registered=true" >> "$GITHUB_OUTPUT"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" = "succeeded" ]; then
+            echo "Command already succeeded in Supabase; executor will converge without re-running."
+          fi
+
+      - name: Validate Infisical configuration
+        if: steps.command.outputs.status != 'succeeded'
+        shell: bash
+        env:
+          INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
+          INFISICAL_PROJECT_SLUG: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          INFISICAL_ENV_SLUG: ${{ vars.INFISICAL_ENV_SLUG }}
+        run: |
+          test -n "$INFISICAL_IDENTITY_ID" || (echo "Missing repository variable INFISICAL_IDENTITY_ID" && exit 1)
+          test -n "$INFISICAL_PROJECT_SLUG" || (echo "Missing repository variable INFISICAL_PROJECT_SLUG" && exit 1)
+          test -n "$INFISICAL_ENV_SLUG" || (echo "Missing repository variable INFISICAL_ENV_SLUG" && exit 1)
+
+      - name: Fetch collector secrets from Infisical
+        if: steps.command.outputs.status != 'succeeded'
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          secret-path: /deploy
+          recursive: false
+          include-imports: false
+
       - name: Publish sanitized snapshot
-        if: steps.dedupe.outputs.completed != 'true'
+        if: steps.command.outputs.status != 'succeeded'
         run: node scripts/publish-observability-snapshot.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
@@ -101,7 +109,7 @@ jobs:
           SUPABASE_INGEST_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
 
       - name: Upload snapshot fallback artifact
-        if: steps.dedupe.outputs.completed != 'true'
+        if: steps.command.outputs.status != 'succeeded'
         uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.request.outputs.artifact_name }}
@@ -112,8 +120,22 @@ jobs:
           retention-days: 7
           overwrite: true
 
+      - name: Mark failed command
+        if: failure() && steps.command.outputs.registered == 'true'
+        shell: bash
+        env:
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SUPABASE_CONTROL_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
+        run: |
+          set -euo pipefail
+          payload="$(node -e 'console.log(JSON.stringify({operation:"transition_command",requestId:process.env.REQUEST_ID,status:"failed",eventType:"failed",detail:{runId:process.env.GITHUB_RUN_ID}}))')"
+          curl -fsSL -X POST "$SUPABASE_CONTROL_URL" \
+            -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$payload" >/dev/null
+
       - name: Write compatibility receipt
-        if: steps.dedupe.outputs.completed != 'true'
+        if: success() && steps.command.outputs.status != 'succeeded'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,6 +145,6 @@ jobs:
           ARTIFACT: ${{ steps.request.outputs.artifact_name }}
         run: |
           set -euo pipefail
-          printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\nartifact: `%s`\ncontrol-plane: `supabase-oidc`\nrun: %s/%s/actions/runs/%s' \
+          printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\nartifact: `%s`\ncommand-ledger: `supabase`\nrun: %s/%s/actions/runs/%s' \
             "$MARKER" "$COMMAND" "$REQUEST_ID" "$ARTIFACT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/5/comments" -f body="$BODY" >/dev/null
