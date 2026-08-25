@@ -7,6 +7,7 @@ const room = process.env.SCREEPS_ROOM || "";
 const shard = process.env.SCREEPS_REQUESTED_SHARD || process.env.SCREEPS_SHARD || "shard3";
 const target = process.env.SCREEPS_TARGET || "ptr";
 const requestId = process.env.SCREEPS_REQUEST_ID || "unknown";
+const commandKey = process.env.SCREEPS_COMMAND_KEY || "";
 const requestCommand = process.env.SCREEPS_COMMAND || "/snapshot";
 const apiPrefix = target === "ptr" ? "/ptr" : "";
 const supabaseIngestUrl = process.env.SUPABASE_INGEST_URL || "";
@@ -183,7 +184,7 @@ if (supabaseIngestUrl && githubOidcToken) {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ requestId, snapshot }),
+    body: JSON.stringify({ requestId, commandKey: commandKey || undefined, snapshot }),
   });
   const text = await response.text();
   let result;
@@ -208,6 +209,7 @@ if (supabaseIngestUrl && githubOidcToken) {
 const artifact = {
   request: {
     id: requestId,
+    commandKey: commandKey || null,
     mode: "snapshot",
     command: requestCommand,
     room,
