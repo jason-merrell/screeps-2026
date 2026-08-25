@@ -14,7 +14,6 @@ export async function enqueueSnapshot(formData: FormData) {
   const commandKey = readRequired(formData, "commandKey");
   const target = readRequired(formData, "target");
   const shard = readRequired(formData, "shard");
-  const roomName = readRequired(formData, "roomName").toUpperCase();
 
   const supabase = await createClient();
   const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
@@ -27,8 +26,8 @@ export async function enqueueSnapshot(formData: FormData) {
     p_command_type: "snapshot",
     p_target: target,
     p_shard: shard,
-    p_room_name: roomName,
-    p_payload: {},
+    p_room_name: null,
+    p_payload: { roomResolution: "owned-colony" },
   });
 
   if (error || !data?.id) {
