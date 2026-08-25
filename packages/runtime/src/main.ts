@@ -11,6 +11,7 @@ import {
   type PlannerName,
   type PlannerRunTrace,
 } from "./observability/trace";
+import { reconcileFspmLifecycle } from "./planning/fspm";
 import { ensureRoomPlanOwnership } from "./planning/ownership";
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
@@ -60,6 +61,7 @@ export const loop = (): void => {
     runPlanner("economy", () => planEconomy(world)),
   ];
   const proposed = plannerRuns.flatMap((run) => run.intents);
+  reconcileFspmLifecycle(proposed);
 
   phaseStart = Game.cpu.getUsed();
   const arbitration = arbitrateDetailed(proposed);
