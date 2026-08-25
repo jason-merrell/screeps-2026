@@ -7,98 +7,215 @@
     <style>
       :root {
         color-scheme: dark;
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
-        background: #0a0d12;
-        color: #eef2f7;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #081018;
+        color: #eef6ff;
       }
-
+      * { box-sizing: border-box; }
       body {
         margin: 0;
         min-height: 100vh;
-        display: grid;
-        place-items: center;
         background:
-          radial-gradient(circle at 20% 10%, #16324f 0, transparent 35%),
-          radial-gradient(circle at 80% 90%, #1d3b2a 0, transparent 35%),
-          #0a0d12;
+          radial-gradient(circle at 10% 0%, rgba(38, 108, 170, 0.25), transparent 34%),
+          radial-gradient(circle at 90% 10%, rgba(27, 137, 84, 0.18), transparent 30%),
+          #081018;
       }
-
-      main {
-        width: min(720px, calc(100vw - 48px));
-        border: 1px solid #2c3440;
-        border-radius: 18px;
-        padding: 32px;
-        background: rgba(12, 17, 24, 0.9);
-        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-      }
-
-      h1 {
-        margin: 0 0 12px;
-        font-size: clamp(2rem, 6vw, 4rem);
-        letter-spacing: -0.05em;
-      }
-
-      p {
-        color: #aeb8c6;
-        line-height: 1.6;
-      }
-
-      code {
-        color: #9fe3b0;
-      }
-
-      .status {
-        margin-top: 24px;
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 12px;
-      }
-
-      .card {
-        padding: 16px;
-        border: 1px solid #2c3440;
-        border-radius: 12px;
-        background: #0d131b;
-      }
-
-      .label {
-        color: #7f8b99;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-      }
-
-      .value {
-        margin-top: 8px;
-        font-weight: 650;
-      }
+      main { width: min(1440px, calc(100vw - 32px)); margin: 0 auto; padding: 32px 0 64px; }
+      header { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 24px; }
+      h1 { margin: 4px 0 0; font-size: clamp(2.4rem, 7vw, 5.4rem); letter-spacing: -0.06em; line-height: 0.92; }
+      h2 { margin: 0 0 14px; font-size: 1rem; letter-spacing: 0.02em; }
+      p { color: #aebed0; line-height: 1.55; }
+      .eyebrow, .label { color: #718499; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.14em; }
+      .read-only { border: 1px solid #2e4458; border-radius: 999px; padding: 8px 12px; color: #9dc8ea; white-space: nowrap; }
+      .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
+      .panel { border: 1px solid #243547; border-radius: 16px; background: rgba(10, 19, 29, 0.88); padding: 18px; min-width: 0; }
+      .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; } .span-7 { grid-column: span 7; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
+      .metric { margin-top: 8px; font-size: clamp(1.5rem, 3vw, 2.5rem); font-weight: 720; letter-spacing: -0.04em; }
+      .subtle { color: #788b9f; font-size: 0.85rem; }
+      .status-line { display: flex; gap: 8px; align-items: center; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: #69dda0; box-shadow: 0 0 18px rgba(105, 221, 160, 0.7); }
+      .bars { display: grid; gap: 10px; margin-top: 10px; }
+      .bar-row { display: grid; grid-template-columns: 92px 1fr 64px; gap: 10px; align-items: center; font-size: 0.82rem; color: #94a8bb; }
+      .track { height: 8px; border-radius: 999px; background: #132334; overflow: hidden; }
+      .fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #3e8fc9, #63d59a); }
+      .history { display: grid; gap: 10px; max-height: 280px; overflow: auto; }
+      .history-item { padding: 12px; border: 1px solid #203244; border-radius: 10px; background: #0b1621; }
+      .history-item code { color: #91d9aa; }
+      .room-grid { aspect-ratio: 1; display: grid; grid-template-columns: repeat(50, 1fr); border: 1px solid #243547; background: #09131d; image-rendering: pixelated; }
+      .room-cell { border-right: 1px solid rgba(255,255,255,0.015); border-bottom: 1px solid rgba(255,255,255,0.015); }
+      .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; font-size: 0.78rem; color: #8fa4b7; }
+      .chip { padding: 4px 8px; border: 1px solid #2a3d4e; border-radius: 999px; }
+      .empty { color: #708398; font-style: italic; }
+      .footer-note { margin-top: 20px; color: #65798d; font-size: 0.8rem; }
+      @media (max-width: 900px) { .span-3, .span-4, .span-5, .span-7, .span-8 { grid-column: span 12; } header { align-items: start; flex-direction: column; } }
     </style>
   </head>
   <body>
     <main>
-      <div class="label">Remote experimentation control plane</div>
-      <h1>Screeps Lab</h1>
-      <p>
-        The shell is alive. Next: restore a warmed Vercel Sandbox, inject the current
-        <code>@screeps/runtime</code> bundle, run deterministic engine scenarios, and publish
-        forensic results back through the GitHub command ledger.
-      </p>
-      <section class="status">
-        <div class="card">
-          <div class="label">Orchestration</div>
-          <div class="value">Turborepo</div>
+      <header>
+        <div>
+          <div class="eyebrow">Remote experimentation control plane</div>
+          <h1>Screeps Lab</h1>
         </div>
-        <div class="card">
-          <div class="label">Execution</div>
-          <div class="value">Vercel Sandbox next</div>
-        </div>
-        <div class="card">
+        <div class="read-only">Read-only observability</div>
+      </header>
+
+      <section class="grid">
+        <article class="panel span-3">
+          <div class="label">Colony</div>
+          <div class="metric" id="room">W39S23</div>
+          <div class="subtle" id="shard">shard3</div>
+        </article>
+        <article class="panel span-3">
+          <div class="label">Average CPU</div>
+          <div class="metric" id="avg-cpu">1.127</div>
+          <div class="subtle">latest published benchmark</div>
+        </article>
+        <article class="panel span-3">
+          <div class="label">Economy planner</div>
+          <div class="metric" id="economy-cpu">0.165</div>
+          <div class="subtle">CPU / tick</div>
+        </article>
+        <article class="panel span-3">
           <div class="label">Ledger</div>
-          <div class="value">GitHub issue #5</div>
-        </div>
+          <div class="metric" id="experiment-count">…</div>
+          <div class="subtle">completed bootstrap experiments</div>
+        </article>
+
+        <article class="panel span-7">
+          <h2>PPAE tick profile</h2>
+          <div class="status-line"><span class="dot"></span><span class="subtle" id="source-status">loading GitHub issue #5</span></div>
+          <div class="bars" id="cpu-bars"></div>
+        </article>
+
+        <article class="panel span-5">
+          <h2>Movement</h2>
+          <p id="movement-copy">Native Screeps pathing owns routing, with traffic-aware cached movement, congestion detection, and bounded swap/repath fallback.</p>
+          <div class="status-line"><span class="dot"></span><span class="subtle">next optimization target: burst pathfinding cost</span></div>
+        </article>
+
+        <article class="panel span-5">
+          <h2>Room plan</h2>
+          <div class="room-grid" id="room-grid" aria-label="50 by 50 Screeps room grid"></div>
+          <div class="legend"><span class="chip">plan v2</span><span class="chip">RCL3 horizon</span><span class="chip">geometry not published to public ledger</span></div>
+        </article>
+
+        <article class="panel span-7">
+          <h2>Experiment history</h2>
+          <div class="history" id="history"><div class="empty">Loading completed experiment receipts…</div></div>
+        </article>
       </section>
+
+      <div class="footer-note">Data source: public, immutable GitHub issue-command ledger. No Screeps token or mutation authority is shipped to the browser.</div>
     </main>
+
+    <script type="module">
+      const ISSUE_COMMENTS = "https://api.github.com/repos/jason-merrell/screeps-2026/issues/5/comments?per_page=100";
+      const phases = ["perception", "economy", "arbitration", "execution", "observability"];
+      const fallback = { perception: 0.036, economy: 0.165, arbitration: 0.018, execution: 0.76, observability: 0.033 };
+
+      const makeGrid = () => {
+        const grid = document.querySelector("#room-grid");
+        for (let i = 0; i < 2500; i += 1) {
+          const cell = document.createElement("span");
+          cell.className = "room-cell";
+          grid.append(cell);
+        }
+      };
+
+      const extractNumber = (body, patterns) => {
+        for (const pattern of patterns) {
+          const match = body.match(pattern);
+          if (match) return Number(match[1]);
+        }
+        return null;
+      };
+
+      const renderBars = (metrics) => {
+        const root = document.querySelector("#cpu-bars");
+        const max = Math.max(...Object.values(metrics), 1);
+        root.replaceChildren();
+        for (const phase of phases) {
+          const row = document.createElement("div");
+          row.className = "bar-row";
+          const label = document.createElement("span");
+          label.textContent = phase;
+          const track = document.createElement("div");
+          track.className = "track";
+          const fill = document.createElement("div");
+          fill.className = "fill";
+          fill.style.width = `${Math.max(2, (metrics[phase] / max) * 100)}%`;
+          track.append(fill);
+          const value = document.createElement("span");
+          value.textContent = metrics[phase].toFixed(3);
+          row.append(label, track, value);
+          root.append(row);
+        }
+      };
+
+      const renderHistory = (comments) => {
+        const receipts = comments
+          .filter((comment) => comment.body.includes("✅ completed `/experiment name=bootstrap-rcl3"))
+          .reverse();
+        document.querySelector("#experiment-count").textContent = String(receipts.length);
+        const root = document.querySelector("#history");
+        root.replaceChildren();
+        if (!receipts.length) {
+          root.innerHTML = '<div class="empty">No completed experiment receipts found.</div>';
+          return;
+        }
+        for (const receipt of receipts.slice(0, 12)) {
+          const request = receipt.body.match(/request: `(\d+)`/)?.[1] ?? "unknown";
+          const run = receipt.body.match(/run: (https:\/\/[^\s]+)/)?.[1];
+          const item = document.createElement("div");
+          item.className = "history-item";
+          const title = document.createElement("div");
+          title.innerHTML = `<code>${request}</code> · bootstrap-rcl3`;
+          const detail = document.createElement("div");
+          detail.className = "subtle";
+          detail.textContent = run ? `workflow ${run.split("/").at(-1)}` : "completed";
+          item.append(title, detail);
+          root.append(item);
+        }
+      };
+
+      const hydrate = async () => {
+        renderBars(fallback);
+        try {
+          const response = await fetch(ISSUE_COMMENTS, { headers: { Accept: "application/vnd.github+json" } });
+          if (!response.ok) throw new Error(`GitHub ${response.status}`);
+          const comments = await response.json();
+          renderHistory(comments);
+          const human = comments.filter((comment) => comment.user?.login === "jason-merrell").reverse();
+          const benchmark = human.find((comment) => comment.body.includes("Spatial-index optimization benchmark"));
+          const ppae = human.find((comment) => comment.body.includes("PPAE observability transport proven on PTR"));
+          const source = benchmark?.body ?? ppae?.body ?? "";
+          const room = source.match(/Room: `([^`]+)` \/ `([^`]+)`/);
+          if (room) {
+            document.querySelector("#room").textContent = room[1];
+            document.querySelector("#shard").textContent = room[2];
+          }
+          const metrics = {
+            perception: extractNumber(source, [/perception \|?\s*`?([0-9.]+)/i, /average perception: `([0-9.]+)`/i]) ?? fallback.perception,
+            economy: extractNumber(source, [/economy planner \|?\s*`?([0-9.]+)/i, /economy `([0-9.]+)`/i]) ?? fallback.economy,
+            arbitration: extractNumber(source, [/arbitration \|?\s*`?([0-9.]+)/i, /average arbitration: `([0-9.]+)`/i]) ?? fallback.arbitration,
+            execution: extractNumber(source, [/execution \|?\s*`?([0-9.]+)/i, /average execution: `([0-9.]+)`/i]) ?? fallback.execution,
+            observability: extractNumber(source, [/observability \|?\s*`?([0-9.]+)/i, /average observability overhead: `([0-9.]+)`/i]) ?? fallback.observability,
+          };
+          const total = extractNumber(source, [/average total CPU \|?\s*`?([0-9.]+)/i, /average total CPU: `([0-9.]+)`/i]);
+          if (total !== null) document.querySelector("#avg-cpu").textContent = total.toFixed(3);
+          document.querySelector("#economy-cpu").textContent = metrics.economy.toFixed(3);
+          document.querySelector("#source-status").textContent = "live from GitHub issue #5";
+          renderBars(metrics);
+        } catch (error) {
+          document.querySelector("#source-status").textContent = `ledger unavailable · showing bundled baseline (${error.message})`;
+          document.querySelector("#history").innerHTML = '<div class="empty">Ledger unavailable. Dashboard remains read-only with its last known baseline.</div>';
+          document.querySelector("#experiment-count").textContent = "—";
+        }
+      };
+
+      makeGrid();
+      hydrate();
+    </script>
   </body>
 </html>
