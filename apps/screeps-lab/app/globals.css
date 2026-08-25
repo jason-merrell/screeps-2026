@@ -16,28 +16,69 @@
 }
 
 :root {
-  --background: oklch(0.16 0.025 245);
-  --foreground: oklch(0.96 0.015 240);
-  --card: oklch(0.205 0.026 245 / 0.9);
-  --card-foreground: oklch(0.96 0.015 240);
-  --primary: oklch(0.76 0.13 155);
-  --primary-foreground: oklch(0.18 0.025 245);
-  --secondary: oklch(0.28 0.03 245);
-  --secondary-foreground: oklch(0.9 0.02 240);
-  --muted: oklch(0.26 0.025 245);
-  --muted-foreground: oklch(0.68 0.035 240);
-  --border: oklch(0.34 0.035 240);
+  --background: oklch(0.13 0.018 238);
+  --foreground: oklch(0.95 0.018 88);
+  --card: oklch(0.17 0.021 238 / 0.86);
+  --card-foreground: oklch(0.95 0.018 88);
+  --primary: oklch(0.79 0.15 92);
+  --primary-foreground: oklch(0.17 0.025 72);
+  --secondary: oklch(0.23 0.025 238);
+  --secondary-foreground: oklch(0.92 0.02 88);
+  --muted: oklch(0.22 0.018 238);
+  --muted-foreground: oklch(0.66 0.028 230);
+  --border: oklch(0.29 0.026 238);
 }
 
 * { border-color: var(--border); }
-html { color-scheme: dark; }
+html { color-scheme: dark; background: var(--background); }
 body {
   min-height: 100vh;
   background:
-    radial-gradient(circle at 10% 0%, rgb(38 108 170 / 25%), transparent 34%),
-    radial-gradient(circle at 90% 10%, rgb(27 137 84 / 18%), transparent 30%),
+    linear-gradient(rgb(255 255 255 / 1.4%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 1.4%) 1px, transparent 1px),
+    radial-gradient(circle at 12% -8%, rgb(235 178 67 / 16%), transparent 30%),
+    radial-gradient(circle at 92% 4%, rgb(47 116 137 / 14%), transparent 28%),
     var(--background);
+  background-size: 32px 32px, 32px 32px, auto, auto, auto;
   color: var(--foreground);
+}
+
+::selection { background: rgb(235 178 67 / 32%); color: white; }
+
+.lab-topbar { box-shadow: 0 1px 0 rgb(255 255 255 / 2%), 0 12px 40px rgb(0 0 0 / 12%); }
+.lab-mark {
+  position: relative;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgb(235 178 67 / 38%);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgb(235 178 67 / 16%), rgb(255 255 255 / 2%));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 3%), 0 0 28px rgb(235 178 67 / 8%);
+}
+.lab-mark span { position: absolute; display: block; border-radius: 999px; background: var(--primary); }
+.lab-mark span:nth-child(1) { width: 14px; height: 3px; transform: translateY(-6px); }
+.lab-mark span:nth-child(2) { width: 20px; height: 3px; }
+.lab-mark span:nth-child(3) { width: 9px; height: 3px; transform: translateY(6px); }
+
+.lab-panel {
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: linear-gradient(180deg, rgb(255 255 255 / 3.5%), rgb(255 255 255 / 1.5%));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%), 0 18px 60px rgb(0 0 0 / 18%);
+}
+.lab-kicker { color: oklch(0.8 0.14 92); }
+.lab-stat-value { font-variant-numeric: tabular-nums; }
+
+.login-grid {
+  background:
+    radial-gradient(circle at 20% 20%, rgb(235 178 67 / 11%), transparent 26%),
+    linear-gradient(135deg, rgb(255 255 255 / 2.5%), transparent 55%);
+}
+.login-orbit {
+  position: absolute;
+  border: 1px solid rgb(235 178 67 / 12%);
+  border-radius: 999px;
 }
 
 .room-grid {
@@ -45,18 +86,20 @@ body {
   display: grid;
   grid-template-columns: repeat(50, minmax(0, 1fr));
   overflow: hidden;
-  border: 1px solid var(--border);
-  background: #09131d;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 12px;
+  background: #081016;
+  box-shadow: inset 0 0 30px rgb(0 0 0 / 28%);
   image-rendering: pixelated;
 }
-.room-cell { position: relative; border-right: 1px solid rgb(255 255 255 / 1.5%); border-bottom: 1px solid rgb(255 255 255 / 1.5%); }
-.planned-road { background: #28465d; }
-.planned-extension { background: #2b8b6b; }
-.planned-tower { background: #d29a45; }
-.planned-container { background: #8d7246; }
-.anchor-spawn { background: #f6d264; box-shadow: inset 0 0 0 1px #fff1b6; }
-.anchor-hub { background: #65a8f6; }
-.anchor-source { background: #f0c557; border-radius: 999px; }
-.anchor-controller { background: #a57bea; border-radius: 999px; }
+.room-cell { position: relative; border-right: 1px solid rgb(255 255 255 / 1.4%); border-bottom: 1px solid rgb(255 255 255 / 1.4%); }
+.planned-road { background: #314858; }
+.planned-extension { background: #28735d; }
+.planned-tower { background: #b9823f; }
+.planned-container { background: #755f42; }
+.anchor-spawn { background: #e7bd55; box-shadow: inset 0 0 0 1px #fff0b5; }
+.anchor-hub { background: #4c89b5; }
+.anchor-source { background: #dbb64f; border-radius: 999px; }
+.anchor-controller { background: #8d72bc; border-radius: 999px; }
 .actual-structure::after { content: ""; position: absolute; inset: 18%; border: 1px solid rgb(255 255 255 / 85%); }
-.construction::after { content: ""; position: absolute; inset: 10%; border: 1px dashed #ff9f72; }
+.construction::after { content: ""; position: absolute; inset: 10%; border: 1px dashed #df8a66; }
