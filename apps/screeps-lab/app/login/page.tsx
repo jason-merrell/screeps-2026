@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { sendMagicLink } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +29,7 @@ export default async function LoginPage({
           ) : (
             <form action={sendMagicLink} className="grid gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
+                <label htmlFor="email" className="text-sm font-medium leading-none">Email</label>
                 <Input id="email" name="email" type="email" autoComplete="email" required />
               </div>
               {params.error ? (
