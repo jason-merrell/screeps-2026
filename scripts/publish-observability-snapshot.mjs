@@ -143,13 +143,25 @@ const sanitizeIntentTrace = (value) => {
   };
 };
 
+const sanitizeQuality = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const score = finiteNumber(value.score);
+  const state = ["healthy", "watch", "degraded"].includes(value.state) ? value.state : null;
+  const evidence = Array.isArray(value.evidence)
+    ? value.evidence.slice(0, 8).map((item) => boundedString(item, 160)).filter(Boolean)
+    : [];
+  return score !== null && score >= 0 && score <= 100 && state ? { score, state, evidence } : null;
+};
+
 const sanitizeFspmRecord = (value) => {
   if (!value || typeof value !== "object") return null;
   const id = boundedString(value.id);
   const status = ["active", "completed", "cancelled"].includes(value.status)
     ? value.status
     : null;
-  return id && status ? { id, status } : null;
+  if (!id || !status) return null;
+  const quality = sanitizeQuality(value.quality);
+  return { id, status, ...(quality ? { quality } : {}) };
 };
 
 const sanitizeFspm = (value) => {
