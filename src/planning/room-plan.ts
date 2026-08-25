@@ -1,4 +1,4 @@
-export const ROOM_PLAN_VERSION = 1;
+export const ROOM_PLAN_VERSION = 2;
 export const ROOM_PLAN_HORIZON_RCL = 3;
 
 export interface PlannedPoint {
