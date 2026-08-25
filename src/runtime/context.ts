@@ -1,3 +1,5 @@
+import type { TickSpatialIndex } from "../world/spatial-index";
+
 export type CpuMode = "critical" | "constrained" | "normal" | "surplus";
 
 export interface TickBudget {
@@ -12,6 +14,7 @@ export interface WorldSnapshot {
   rooms: Room[];
   creeps: Creep[];
   spawns: StructureSpawn[];
+  spatial: TickSpatialIndex;
   budget: TickBudget;
 }
 
