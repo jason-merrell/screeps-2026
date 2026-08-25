@@ -1,3 +1,5 @@
+const ENERGY_PER_CARRY_PART = 50;
+
 export function shouldActivateSourceBuffers(
   controllerLevel: number,
   workforceCount: number,
@@ -9,7 +11,7 @@ export function shouldActivateSourceBuffers(
 export function requiredCarryParts(pathLength: number, sourceEnergyPerTick = 10): number {
   if (pathLength <= 0 || sourceEnergyPerTick <= 0) return 0;
   const roundTripEnergy = pathLength * 2 * sourceEnergyPerTick;
-  return Math.ceil(roundTripEnergy / CARRY_CAPACITY);
+  return Math.ceil(roundTripEnergy / ENERGY_PER_CARRY_PART);
 }
 
 export function logisticsCoverage(requiredCarry: number, availableCarry: number): number {
