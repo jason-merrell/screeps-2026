@@ -66,7 +66,8 @@ Deno.serve(async (req: Request) => {
         p_lease_seconds: 600,
       });
       if (error) throw error;
-      return json({ ok: true, command: data ?? null });
+      const command = Array.isArray(data) ? (data[0] ?? null) : (data ?? null);
+      return json({ ok: true, command });
     }
 
     if (operation === "register_command") {
