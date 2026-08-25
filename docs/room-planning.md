@@ -11,9 +11,9 @@ Room construction follows a durable desired-state model:
 - **Economy/workforce systems** decide how energy and worker effort are allocated to active construction.
 - **Execution** remains the only layer that mutates `Game.*`.
 
-## Plan v1 horizon
+## Current plan horizon
 
-Room plan version 1 intentionally plans through RCL3 rather than pretending to solve the complete RCL8 layout up front.
+Room plan version 2 intentionally plans through RCL3 rather than pretending to solve the complete RCL8 layout up front. Version 2 also normalizes persisted geometry so temporary candidate-scoring metadata never becomes part of the durable plan schema.
 
 It persists:
 
@@ -36,7 +36,7 @@ Every planned structure or road has an activation mode:
 - `automatic`: bootstrap infrastructure whose immediate value is already justified;
 - `demand`: reserved infrastructure that requires another system to demonstrate economic or defensive demand before construction.
 
-Plan v1 automatically builds extension capacity and the first RCL3 tower. Source/controller containers, strategic roads, and protective ramparts are demand-gated.
+The current plan automatically builds extension capacity and the first RCL3 tower. Source/controller containers, strategic roads, and protective ramparts are demand-gated.
 
 This prevents early construction from spending thousands of energy on infrastructure that the current generalist economy cannot yet exploit.
 
@@ -48,7 +48,7 @@ The graph is persisted, but its tiles are demand-gated. A later traffic/ROI syst
 
 ## Defense
 
-Plan v1 records the economically valuable footprint but deliberately does not invent a static rampart perimeter. The defense strategy is marked `pending-mincut` so a later terrain graph can derive a compact perimeter around protected assets using flood-fill/min-cut techniques.
+The current plan records the economically valuable footprint but deliberately does not invent a static rampart perimeter. The defense strategy is marked `pending-mincut` so a later terrain graph can derive a compact perimeter around protected assets using flood-fill/min-cut techniques.
 
 ## Debug commands
 
