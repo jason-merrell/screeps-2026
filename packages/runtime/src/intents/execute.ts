@@ -98,7 +98,7 @@ export function execute(intents: Intent[]): ExecutionResult {
       continue;
     }
 
-    let result = ERR_INVALID_TARGET;
+    let result: number = ERR_INVALID_TARGET;
     let target: RoomObject | null = null;
     let range = 1;
 
