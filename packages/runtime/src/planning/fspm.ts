@@ -2,6 +2,14 @@ import type { Intent } from "../intents/types";
 
 export type FspmDomain = "economy" | "spawning" | "construction" | "defense";
 export type FspmStatus = "active" | "completed" | "cancelled";
+export type FspmQualityState = "healthy" | "watch" | "degraded";
+
+export interface FspmQuality {
+  score: number;
+  state: FspmQualityState;
+  measuredAt: number;
+  evidence: string[];
+}
 
 interface FspmRecordBase {
   id: string;
@@ -9,6 +17,7 @@ interface FspmRecordBase {
   status: FspmStatus;
   completionCriterion: string;
   statusReason?: string;
+  quality?: FspmQuality;
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
@@ -209,11 +218,12 @@ export function reconcileFspmLifecycle(intents: Intent[]): void {
 
       const tasks = Object.values(portfolio.tasks).filter((task) => task.domain === domain);
       const complete = tasks.length > 0 && tasks.every((task) => task.status === "completed");
+      const activeTasks = tasks.filter((task) => task.status === "active").length;
       const reason = complete
         ? `${tasks.length} materialized task${tasks.length === 1 ? "" : "s"} completed`
         : tasks.length === 0
           ? "no materialized tasks yet"
-          : `${tasks.filter((task) => task.status === "active").length} active task${tasks.filter((task) => task.status === "active").length === 1 ? "" : "s"}`;
+          : `${activeTasks} active task${activeTasks === 1 ? "" : "s"}`;
 
       transitionStatus(deliverable, complete ? "completed" : "active", reason);
       transitionStatus(requirement, complete ? "completed" : "active", reason);
