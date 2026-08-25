@@ -30,6 +30,8 @@ interface CompactRejectionTrace {
 
 interface RoomPlanTraceSummary {
   roomName: string;
+  planId: string | null;
+  deliverableId: string | null;
   version: number;
   horizonRcl: number;
   generatedAt: number;
@@ -40,6 +42,14 @@ interface RoomPlanTraceSummary {
   roadTiles: number;
   roadEdges: number;
   invalidated: boolean;
+}
+
+interface FspmTraceSummary {
+  roomName: string;
+  contractId: string;
+  requirementIds: string[];
+  deliverableIds: string[];
+  taskIds: string[];
 }
 
 export interface TickObservabilityTrace {
@@ -59,6 +69,9 @@ export interface TickObservabilityTrace {
   };
   settlement: {
     plans: RoomPlanTraceSummary[];
+  };
+  fspm: {
+    colonies: FspmTraceSummary[];
   };
   spatial: SpatialIndexMetrics;
   movement: MovementMetrics;
@@ -136,6 +149,8 @@ function roomPlanSummaries(): RoomPlanTraceSummary[] {
       return [
         {
           roomName: plan.roomName,
+          planId: plan.planId ?? null,
+          deliverableId: plan.deliverableId ?? null,
           version: plan.version,
           horizonRcl: plan.horizonRcl,
           generatedAt: plan.generatedAt,
@@ -150,6 +165,28 @@ function roomPlanSummaries(): RoomPlanTraceSummary[] {
           roadTiles: plan.roads.length,
           roadEdges: plan.roadGraph.edges.length,
           invalidated: plan.invalidatedAt !== undefined,
+        },
+      ];
+    })
+    .sort((a, b) => a.roomName.localeCompare(b.roomName));
+}
+
+function fspmSummaries(): FspmTraceSummary[] {
+  return Object.values(Memory.colonies)
+    .flatMap((colony) => {
+      const portfolio = colony.fspm;
+      if (!portfolio) return [];
+      return [
+        {
+          roomName: colony.roomName,
+          contractId: portfolio.contract.id,
+          requirementIds: Object.values(portfolio.requirements)
+            .flatMap((record) => (record ? [record.id] : []))
+            .sort(),
+          deliverableIds: Object.values(portfolio.deliverables)
+            .flatMap((record) => (record ? [record.id] : []))
+            .sort(),
+          taskIds: Object.keys(portfolio.tasks).sort(),
         },
       ];
     })
@@ -194,6 +231,9 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
     },
     settlement: {
       plans: roomPlanSummaries(),
+    },
+    fspm: {
+      colonies: fspmSummaries(),
     },
     spatial: { ...input.spatial },
     movement: { ...input.movement },
