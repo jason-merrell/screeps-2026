@@ -1,3 +1,4 @@
+import { installRoomPlanDebug } from "./debug/room-plan";
 import { installSpawnAdvisor } from "./debug/spawn-advisor";
 import { arbitrateDetailed, conflictKey } from "./intents/arbitrate";
 import type { Intent } from "./intents/types";
@@ -12,10 +13,12 @@ import {
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
+import { ensureSettlementPlans } from "./systems/settlement/plan";
 import { planSpawning } from "./systems/spawning/plan";
 import { perceive } from "./world/perceive";
 
 installSpawnAdvisor();
+installRoomPlanDebug();
 
 export const loop = (): void => {
   const tickStartCpu = Game.cpu.getUsed();
@@ -28,6 +31,10 @@ export const loop = (): void => {
   phaseStart = Game.cpu.getUsed();
   const world = perceive();
   const perceptionCpu = Game.cpu.getUsed() - phaseStart;
+
+  phaseStart = Game.cpu.getUsed();
+  ensureSettlementPlans(world);
+  const settlementCpu = Game.cpu.getUsed() - phaseStart;
 
   const plannerByIntent = new Map<Intent, PlannerName>();
   const runPlanner = (name: PlannerName, planner: () => Intent[]): PlannerRunTrace => {
@@ -58,6 +65,7 @@ export const loop = (): void => {
     tickStartCpu,
     memoryCpu,
     perceptionCpu,
+    settlementCpu,
     plannerRuns,
     arbitrationCpu,
     executionCpu,
