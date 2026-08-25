@@ -1,5 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "",
-  "buildCommand": "cd apps/screeps-lab && node scripts/build.mjs && cd ../.. && rm -rf .vercel/output && mkdir -p .vercel && cp -R apps/screeps-lab/.vercel/output .vercel/output"
-}
