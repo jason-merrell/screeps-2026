@@ -43,7 +43,7 @@ export interface ColonyFspmPortfolio {
 const titleCase = (value: string): string =>
   value
     .split("-")
-    .map((part) => (part.length > 0 ? `${part[0]?.toUpperCase()}${part.slice(1)}` : part))
+    .map((part) => (part.length > 0 ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part))
     .join(" ");
 
 export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
