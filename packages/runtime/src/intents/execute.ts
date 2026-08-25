@@ -10,6 +10,7 @@ export interface ActivityExecutionObservation {
   result: number;
   movementRequired: boolean;
   evidence: string;
+  outcome?: { metric: string; actual: number; target: number; unit: string };
 }
 
 export interface ExecutionResult {
@@ -36,11 +37,13 @@ function observe(
   intent: CreepIntent,
   result: number,
   movementRequired: boolean,
+  outcome?: ActivityExecutionObservation["outcome"],
 ): void {
   activities.push({
     intent,
     result,
     movementRequired,
+    ...(result === OK && outcome ? { outcome } : {}),
     evidence:
       result === OK
         ? "task action executed at target"
@@ -48,6 +51,10 @@ function observe(
           ? "task action required travel toward target"
           : `task action returned Screeps code ${result}`,
   });
+}
+
+function energyOutcome(metric: string, actual: number, target: number): ActivityExecutionObservation["outcome"] {
+  return { metric, actual: Math.max(0, actual), target: Math.max(1, target), unit: "energy" };
 }
 
 export function execute(intents: Intent[]): ExecutionResult {
@@ -101,21 +108,35 @@ export function execute(intents: Intent[]): ExecutionResult {
     let result: number = ERR_INVALID_TARGET;
     let target: RoomObject | null = null;
     let range = 1;
+    let outcome: ActivityExecutionObservation["outcome"];
 
     switch (intent.type) {
       case "harvest": {
         target = Game.getObjectById(intent.sourceId);
-        if (target) result = creep.harvest(target as Source);
+        if (target) {
+          const source = target as Source;
+          const capacity = creep.getActiveBodyparts(WORK) * HARVEST_POWER;
+          outcome = energyOutcome("energy harvested", Math.min(capacity, creep.store.getFreeCapacity(RESOURCE_ENERGY), source.energy), capacity);
+          result = creep.harvest(source);
+        }
         break;
       }
       case "withdraw": {
         target = Game.getObjectById(intent.targetId);
-        if (target) result = creep.withdraw(target as StructureContainer, intent.resource);
+        if (target) {
+          const container = target as StructureContainer;
+          outcome = energyOutcome("energy collected", Math.min(creep.store.getFreeCapacity(intent.resource) ?? 0, container.store.getUsedCapacity(intent.resource)), creep.store.getCapacity(intent.resource) ?? 0);
+          result = creep.withdraw(container, intent.resource);
+        }
         break;
       }
       case "transfer": {
         target = Game.getObjectById(intent.targetId);
-        if (target) result = creep.transfer(target as AnyStoreStructure, intent.resource);
+        if (target) {
+          const storeTarget = target as AnyStoreStructure;
+          outcome = energyOutcome("energy delivered", Math.min(creep.store.getUsedCapacity(intent.resource), storeTarget.store.getFreeCapacity(intent.resource) ?? 0), creep.store.getCapacity(intent.resource) ?? 0);
+          result = creep.transfer(storeTarget, intent.resource);
+        }
         break;
       }
       case "build": {
@@ -149,7 +170,7 @@ export function execute(intents: Intent[]): ExecutionResult {
           intent.reason,
         )
       : false;
-    observe(activities, intent, result, movementRequired);
+    observe(activities, intent, result, movementRequired, outcome);
   }
 
   return {

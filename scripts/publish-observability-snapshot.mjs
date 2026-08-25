@@ -225,9 +225,17 @@ const sanitizeActivityKpi = (value) => {
     : null;
   const evidence = boundedString(value.evidence, 240);
   const numeric = value.value === null ? null : finiteNumber(value.value);
+  const outcome = value.outcome && typeof value.outcome === "object" ? {
+    metric: boundedString(value.outcome.metric, 96),
+    actual: finiteNumber(value.outcome.actual),
+    target: finiteNumber(value.outcome.target),
+    unit: boundedString(value.outcome.unit, 32),
+    utilization: finiteNumber(value.outcome.utilization),
+  } : null;
   if (tick === null || !activityId || !activityType || !actor || !rating || !evidence) return null;
   if (numeric !== null && (numeric < 0 || numeric > 1.5)) return null;
-  return { tick, activityId, activityType, actor, rating, value: numeric, evidence };
+  const sanitizedOutcome = outcome?.metric && outcome.actual !== null && outcome.actual >= 0 && outcome.target !== null && outcome.target > 0 && outcome.unit && outcome.utilization !== null && outcome.utilization >= 0 && outcome.utilization <= 1 ? outcome : null;
+  return { tick, activityId, activityType, actor, rating, value: numeric, evidence, ...(sanitizedOutcome ? { outcome: sanitizedOutcome } : {}) };
 };
 
 const sanitizeFspm = (value) => {

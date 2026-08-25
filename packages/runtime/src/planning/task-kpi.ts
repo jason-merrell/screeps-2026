@@ -22,9 +22,9 @@ const ratingValue = (rating: FspmKpiRating): number | null => {
 };
 
 export function classifyActivityObservation(
-  observation: Pick<ActivityExecutionObservation, "result" | "movementRequired">,
+  observation: Pick<ActivityExecutionObservation, "result" | "movementRequired" | "outcome">,
 ): FspmKpiRating {
-  if (observation.result === OK) return "satisfactory";
+  if (observation.result === OK) return observation.outcome && observation.outcome.actual / observation.outcome.target >= 0.9 ? "exceptional" : "satisfactory";
   if (observation.result === ERR_NOT_IN_RANGE && observation.movementRequired) return "in_progress";
   return "unsatisfactory";
 }
@@ -73,6 +73,7 @@ export function reconcileTaskKpis(observations: ActivityExecutionObservation[]):
       rating,
       value: ratingValue(rating),
       evidence: observation.evidence,
+      ...(observation.outcome ? { outcome: { ...observation.outcome, utilization: Math.round((observation.outcome.actual / observation.outcome.target) * 1000) / 1000 } } : {}),
     };
 
     history.push(sample);
