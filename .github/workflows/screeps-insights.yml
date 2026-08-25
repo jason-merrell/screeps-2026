@@ -220,7 +220,7 @@ jobs:
           pnpm --filter @screeps/runtime typecheck
           pnpm --filter @screeps/runtime test
           pnpm --filter @screeps/scenario lint
-          npm install --prefix scenario --no-audit --no-fund
+          (cd scenario && npm install --workspaces=false --no-audit --no-fund)
           node scripts/run-headless-benchmark.mjs
         env:
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
