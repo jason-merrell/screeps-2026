@@ -50,10 +50,11 @@ export function recordTraffic(roomName: string, x: number, y: number, tick: numb
   const keys = Object.keys(traffic.tiles);
   if (keys.length <= MAX_TRACKED_TILES) return;
 
-  keys
+  for (const staleKey of keys
     .sort((a, b) => (traffic.tiles[b] ?? 0) - (traffic.tiles[a] ?? 0) || a.localeCompare(b))
-    .slice(MAX_TRACKED_TILES)
-    .forEach((staleKey) => delete traffic.tiles[staleKey]);
+    .slice(MAX_TRACKED_TILES)) {
+    delete traffic.tiles[staleKey];
+  }
 }
 
 export function hotTrafficTiles(roomName: string, minimumScore = 20): TrafficTile[] {
