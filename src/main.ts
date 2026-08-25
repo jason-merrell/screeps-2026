@@ -1,4 +1,5 @@
 import { installRoomPlanDebug } from "./debug/room-plan";
+import { installSimTrafficDebug, runSimTrafficHarness } from "./debug/sim-traffic";
 import { installSpawnAdvisor } from "./debug/spawn-advisor";
 import { arbitrateDetailed, conflictKey } from "./intents/arbitrate";
 import type { Intent } from "./intents/types";
@@ -20,8 +21,11 @@ import { perceive } from "./world/perceive";
 
 installSpawnAdvisor();
 installRoomPlanDebug();
+installSimTrafficDebug();
 
 export const loop = (): void => {
+  if (runSimTrafficHarness()) return;
+
   const tickStartCpu = Game.cpu.getUsed();
   activateMemorySegments();
 
