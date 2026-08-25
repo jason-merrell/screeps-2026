@@ -54,13 +54,13 @@ function formatDuration(seconds: number | null) {
 }
 
 function formatTimestamp(value: string) {
-  return new Date(value).toLocaleTimeString("en-US", {
+  return `${new Date(value).toLocaleTimeString("en-US", {
     timeZone: "UTC",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-  }) + " UTC";
+  })} UTC`;
 }
 
 function statusClasses(status: string) {
@@ -262,7 +262,7 @@ export default async function OperatorPage({ searchParams }: OperatorPageProps) 
                           <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-medium uppercase tracking-[0.12em] ${statusClasses(command.status)}`}>{command.status}</span>
                           <span className="font-medium">{command.command_type}</span>
                           <span className="font-mono text-xs text-muted-foreground">{command.target} / {command.shard ?? "—"} / {command.room_name ?? "—"}</span>
-                          {ACTIVE_STATUSES.has(command.status) ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" aria-label="Command active" /> : null}
+                          {ACTIVE_STATUSES.has(command.status) ? <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" /> : null}
                         </div>
                         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
                           <span>Queued {formatTimestamp(command.requested_at)}</span>
