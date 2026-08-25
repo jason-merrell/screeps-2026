@@ -17,7 +17,9 @@ const json = (body: unknown, status = 200): Response =>
 const validRoom = (value: unknown): value is string =>
   typeof value === "string" && /^[WE]\d+[NS]\d+$/.test(value);
 const validShard = (value: unknown): value is string =>
-  typeof value === "string" && /^shard\d+$/.test(value);
+  typeof value === "string" && (value === "headless" || /^shard\d+$/.test(value));
+const validTarget = (value: unknown): value is "ptr" | "headless" =>
+  value === "ptr" || value === "headless";
 const validSampleKey = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= 240 && /^[A-Za-z0-9:._-]+$/.test(value);
 const validRuntimeSha = (value: unknown): value is string | null =>
@@ -64,7 +66,7 @@ Deno.serve(async (req: Request) => {
     ) {
       return json({ error: "invalid_benchmark_schema" }, 400);
     }
-    if (benchmark.target !== "ptr") return json({ error: "invalid_target" }, 400);
+    if (!validTarget(benchmark.target)) return json({ error: "invalid_target" }, 400);
     if (!validShard(benchmark.shard)) return json({ error: "invalid_shard" }, 400);
     if (!validRoom(benchmark.room)) return json({ error: "invalid_room" }, 400);
     if (!validSampleKey(benchmark.sampleKey)) return json({ error: "invalid_sample_key" }, 400);
@@ -128,7 +130,7 @@ Deno.serve(async (req: Request) => {
           runtime_sha: benchmark.runtimeSha ?? null,
           captured_at: completedAt,
           metrics: benchmark.metrics,
-          source: "ptr-experiment",
+          source: benchmark.target === "headless" ? "headless-comparison" : "ptr-experiment",
           source_ref: benchmark.sourceRef ?? benchmark.sampleKey,
         },
         { onConflict: "sample_key" },

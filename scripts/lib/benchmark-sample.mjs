@@ -1,10 +1,15 @@
+const requestIdOf = (raw) => {
+  const requestId = String(raw?.request?.id ?? "");
+  if (!/^\d+$/.test(requestId)) {
+    throw new Error(`Invalid benchmark request id '${requestId}'`);
+  }
+  return requestId;
+};
+
 export const buildExperimentBenchmark = (raw, { runtimeSha = null } = {}) => {
   const experiment = raw?.experiment;
-  const requestId = String(raw?.request?.id ?? "");
   if (!experiment || experiment.name !== "bootstrap-rcl3") return null;
-  if (!/^\d+$/.test(requestId)) {
-    throw new Error(`Invalid experiment request id '${requestId}'`);
-  }
+  const requestId = requestIdOf(raw);
 
   const first = Array.isArray(experiment.samples) ? experiment.samples[0] : null;
   const final = experiment.final ?? (Array.isArray(experiment.samples) ? experiment.samples.at(-1) : null);
@@ -33,6 +38,7 @@ export const buildExperimentBenchmark = (raw, { runtimeSha = null } = {}) => {
     room: experiment.room,
     sourceRef: `github-comment:${requestId}`,
     metrics: {
+      evidenceClass: "live-ptr-longitudinal",
       sampleCount: experiment.sampleCount ?? null,
       intervalMs: experiment.intervalMs ?? null,
       durationMs,
@@ -62,6 +68,7 @@ export const buildExperimentBenchmark = (raw, { runtimeSha = null } = {}) => {
       milestoneSamples,
     },
     result: {
+      evidenceClass: "live-ptr-longitudinal",
       outcomeStatus: experiment.status ?? null,
       sampleCount: experiment.sampleCount ?? null,
       intervalMs: experiment.intervalMs ?? null,
@@ -80,3 +87,50 @@ export const buildExperimentBenchmark = (raw, { runtimeSha = null } = {}) => {
     },
   };
 };
+
+export const buildHeadlessComparisonBenchmark = (raw) => {
+  const benchmark = raw?.benchmark;
+  if (!benchmark || benchmark.name !== "traffic-suite") return null;
+  if (benchmark.target !== "headless") return null;
+  const requestId = requestIdOf(raw);
+  const comparison = benchmark.comparison;
+  if (!comparison || comparison.schema !== "screeps-headless-comparison/v1") {
+    throw new Error("Invalid headless comparison payload");
+  }
+
+  return {
+    schema: "screeps-benchmark-sample/v1",
+    schemaVersion: 1,
+    sampleKey: `headless-benchmark:${requestId}`,
+    benchmarkName: "traffic-suite controlled comparison",
+    runtimeSha: benchmark.candidateSha ?? null,
+    capturedAt: benchmark.completedAt ?? null,
+    target: "headless",
+    shard: benchmark.shard ?? "headless",
+    room: benchmark.room ?? "W0N0",
+    sourceRef: `github-comment:${requestId}`,
+    metrics: {
+      evidenceClass: "controlled-headless-comparison",
+      fixtureVersion: benchmark.fixtureVersion ?? null,
+      tickBudget: benchmark.tickBudget ?? null,
+      repetitions: benchmark.repetitions ?? null,
+      baselineSha: benchmark.baselineSha ?? null,
+      candidateSha: benchmark.candidateSha ?? null,
+      comparable: comparison.comparable ?? false,
+      verdict: comparison.verdict ?? "invalid",
+      comparisons: comparison.comparisons ?? {},
+    },
+    result: {
+      evidenceClass: "controlled-headless-comparison",
+      fixtureVersion: benchmark.fixtureVersion ?? null,
+      tickBudget: benchmark.tickBudget ?? null,
+      repetitions: benchmark.repetitions ?? null,
+      baselineSha: benchmark.baselineSha ?? null,
+      candidateSha: benchmark.candidateSha ?? null,
+      comparison,
+    },
+  };
+};
+
+export const buildBenchmarkSample = (raw, options = {}) =>
+  buildExperimentBenchmark(raw, options) ?? buildHeadlessComparisonBenchmark(raw, options);
