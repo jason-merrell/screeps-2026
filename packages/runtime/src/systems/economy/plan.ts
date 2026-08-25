@@ -117,6 +117,52 @@ function producerAssignments(
   return assignments;
 }
 
+function transporterAssignments(
+  world: WorldSnapshot,
+  bufferedByRoom: Map<string, BufferedSource[]>,
+  producers: Map<string, BufferedSource>,
+): Map<string, BufferedSource> {
+  const assignments = new Map<string, BufferedSource>();
+
+  for (const room of world.rooms) {
+    const buffered = bufferedByRoom.get(room.name) ?? [];
+    if (buffered.length === 0) continue;
+
+    const assignedCount = new Map(buffered.map((node) => [node.container.id, 0]));
+    const candidates = world.creeps
+      .filter((creep) => {
+        if (creep.spawning || creep.room.name !== room.name || producers.has(creep.name)) {
+          return false;
+        }
+        return capabilitiesOf(creep).has("haul");
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const creep of candidates) {
+      const node = [...buffered].sort((a, b) => {
+        const energyDifference =
+          Number(b.container.store.getUsedCapacity(RESOURCE_ENERGY) > 0) -
+          Number(a.container.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+        if (energyDifference !== 0) return energyDifference;
+
+        const countDifference =
+          (assignedCount.get(a.container.id) ?? 0) -
+          (assignedCount.get(b.container.id) ?? 0);
+        if (countDifference !== 0) return countDifference;
+
+        const rangeDifference = creep.pos.getRangeTo(a.container) - creep.pos.getRangeTo(b.container);
+        return rangeDifference || a.container.id.localeCompare(b.container.id);
+      })[0];
+
+      if (!node) continue;
+      assignments.set(creep.name, node);
+      assignedCount.set(node.container.id, (assignedCount.get(node.container.id) ?? 0) + 1);
+    }
+  }
+
+  return assignments;
+}
+
 function recoveryAssignments(
   world: WorldSnapshot,
   bufferedByRoom: Map<string, BufferedSource[]>,
@@ -188,6 +234,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     world.rooms.map((room) => [room.name, bufferedSources(room)] as const),
   );
   const producers = producerAssignments(world, bufferedByRoom);
+  const transporters = transporterAssignments(world, bufferedByRoom, producers);
   const recovery = recoveryAssignments(world, bufferedByRoom, producers);
 
   for (const creep of world.creeps) {
@@ -248,24 +295,39 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
       energyMode === "collect" &&
       capabilities.has("haul")
     ) {
-      const availableBuffers = roomBuffers
-        .map((node) => node.container)
-        .filter((container) => container.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
-      const buffer = world.spatial.nearest(creep.pos, availableBuffers);
-
-      if (buffer) {
+      const assigned = transporters.get(creep.name);
+      if (assigned?.container.store.getUsedCapacity(RESOURCE_ENERGY)) {
         intents.push({
           type: "withdraw",
           creepName: creep.name,
-          targetId: buffer.id,
+          targetId: assigned.container.id,
           resource: RESOURCE_ENERGY,
           priority: 1050,
-          reason: "collect buffered source energy before direct harvesting",
+          reason: "collect from the assigned source buffer",
           trace: trace(
             roomName,
             creep.name,
             "move-buffered-energy",
-            `withdraw:${buffer.id}`,
+            `withdraw:${assigned.container.id}`,
+          ),
+        });
+        continue;
+      }
+
+      const recoverySource = recovery.get(creep.name);
+      if (!recoverySource && assigned) {
+        intents.push({
+          type: "move",
+          creepName: creep.name,
+          targetId: assigned.container.id,
+          range: 1,
+          priority: 1025,
+          reason: "stage at assigned source buffer while awaiting production",
+          trace: trace(
+            roomName,
+            creep.name,
+            "stage-source-transport",
+            `stage:${assigned.container.id}`,
           ),
         });
         continue;
