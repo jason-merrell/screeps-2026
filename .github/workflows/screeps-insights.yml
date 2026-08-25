@@ -129,14 +129,16 @@ jobs:
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
 
-      - name: Place PTR start
+      - name: Place start
         if: >-
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
           steps.request.outputs.mode == 'place-start'
-        run: node scripts/place-start-ptr.mjs
+        run: node scripts/place-start.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
+          SCREEPS_TARGET: ${{ steps.request.outputs.target }}
+          SCREEPS_ALLOW_WORLD_PLACEMENT: ${{ steps.request.outputs.target == 'world' }}
           SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}

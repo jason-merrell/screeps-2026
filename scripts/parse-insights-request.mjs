@@ -122,10 +122,7 @@ if (eventName === "issue_comment") {
     command = ["/recommend-start", shard && `shard=${shard}`].filter(Boolean).join(" ");
   } else if (mode === "place-start") {
     target = normalizeTarget(args.get("target") || "", "");
-    if (target !== "ptr") {
-      fail("/place-start currently requires target=ptr; World placement is intentionally disabled");
-    }
-    command = ["/place-start", "target=ptr", shard && `shard=${shard}`]
+    command = ["/place-start", `target=${target}`, shard && `shard=${shard}`]
       .filter(Boolean)
       .join(" ");
   } else if (mode === "deploy-code") {
