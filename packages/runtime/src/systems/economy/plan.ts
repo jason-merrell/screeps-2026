@@ -35,6 +35,16 @@ export function resolveEnergyMode(
   return previous ?? "collect";
 }
 
+export function shouldDeferRoutineBootstrapRepair(
+  controllerLevel: number | undefined,
+  structureType: StructureConstant,
+): boolean {
+  return (
+    controllerLevel === 1 &&
+    (structureType === "road" || structureType === "container")
+  );
+}
+
 function trace(roomName: string, creepName: string, task: string, activity: string) {
   return createIntentTrace({
     roomName,
@@ -44,8 +54,12 @@ function trace(roomName: string, creepName: string, task: string, activity: stri
   });
 }
 
-function needsBootstrapRepair(structure: AnyStructure): boolean {
+function needsBootstrapRepair(
+  structure: AnyStructure,
+  controllerLevel: number | undefined,
+): boolean {
   if (!("hits" in structure) || !("hitsMax" in structure)) return false;
+  if (shouldDeferRoutineBootstrapRepair(controllerLevel, structure.structureType)) return false;
 
   if (structure.structureType === STRUCTURE_RAMPART) {
     return structure.hits < Math.min(10_000, structure.hitsMax);
@@ -479,7 +493,10 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     }
 
     if (energyMode === "deliver" && energy > 0 && capabilities.has("repair")) {
-      const repairTargets = spatial.structures.filter(needsBootstrapRepair);
+      const controllerLevel = creep.room.controller?.level;
+      const repairTargets = spatial.structures.filter((structure) =>
+        needsBootstrapRepair(structure, controllerLevel),
+      );
       const repairTarget = world.spatial.nearest(creep.pos, repairTargets);
       if (repairTarget) {
         intents.push({
