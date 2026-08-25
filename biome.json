@@ -6,16 +6,7 @@
   "javascript": {
     "formatter": { "quoteStyle": "double", "semicolons": "always" }
   },
-  "overrides": [
-    {
-      "includes": ["apps/screeps-lab/index.html"],
-      "linter": {
-        "rules": {
-          "a11y": {
-            "useAriaPropsSupportedByRole": "off"
-          }
-        }
-      }
-    }
-  ]
+  "css": {
+    "parser": { "tailwindDirectives": true }
+  }
 }
