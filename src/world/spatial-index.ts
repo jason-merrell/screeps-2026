@@ -1,12 +1,10 @@
 export interface RoomSpatialFacts {
   roomName: string;
   sources: Source[];
-  minerals: Mineral[];
   structures: AnyStructure[];
   myStructures: AnyOwnedStructure[];
   constructionSites: ConstructionSite[];
   hostiles: Creep[];
-  movementTopologyKey: string;
 }
 
 export interface SpatialIndexMetrics {
@@ -20,18 +18,6 @@ const objectKey = (object: RoomObject): string => {
   if ("id" in object && typeof object.id === "string") return object.id;
   return `${object.pos.roomName}:${object.pos.x}:${object.pos.y}`;
 };
-
-const movementTopologyKey = (structures: readonly AnyStructure[]): string =>
-  structures
-    .map((structure) => {
-      const rampartState =
-        structure.structureType === STRUCTURE_RAMPART
-          ? `:${structure.my ? "my" : structure.isPublic ? "public" : "closed"}`
-          : "";
-      return `${structure.structureType}:${structure.pos.x}:${structure.pos.y}${rampartState}`;
-    })
-    .sort()
-    .join("|");
 
 export class TickSpatialIndex {
   readonly byRoom: Record<string, RoomSpatialFacts>;
@@ -48,16 +34,13 @@ export class TickSpatialIndex {
     };
 
     for (const room of rooms) {
-      const structures = room.find(FIND_STRUCTURES);
       this.byRoom[room.name] = {
         roomName: room.name,
         sources: room.find(FIND_SOURCES),
-        minerals: room.find(FIND_MINERALS),
-        structures,
+        structures: room.find(FIND_STRUCTURES),
         myStructures: room.find(FIND_MY_STRUCTURES),
         constructionSites: room.find(FIND_MY_CONSTRUCTION_SITES),
         hostiles: room.find(FIND_HOSTILE_CREEPS),
-        movementTopologyKey: movementTopologyKey(structures),
       };
     }
   }

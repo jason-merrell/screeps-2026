@@ -1,7 +1,6 @@
 import type { ArbitrationRejection } from "../intents/arbitrate";
 import type { Intent } from "../intents/types";
 import { writeObservabilitySegment } from "../memory/segments";
-import type { MovementMetrics } from "../movement/router";
 import type { SpatialIndexMetrics } from "../world/spatial-index";
 
 export type PlannerName = "defense" | "spawning" | "construction" | "economy";
@@ -42,7 +41,6 @@ export interface TickObservabilityTrace {
     total: number;
   };
   spatial: SpatialIndexMetrics;
-  movement: MovementMetrics;
   intents: {
     proposed: number;
     accepted: number;
@@ -63,7 +61,6 @@ export interface PublishTickTraceInput {
   arbitrationCpu: number;
   executionCpu: number;
   spatial: SpatialIndexMetrics;
-  movement: MovementMetrics;
   accepted: Intent[];
   rejected: ArbitrationRejection[];
   plannerByIntent: Map<Intent, PlannerName>;
@@ -143,7 +140,6 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
       total: 0,
     },
     spatial: { ...input.spatial },
-    movement: { ...input.movement },
     intents: {
       proposed: proposed.length,
       accepted: input.accepted.length,
