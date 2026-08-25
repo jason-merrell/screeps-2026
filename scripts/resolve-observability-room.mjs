@@ -42,11 +42,13 @@ const parseStartRoomRefs = (body) => {
     ? body
     : Array.isArray(body?.rooms)
       ? body.rooms
-      : Array.isArray(body?.data)
-        ? body.data
-        : typeof body?.room === "string"
-          ? [body.room]
-          : [];
+      : Array.isArray(body?.room)
+        ? body.room
+        : Array.isArray(body?.data)
+          ? body.data
+          : typeof body?.room === "string"
+            ? [body.room]
+            : [];
 
   return values
     .map((value) => String(value))
