@@ -18,7 +18,8 @@ describe("flow-field routing", () => {
     const step = chooseFlowStep(field, costs, { x: 5, y: 10 });
 
     expect(step).not.toBeNull();
-    expect(flowDistanceAt(field, step!.x, step!.y)).toBeLessThan(before);
+    if (!step) throw new Error("expected a downhill step");
+    expect(flowDistanceAt(field, step.x, step.y)).toBeLessThan(before);
   });
 
   it("never chooses a blocked tile", () => {
@@ -36,8 +37,9 @@ describe("flow-field routing", () => {
     const field = buildFlowField(costs, [{ x: 10, y: 10 }]);
     const preferred = chooseFlowStep(field, costs, { x: 5, y: 10 });
     expect(preferred).not.toBeNull();
+    if (!preferred) throw new Error("expected a preferred step");
 
-    const reserved = new Set([`${preferred!.x}:${preferred!.y}`]);
+    const reserved = new Set([`${preferred.x}:${preferred.y}`]);
     const alternate = chooseFlowStep(field, costs, { x: 5, y: 10 }, reserved);
 
     expect(alternate).not.toBeNull();
