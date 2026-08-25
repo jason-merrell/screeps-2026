@@ -2,7 +2,7 @@ import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import type { WorldSnapshot } from "../../runtime/context";
 import { capabilitiesOf } from "../../workforce/capabilities";
-import { assignRecoveryHarvesters } from "./source-allocation";
+import { assignRecoveryHarvesters, assignSourceProducers } from "./source-allocation";
 
 const PEACETIME_TOWER_RESERVE = 400;
 
@@ -16,6 +16,7 @@ interface BufferedSource {
 declare global {
   interface CreepMemory {
     energyMode?: EnergyMode;
+    producerSourceId?: Id<Source>;
   }
 }
 
@@ -94,23 +95,33 @@ function producerAssignments(
     const buffered = bufferedByRoom.get(room.name) ?? [];
     if (buffered.length === 0) continue;
 
-    const candidates = world.creeps.filter((creep) => {
-      if (creep.spawning || creep.room.name !== room.name) return false;
-      const capabilities = capabilitiesOf(creep);
-      return capabilities.has("harvest") && capabilities.has("haul");
-    });
+    const nodeBySource = new Map(buffered.map((node) => [node.source.id, node]));
+    const candidates = world.creeps
+      .filter((creep) => {
+        if (creep.spawning || creep.room.name !== room.name) return false;
+        const capabilities = capabilitiesOf(creep);
+        return capabilities.has("harvest") && capabilities.has("haul");
+      })
+      .map((creep) => ({
+        name: creep.name,
+        work: creep.getActiveBodyparts(WORK),
+        previousSourceId: creep.memory.producerSourceId,
+        rangeBySource: Object.fromEntries(
+          buffered.map((node) => [node.source.id, creep.pos.getRangeTo(node.source)]),
+        ),
+      }));
 
-    for (const node of buffered) {
-      const available = candidates
-        .filter((candidate) => !assignments.has(candidate.name))
-        .sort((a, b) => {
-          const workDifference = b.getActiveBodyparts(WORK) - a.getActiveBodyparts(WORK);
-          if (workDifference !== 0) return workDifference;
-          const rangeDifference = a.pos.getRangeTo(node.source) - b.pos.getRangeTo(node.source);
-          return rangeDifference || a.name.localeCompare(b.name);
-        });
-      const producer = available[0];
-      if (producer) assignments.set(producer.name, node);
+    const selected = assignSourceProducers(
+      buffered.map((node) => node.source.id),
+      candidates,
+    );
+
+    for (const [creepName, sourceId] of selected) {
+      const node = nodeBySource.get(sourceId);
+      const creep = Game.creeps[creepName];
+      if (!node || !creep) continue;
+      assignments.set(creepName, node);
+      creep.memory.producerSourceId = sourceId;
     }
   }
 
