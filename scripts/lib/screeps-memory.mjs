@@ -14,6 +14,17 @@ export function decodeScreepsMemory(body) {
   }
 }
 
+export function decodeScreepsSegment(body) {
+  const data = body?.data;
+  if (typeof data !== "string" || data.length === 0) return null;
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
 export function summarizeMemoryResponse(response) {
   const data = response?.body?.data;
   return {
@@ -23,5 +34,8 @@ export function summarizeMemoryResponse(response) {
     dataPrefix: typeof data === "string" ? data.slice(0, 3) : null,
     dataLength: typeof data === "string" ? data.length : 0,
     bodyOk: response?.body?.ok ?? null,
+    bodyError: response?.body?.error ?? null,
   };
 }
+
+export const summarizeSegmentResponse = summarizeMemoryResponse;
