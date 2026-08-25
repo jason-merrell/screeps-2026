@@ -1,22 +1,24 @@
 import { readFile } from "node:fs/promises";
 
+const artifactPath = process.env.SCREEPS_INSIGHTS_PATH || "artifacts/screeps-insights.json";
 const benchmarkUrl = process.env.SUPABASE_BENCHMARK_URL || "";
-const requestId = process.env.SCREEPS_REQUEST_ID || "unknown";
-const runtimeSha = process.env.GITHUB_SHA || null;
+const runtimeSha = process.env.BENCHMARK_RUNTIME_SHA || process.env.GITHUB_SHA || null;
 const oidcRequestUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL || "";
 const oidcRequestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN || "";
 
 if (!benchmarkUrl) throw new Error("SUPABASE_BENCHMARK_URL is required");
-if (!/^\d+$/.test(requestId)) throw new Error(`Invalid experiment request id '${requestId}'`);
 if (!oidcRequestUrl || !oidcRequestToken) {
   throw new Error("GitHub Actions OIDC environment is required to publish benchmarks");
 }
 
-const raw = JSON.parse(await readFile("artifacts/screeps-insights.json", "utf8"));
+const raw = JSON.parse(await readFile(artifactPath, "utf8"));
 const experiment = raw?.experiment;
+const requestId = String(raw?.request?.id ?? "");
 if (!experiment || experiment.name !== "bootstrap-rcl3") {
-  throw new Error("Expected bootstrap-rcl3 experiment artifact");
+  console.log("Artifact is not a supported PTR experiment; benchmark persistence is a no-op.");
+  process.exit(0);
 }
+if (!/^\d+$/.test(requestId)) throw new Error(`Invalid experiment request id '${requestId}'`);
 
 const first = Array.isArray(experiment.samples) ? experiment.samples[0] : null;
 const final = experiment.final ?? (Array.isArray(experiment.samples) ? experiment.samples.at(-1) : null);
