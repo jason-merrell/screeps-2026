@@ -4,6 +4,7 @@ export type FspmDomain = "economy" | "spawning" | "construction" | "defense";
 export type FspmStatus = "active" | "completed" | "cancelled";
 export type FspmQualityState = "healthy" | "watch" | "degraded";
 export type FspmQualityTrend = "new" | "improving" | "stable" | "declining";
+export type FspmKpiRating = "exceptional" | "satisfactory" | "unsatisfactory" | "in_progress";
 
 export interface FspmQuality {
   score: number;
@@ -19,6 +20,33 @@ export interface FspmQualitySample {
   state: FspmQualityState;
 }
 
+export interface FspmTaskKpiRubric {
+  metric: string;
+  exceptional: string;
+  satisfactory: string;
+  unsatisfactory: string;
+}
+
+export interface FspmActivityKpiSample {
+  tick: number;
+  activityId: string;
+  activityType: string;
+  actor: string;
+  rating: FspmKpiRating;
+  value: number | null;
+  evidence: string;
+}
+
+export interface FspmTaskQi {
+  score: number;
+  measuredAt: number;
+  ratedActivities: number;
+  totalActivities: number;
+  exceptional: number;
+  satisfactory: number;
+  unsatisfactory: number;
+}
+
 interface FspmRecordBase {
   id: string;
   title: string;
@@ -32,9 +60,19 @@ interface FspmRecordBase {
   reopenedAt?: number;
 }
 
+export interface ColonyServiceProgram {
+  id: string;
+  type: "program";
+  subType: "service_program";
+  roomName: string;
+  title: string;
+  status: FspmStatus;
+}
+
 export interface ColonyContract extends FspmRecordBase {
   kind: "contract";
   roomName: string;
+  programId?: string;
 }
 
 export interface ColonyRequirement extends FspmRecordBase {
@@ -54,14 +92,18 @@ export interface ColonyTask extends FspmRecordBase {
   deliverableId: string;
   domain: FspmDomain;
   taskKey: string;
+  kpiMetric: FspmTaskKpiRubric;
+  qi?: FspmTaskQi;
 }
 
 export interface ColonyFspmPortfolio {
+  program?: ColonyServiceProgram;
   contract: ColonyContract;
   requirements: Partial<Record<FspmDomain, ColonyRequirement>>;
   deliverables: Partial<Record<FspmDomain, ColonyDeliverable>>;
   tasks: Record<string, ColonyTask>;
   qualityHistory?: Record<string, FspmQualitySample[]>;
+  activityKpiHistory?: Record<string, FspmActivityKpiSample[]>;
 }
 
 const titleCase = (value: string): string =>
@@ -74,6 +116,13 @@ const taskCriterion =
   "complete when the planner emits no activity for this task during the current tick; reopen when demand returns";
 const childRollupCriterion =
   "complete when at least one child task exists and every materialized child task is completed";
+
+const defaultKpiMetric = (taskKey: string): FspmTaskKpiRubric => ({
+  metric: `${titleCase(taskKey)} execution effectiveness`,
+  exceptional: "measurable task outcome exceeds the task-specific expected threshold",
+  satisfactory: "activity successfully produces its intended game-state effect",
+  unsatisfactory: "activity returns a non-transit execution error or fails to produce usable work",
+});
 
 function transitionStatus(
   record: FspmRecordBase,
@@ -101,11 +150,21 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
   if (!colony) throw new Error(`Cannot create FSPM portfolio for unknown colony ${roomName}`);
 
   if (!colony.fspm) {
+    const programId = `program:service:${roomName}`;
     colony.fspm = {
+      program: {
+        id: programId,
+        type: "program",
+        subType: "service_program",
+        roomName,
+        title: `Operate room ${roomName}`,
+        status: "active",
+      },
       contract: {
         kind: "contract",
         id: `contract:colony:${roomName}`,
         roomName,
+        programId,
         title: `Operate colony ${roomName}`,
         status: "active",
         completionCriterion: "close only by explicit colony decommission",
@@ -117,11 +176,22 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
       deliverables: {},
       tasks: {},
       qualityHistory: {},
+      activityKpiHistory: {},
     };
   }
 
   const portfolio = colony.fspm;
+  portfolio.program ??= {
+    id: `program:service:${roomName}`,
+    type: "program",
+    subType: "service_program",
+    roomName,
+    title: `Operate room ${roomName}`,
+    status: "active",
+  };
+  portfolio.contract.programId ??= portfolio.program.id;
   portfolio.qualityHistory ??= {};
+  portfolio.activityKpiHistory ??= {};
   portfolio.contract.completionCriterion ??= "close only by explicit colony decommission";
   portfolio.contract.statusReason ??= "owned colony is operational";
 
@@ -135,6 +205,7 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
   }
   for (const task of Object.values(portfolio.tasks)) {
     task.completionCriterion ??= taskCriterion;
+    task.kpiMetric ??= defaultKpiMetric(task.taskKey);
   }
 
   return portfolio;
@@ -185,7 +256,10 @@ export function ensureTask(roomName: string, domain: FspmDomain, taskKey: string
   const { portfolio, deliverable } = ensureDomainHierarchy(roomName, domain);
   const id = `task:${roomName}:${domain}:${taskKey}`;
   const existing = portfolio.tasks[id];
-  if (existing) return existing;
+  if (existing) {
+    existing.kpiMetric ??= defaultKpiMetric(taskKey);
+    return existing;
+  }
 
   const task: ColonyTask = {
     kind: "task",
@@ -197,6 +271,7 @@ export function ensureTask(roomName: string, domain: FspmDomain, taskKey: string
     status: "active",
     completionCriterion: taskCriterion,
     statusReason: "planner demand created activity",
+    kpiMetric: defaultKpiMetric(taskKey),
     createdAt: Game.time,
     updatedAt: Game.time,
   };
@@ -241,5 +316,6 @@ export function reconcileFspmLifecycle(intents: Intent[]): void {
     }
 
     transitionStatus(portfolio.contract, "active", "owned colony is operational");
+    if (portfolio.program) portfolio.program.status = "active";
   }
 }

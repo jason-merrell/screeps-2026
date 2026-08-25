@@ -3,6 +3,10 @@ import type { Intent, IntentTrace } from "../intents/types";
 import { writeObservabilitySegment } from "../memory/segments";
 import type { MovementMetrics } from "../movement/traffic";
 import type {
+  ColonyDeliverable,
+  ColonyRequirement,
+  ColonyTask,
+  FspmActivityKpiSample,
   FspmQuality,
   FspmQualitySample,
   FspmStatus,
@@ -58,17 +62,44 @@ interface CompactFspmQuality {
 
 interface CompactFspmRecord {
   id: string;
+  title: string;
   status: FspmStatus;
   quality?: CompactFspmQuality;
 }
 
+interface CompactRequirement extends CompactFspmRecord {
+  contractId: string;
+  domain: ColonyRequirement["domain"];
+}
+
+interface CompactDeliverable extends CompactFspmRecord {
+  requirementId: string;
+  domain: ColonyDeliverable["domain"];
+}
+
+interface CompactTask extends CompactFspmRecord {
+  deliverableId: string;
+  domain: ColonyTask["domain"];
+  taskKey: string;
+  kpiMetric: ColonyTask["kpiMetric"];
+  qi?: ColonyTask["qi"];
+  recentActivities: FspmActivityKpiSample[];
+}
+
 interface FspmTraceSummary {
   roomName: string;
+  program: {
+    id: string;
+    type: "program";
+    subType: "service_program";
+    title: string;
+    status: FspmStatus;
+  } | null;
   contract: CompactFspmRecord;
   contractHistory: FspmQualitySample[];
-  requirements: CompactFspmRecord[];
-  deliverables: CompactFspmRecord[];
-  tasks: CompactFspmRecord[];
+  requirements: CompactRequirement[];
+  deliverables: CompactDeliverable[];
+  tasks: CompactTask[];
 }
 
 export interface TickObservabilityTrace {
@@ -86,12 +117,8 @@ export interface TickObservabilityTrace {
     observability: number;
     total: number;
   };
-  settlement: {
-    plans: RoomPlanTraceSummary[];
-  };
-  fspm: {
-    colonies: FspmTraceSummary[];
-  };
+  settlement: { plans: RoomPlanTraceSummary[] };
+  fspm: { colonies: FspmTraceSummary[] };
   spatial: SpatialIndexMetrics;
   movement: MovementMetrics;
   intents: {
@@ -165,48 +192,35 @@ function roomPlanSummaries(): RoomPlanTraceSummary[] {
     .flatMap((colony) => {
       const plan = colony.roomPlan;
       if (!plan) return [];
-      return [
-        {
-          roomName: plan.roomName,
-          planId: plan.planId ?? null,
-          deliverableId: plan.deliverableId ?? null,
-          version: plan.version,
-          horizonRcl: plan.horizonRcl,
-          generatedAt: plan.generatedAt,
-          generatedReason: plan.generatedReason,
-          hub: { ...plan.anchors.hub },
-          automaticStructures: plan.structures.filter(
-            (structure) => structure.activation === "automatic",
-          ).length,
-          demandStructures: plan.structures.filter(
-            (structure) => structure.activation === "demand",
-          ).length,
-          roadTiles: plan.roads.length,
-          roadEdges: plan.roadGraph.edges.length,
-          invalidated: plan.invalidatedAt !== undefined,
-        },
-      ];
+      return [{
+        roomName: plan.roomName,
+        planId: plan.planId ?? null,
+        deliverableId: plan.deliverableId ?? null,
+        version: plan.version,
+        horizonRcl: plan.horizonRcl,
+        generatedAt: plan.generatedAt,
+        generatedReason: plan.generatedReason,
+        hub: { ...plan.anchors.hub },
+        automaticStructures: plan.structures.filter((structure) => structure.activation === "automatic").length,
+        demandStructures: plan.structures.filter((structure) => structure.activation === "demand").length,
+        roadTiles: plan.roads.length,
+        roadEdges: plan.roadGraph.edges.length,
+        invalidated: plan.invalidatedAt !== undefined,
+      }];
     })
     .sort((a, b) => a.roomName.localeCompare(b.roomName));
 }
 
-const compactRecord = (record: {
-  id: string;
-  status: FspmStatus;
-  quality?: FspmQuality;
-}): CompactFspmRecord => ({
+const compactRecord = (record: { id: string; title: string; status: FspmStatus; quality?: FspmQuality }): CompactFspmRecord => ({
   id: record.id,
+  title: record.title,
   status: record.status,
-  ...(record.quality
-    ? {
-        quality: {
-          score: record.quality.score,
-          state: record.quality.state,
-          trend: record.quality.trend,
-          evidence: [...record.quality.evidence],
-        },
-      }
-    : {}),
+  ...(record.quality ? { quality: {
+    score: record.quality.score,
+    state: record.quality.state,
+    trend: record.quality.trend,
+    evidence: [...record.quality.evidence],
+  } } : {}),
 });
 
 function fspmSummaries(): FspmTraceSummary[] {
@@ -214,24 +228,35 @@ function fspmSummaries(): FspmTraceSummary[] {
     .flatMap((colony) => {
       const portfolio = colony.fspm;
       if (!portfolio) return [];
-      return [
-        {
-          roomName: colony.roomName,
-          contract: compactRecord(portfolio.contract),
-          contractHistory: (portfolio.qualityHistory?.[portfolio.contract.id] ?? [])
-            .slice(-12)
-            .map((sample) => ({ ...sample })),
-          requirements: Object.values(portfolio.requirements)
-            .flatMap((record) => (record ? [compactRecord(record)] : []))
-            .sort((a, b) => a.id.localeCompare(b.id)),
-          deliverables: Object.values(portfolio.deliverables)
-            .flatMap((record) => (record ? [compactRecord(record)] : []))
-            .sort((a, b) => a.id.localeCompare(b.id)),
-          tasks: Object.values(portfolio.tasks)
-            .map(compactRecord)
-            .sort((a, b) => a.id.localeCompare(b.id)),
-        },
-      ];
+      return [{
+        roomName: colony.roomName,
+        program: portfolio.program ? {
+          id: portfolio.program.id,
+          type: portfolio.program.type,
+          subType: portfolio.program.subType,
+          title: portfolio.program.title,
+          status: portfolio.program.status,
+        } : null,
+        contract: compactRecord(portfolio.contract),
+        contractHistory: (portfolio.qualityHistory?.[portfolio.contract.id] ?? []).slice(-12).map((sample) => ({ ...sample })),
+        requirements: Object.values(portfolio.requirements)
+          .flatMap((record) => record ? [{ ...compactRecord(record), contractId: record.contractId, domain: record.domain }] : [])
+          .sort((a, b) => a.id.localeCompare(b.id)),
+        deliverables: Object.values(portfolio.deliverables)
+          .flatMap((record) => record ? [{ ...compactRecord(record), requirementId: record.requirementId, domain: record.domain }] : [])
+          .sort((a, b) => a.id.localeCompare(b.id)),
+        tasks: Object.values(portfolio.tasks)
+          .map((record) => ({
+            ...compactRecord(record),
+            deliverableId: record.deliverableId,
+            domain: record.domain,
+            taskKey: record.taskKey,
+            kpiMetric: { ...record.kpiMetric },
+            ...(record.qi ? { qi: { ...record.qi } } : {}),
+            recentActivities: (portfolio.activityKpiHistory?.[record.id] ?? []).slice(-8).map((sample) => ({ ...sample })),
+          }))
+          .sort((a, b) => a.id.localeCompare(b.id)),
+      }];
     })
     .sort((a, b) => a.roomName.localeCompare(b.roomName));
 }
@@ -239,18 +264,8 @@ function fspmSummaries(): FspmTraceSummary[] {
 export function publishTickTrace(input: PublishTickTraceInput): TickObservabilityTrace {
   const observabilityStart = Game.cpu.getUsed();
   const proposed = input.plannerRuns.flatMap((run) => run.intents);
-  const proposedByPlanner = {
-    defense: 0,
-    spawning: 0,
-    construction: 0,
-    economy: 0,
-  } satisfies Record<PlannerName, number>;
-  const plannerCpu = {
-    defense: 0,
-    spawning: 0,
-    construction: 0,
-    economy: 0,
-  } satisfies Record<PlannerName, number>;
+  const proposedByPlanner = { defense: 0, spawning: 0, construction: 0, economy: 0 } satisfies Record<PlannerName, number>;
+  const plannerCpu = { defense: 0, spawning: 0, construction: 0, economy: 0 } satisfies Record<PlannerName, number>;
 
   for (const run of input.plannerRuns) {
     proposedByPlanner[run.name] += run.intents.length;
@@ -272,12 +287,8 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
       observability: 0,
       total: 0,
     },
-    settlement: {
-      plans: roomPlanSummaries(),
-    },
-    fspm: {
-      colonies: fspmSummaries(),
-    },
+    settlement: { plans: roomPlanSummaries() },
+    fspm: { colonies: fspmSummaries() },
     spatial: { ...input.spatial },
     movement: { ...input.movement },
     intents: {
@@ -287,9 +298,7 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
       proposedByPlanner,
       proposedByType: countByType(proposed),
       acceptedByType: countByType(input.accepted),
-      acceptedSample: input.accepted
-        .slice(0, SAMPLE_LIMIT)
-        .map((intent) => compactIntent(intent, input.plannerByIntent, input.conflictKey)),
+      acceptedSample: input.accepted.slice(0, SAMPLE_LIMIT).map((intent) => compactIntent(intent, input.plannerByIntent, input.conflictKey)),
       rejectedSample: input.rejected.slice(0, SAMPLE_LIMIT).map((rejection) => ({
         conflictKey: rejection.conflictKey,
         winner: compactIntent(rejection.winner, input.plannerByIntent, input.conflictKey),
@@ -301,6 +310,5 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
   trace.cpu.observability = roundCpu(Game.cpu.getUsed() - observabilityStart);
   trace.cpu.total = roundCpu(Game.cpu.getUsed() - input.tickStartCpu);
   writeObservabilitySegment(JSON.stringify(trace));
-
   return trace;
 }
