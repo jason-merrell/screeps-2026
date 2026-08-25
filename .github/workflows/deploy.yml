@@ -13,6 +13,9 @@ concurrency:
   group: screeps-production-deploy
   cancel-in-progress: false
 
+env:
+  SCREEPS_TARGET: ptr
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -66,7 +69,8 @@ jobs:
           pnpm --filter @screeps/runtime typecheck
           pnpm --filter @screeps/runtime test
 
-      - run: pnpm run deploy:screeps
+      - name: Deploy Screeps runtime
+        run: pnpm run deploy:screeps
         env:
           SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
