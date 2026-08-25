@@ -1,6 +1,11 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "stream",
+  "globalPassThroughEnv": [
+    "GITHUB_*",
+    "SCREEPS_*",
+    "SCENARIO_*"
+  ],
   "tasks": {
     "build": {
       "outputs": [
