@@ -13,6 +13,7 @@ import {
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
+import { normalizeFreshRoomPlans } from "./systems/settlement/normalize";
 import { ensureSettlementPlans } from "./systems/settlement/plan";
 import { planSpawning } from "./systems/spawning/plan";
 import { perceive } from "./world/perceive";
@@ -34,6 +35,7 @@ export const loop = (): void => {
 
   phaseStart = Game.cpu.getUsed();
   ensureSettlementPlans(world);
+  normalizeFreshRoomPlans();
   const settlementCpu = Game.cpu.getUsed() - phaseStart;
 
   const plannerByIntent = new Map<Intent, PlannerName>();
