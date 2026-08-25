@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 
+import { wakeNativeSnapshotWorker } from "@/lib/github/dispatch";
 import { createClient } from "@/lib/supabase/server";
 
 function readRequired(formData: FormData, key: string) {
@@ -34,5 +35,14 @@ export async function enqueueSnapshot(formData: FormData) {
     redirect("/operator?error=enqueue");
   }
 
-  redirect(`/operator?queued=${encodeURIComponent(data.id)}`);
+  let wake = "deferred";
+  try {
+    wake = (await wakeNativeSnapshotWorker()) ? "dispatched" : "unconfigured";
+  } catch (error) {
+    console.error("Native snapshot worker wake failed", error);
+  }
+
+  redirect(
+    `/operator?queued=${encodeURIComponent(data.id)}&wake=${encodeURIComponent(wake)}`,
+  );
 }
