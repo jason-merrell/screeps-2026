@@ -29,7 +29,7 @@
       .read-only { border: 1px solid #2e4458; border-radius: 999px; padding: 8px 12px; color: #9dc8ea; white-space: nowrap; }
       .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
       .panel { border: 1px solid #243547; border-radius: 16px; background: rgba(10, 19, 29, 0.88); padding: 18px; min-width: 0; }
-      .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; } .span-7 { grid-column: span 7; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
+      .span-3 { grid-column: span 3; } .span-5 { grid-column: span 5; } .span-7 { grid-column: span 7; }
       .metric { margin-top: 8px; font-size: clamp(1.5rem, 3vw, 2.5rem); font-weight: 720; letter-spacing: -0.04em; }
       .subtle { color: #788b9f; font-size: 0.85rem; }
       .status-line { display: flex; gap: 8px; align-items: center; }
@@ -42,12 +42,22 @@
       .history-item { padding: 12px; border: 1px solid #203244; border-radius: 10px; background: #0b1621; }
       .history-item code { color: #91d9aa; }
       .room-grid { aspect-ratio: 1; display: grid; grid-template-columns: repeat(50, 1fr); border: 1px solid #243547; background: #09131d; image-rendering: pixelated; }
-      .room-cell { border-right: 1px solid rgba(255,255,255,0.015); border-bottom: 1px solid rgba(255,255,255,0.015); }
+      .room-cell { border-right: 1px solid rgba(255,255,255,0.015); border-bottom: 1px solid rgba(255,255,255,0.015); position: relative; }
+      .planned-road { background: #28465d; }
+      .planned-extension { background: #2b8b6b; }
+      .planned-tower { background: #d29a45; }
+      .planned-container { background: #8d7246; }
+      .anchor-spawn { background: #f6d264; box-shadow: inset 0 0 0 1px #fff1b6; }
+      .anchor-hub { background: #65a8f6; }
+      .anchor-source { background: #f0c557; border-radius: 50%; }
+      .anchor-controller { background: #a57bea; border-radius: 50%; }
+      .actual-structure::after { content: ""; position: absolute; inset: 18%; border: 1px solid rgba(255,255,255,0.85); }
+      .construction::after { content: ""; position: absolute; inset: 10%; border: 1px dashed #ff9f72; }
       .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; font-size: 0.78rem; color: #8fa4b7; }
       .chip { padding: 4px 8px; border: 1px solid #2a3d4e; border-radius: 999px; }
       .empty { color: #708398; font-style: italic; }
       .footer-note { margin-top: 20px; color: #65798d; font-size: 0.8rem; }
-      @media (max-width: 900px) { .span-3, .span-4, .span-5, .span-7, .span-8 { grid-column: span 12; } header { align-items: start; flex-direction: column; } }
+      @media (max-width: 900px) { .span-3, .span-5, .span-7 { grid-column: span 12; } header { align-items: start; flex-direction: column; } }
     </style>
   </head>
   <body>
@@ -67,52 +77,56 @@
           <div class="subtle" id="shard">shard3</div>
         </article>
         <article class="panel span-3">
-          <div class="label">Average CPU</div>
-          <div class="metric" id="avg-cpu">1.127</div>
-          <div class="subtle">latest published benchmark</div>
+          <div class="label">RCL</div>
+          <div class="metric" id="rcl">—</div>
+          <div class="subtle" id="controller-progress">waiting for snapshot</div>
         </article>
         <article class="panel span-3">
-          <div class="label">Economy planner</div>
-          <div class="metric" id="economy-cpu">0.165</div>
-          <div class="subtle">CPU / tick</div>
+          <div class="label">Room energy</div>
+          <div class="metric" id="energy">—</div>
+          <div class="subtle">available / capacity</div>
         </article>
         <article class="panel span-3">
-          <div class="label">Ledger</div>
-          <div class="metric" id="experiment-count">…</div>
-          <div class="subtle">completed bootstrap experiments</div>
+          <div class="label">Workforce</div>
+          <div class="metric" id="creeps">—</div>
+          <div class="subtle">visible creeps</div>
         </article>
 
         <article class="panel span-7">
-          <h2>PPAE tick profile</h2>
-          <div class="status-line"><span class="dot"></span><span class="subtle" id="source-status">loading GitHub issue #5</span></div>
+          <h2>PPAE benchmark</h2>
+          <div class="status-line"><span class="dot"></span><span class="subtle" id="source-status">loading control-plane data</span></div>
           <div class="bars" id="cpu-bars"></div>
         </article>
 
         <article class="panel span-5">
           <h2>Movement</h2>
-          <p id="movement-copy">Native Screeps pathing owns routing, with traffic-aware cached movement, congestion detection, and bounded swap/repath fallback.</p>
+          <p>Native Screeps pathing owns routing, with traffic-aware cached movement, congestion detection, and bounded swap/repath fallback.</p>
           <div class="status-line"><span class="dot"></span><span class="subtle">next optimization target: burst pathfinding cost</span></div>
         </article>
 
         <article class="panel span-5">
           <h2>Room plan</h2>
           <div class="room-grid" id="room-grid" aria-label="50 by 50 Screeps room grid"></div>
-          <div class="legend"><span class="chip">plan v2</span><span class="chip">RCL3 horizon</span><span class="chip">geometry not published to public ledger</span></div>
+          <div class="legend" id="room-legend">
+            <span class="chip">awaiting Supabase snapshot</span>
+          </div>
         </article>
 
         <article class="panel span-7">
           <h2>Experiment history</h2>
-          <div class="history" id="history"><div class="empty">Loading completed experiment receipts…</div></div>
+          <div class="history" id="history"><div class="empty">Loading experiment history…</div></div>
         </article>
       </section>
 
-      <div class="footer-note">Data source: public, immutable GitHub issue-command ledger. No Screeps token or mutation authority is shipped to the browser.</div>
+      <div class="footer-note" id="footer-note">Supabase is the preferred control-plane read model. GitHub issue #5 remains a temporary compatibility fallback.</div>
     </main>
 
+    <script src="/supabase-config.js"></script>
     <script type="module">
       const ISSUE_COMMENTS = "https://api.github.com/repos/jason-merrell/screeps-2026/issues/5/comments?per_page=100";
       const phases = ["perception", "economy", "arbitration", "execution", "observability"];
-      const fallback = { perception: 0.036, economy: 0.165, arbitration: 0.018, execution: 0.76, observability: 0.033 };
+      const benchmarkFallback = { perception: 0.036, economy: 0.165, arbitration: 0.018, execution: 0.76, observability: 0.033 };
+      const cells = [];
 
       const makeGrid = () => {
         const grid = document.querySelector("#room-grid");
@@ -120,15 +134,88 @@
           const cell = document.createElement("span");
           cell.className = "room-cell";
           grid.append(cell);
+          cells.push(cell);
         }
       };
 
-      const extractNumber = (body, patterns) => {
-        for (const pattern of patterns) {
-          const match = body.match(pattern);
-          if (match) return Number(match[1]);
+      const cellAt = (point) => {
+        if (!point || !Number.isInteger(point.x) || !Number.isInteger(point.y)) return null;
+        if (point.x < 0 || point.x > 49 || point.y < 0 || point.y > 49) return null;
+        return cells[point.y * 50 + point.x] ?? null;
+      };
+
+      const mark = (point, className, title) => {
+        const cell = cellAt(point);
+        if (!cell) return;
+        cell.classList.add(className);
+        if (title) cell.title = cell.title ? `${cell.title}; ${title}` : title;
+      };
+
+      const renderRoomPlan = (snapshot) => {
+        for (const cell of cells) {
+          cell.className = "room-cell";
+          cell.removeAttribute("title");
         }
-        return null;
+        const plan = snapshot?.roomPlan;
+        if (!plan) return;
+
+        for (const road of plan.roads ?? []) mark(road, "planned-road", "planned road");
+        for (const structure of plan.structures ?? []) {
+          const className =
+            structure.structureType === "extension"
+              ? "planned-extension"
+              : structure.structureType === "tower"
+                ? "planned-tower"
+                : structure.structureType === "container"
+                  ? "planned-container"
+                  : "planned-extension";
+          mark(structure, className, `planned ${structure.structureType}`);
+        }
+        mark(plan.anchors?.spawn, "anchor-spawn", "spawn anchor");
+        mark(plan.anchors?.hub, "anchor-hub", "logistics hub");
+        mark(plan.anchors?.controller, "anchor-controller", "controller");
+        for (const source of plan.anchors?.sources ?? []) {
+          mark(source, "anchor-source", "source");
+          mark(source.container, "planned-container", "source container");
+        }
+        for (const structure of snapshot.colony?.structures ?? []) {
+          mark(structure, "actual-structure", `built ${structure.type}`);
+        }
+        for (const site of snapshot.colony?.constructionSites ?? []) {
+          mark(site, "construction", `construction ${site.structureType ?? "site"}`);
+        }
+
+        const legend = document.querySelector("#room-legend");
+        legend.replaceChildren();
+        for (const text of [
+          `plan v${plan.version ?? "?"}`,
+          `RCL${plan.horizonRcl ?? "?"} horizon`,
+          "planned geometry",
+          "outlined = built",
+          "dashed = construction",
+        ]) {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.textContent = text;
+          legend.append(chip);
+        }
+      };
+
+      const renderSnapshot = (snapshot) => {
+        document.querySelector("#room").textContent = snapshot.room ?? "—";
+        document.querySelector("#shard").textContent = `${snapshot.target ?? "?"} / ${snapshot.shard ?? "?"}`;
+        const controller = snapshot.colony?.controller;
+        document.querySelector("#rcl").textContent = controller?.level ?? "—";
+        document.querySelector("#controller-progress").textContent =
+          controller?.progressTotal
+            ? `${controller.progress ?? 0} / ${controller.progressTotal}`
+            : "controller progress unavailable";
+        const energy = snapshot.colony?.energy;
+        document.querySelector("#energy").textContent = energy
+          ? `${energy.available ?? 0} / ${energy.capacity ?? 0}`
+          : "—";
+        document.querySelector("#creeps").textContent = snapshot.colony?.creeps ?? "—";
+        renderRoomPlan(snapshot);
       };
 
       const renderBars = (metrics) => {
@@ -153,64 +240,112 @@
         }
       };
 
-      const renderHistory = (comments) => {
-        const receipts = comments
-          .filter((comment) => comment.body.includes("✅ completed `/experiment name=bootstrap-rcl3"))
-          .reverse();
-        document.querySelector("#experiment-count").textContent = String(receipts.length);
+      const supabaseHeaders = () => {
+        const key = window.__SCREEPS_LAB_CONFIG__?.supabaseKey || "";
+        return {
+          Accept: "application/json",
+          apikey: key,
+          ...(key.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}),
+        };
+      };
+
+      const loadSupabase = async () => {
+        const { supabaseUrl = "", supabaseKey = "" } = window.__SCREEPS_LAB_CONFIG__ ?? {};
+        if (!supabaseUrl || !supabaseKey) return null;
+
+        const snapshotResponse = await fetch(
+          `${supabaseUrl}/rest/v1/observability_snapshots?select=payload,captured_at&order=captured_at.desc&limit=1`,
+          { headers: supabaseHeaders() },
+        );
+        if (!snapshotResponse.ok) throw new Error(`Supabase snapshots ${snapshotResponse.status}`);
+        const snapshots = await snapshotResponse.json();
+        const snapshot = snapshots?.[0]?.payload ?? null;
+        if (!snapshot) return null;
+
+        const experimentResponse = await fetch(
+          `${supabaseUrl}/rest/v1/experiments?select=experiment_key,name,runtime_sha,completed_at,status&status=eq.succeeded&order=completed_at.desc&limit=12`,
+          { headers: supabaseHeaders() },
+        );
+        const experiments = experimentResponse.ok ? await experimentResponse.json() : [];
+        return { snapshot, experiments };
+      };
+
+      const renderExperiments = (experiments) => {
         const root = document.querySelector("#history");
         root.replaceChildren();
-        if (!receipts.length) {
-          root.innerHTML = '<div class="empty">No completed experiment receipts found.</div>';
+        if (!experiments?.length) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "No Supabase experiment rows yet. Historical receipts remain in GitHub during migration.";
+          root.append(empty);
           return;
         }
-        for (const receipt of receipts.slice(0, 12)) {
-          const request = receipt.body.match(/request: `(\d+)`/)?.[1] ?? "unknown";
-          const run = receipt.body.match(/run: (https:\/\/[^\s]+)/)?.[1];
+        for (const experiment of experiments) {
           const item = document.createElement("div");
           item.className = "history-item";
           const title = document.createElement("div");
-          title.innerHTML = `<code>${request}</code> · bootstrap-rcl3`;
+          const code = document.createElement("code");
+          code.textContent = experiment.experiment_key;
+          title.append(code, document.createTextNode(` · ${experiment.name}`));
           const detail = document.createElement("div");
           detail.className = "subtle";
-          detail.textContent = run ? `workflow ${run.split("/").at(-1)}` : "completed";
+          detail.textContent = [experiment.runtime_sha, experiment.completed_at].filter(Boolean).join(" · ");
           item.append(title, detail);
           root.append(item);
         }
       };
 
+      const extractNumber = (body, patterns) => {
+        for (const pattern of patterns) {
+          const match = body.match(pattern);
+          if (match) return Number(match[1]);
+        }
+        return null;
+      };
+
+      const loadGithubCompatibility = async () => {
+        const response = await fetch(ISSUE_COMMENTS, { headers: { Accept: "application/vnd.github+json" } });
+        if (!response.ok) throw new Error(`GitHub ${response.status}`);
+        const comments = await response.json();
+        const human = comments.filter((comment) => comment.user?.login === "jason-merrell").reverse();
+        const benchmark = human.find((comment) => comment.body.includes("Spatial-index optimization benchmark"));
+        const ppae = human.find((comment) => comment.body.includes("PPAE observability transport proven on PTR"));
+        const source = benchmark?.body ?? ppae?.body ?? "";
+        return {
+          perception: extractNumber(source, [/perception \|?\s*`?([0-9.]+)/i, /average perception: `([0-9.]+)`/i]) ?? benchmarkFallback.perception,
+          economy: extractNumber(source, [/economy planner \|?\s*`?([0-9.]+)/i, /economy `([0-9.]+)`/i]) ?? benchmarkFallback.economy,
+          arbitration: extractNumber(source, [/arbitration \|?\s*`?([0-9.]+)/i, /average arbitration: `([0-9.]+)`/i]) ?? benchmarkFallback.arbitration,
+          execution: extractNumber(source, [/execution \|?\s*`?([0-9.]+)/i, /average execution: `([0-9.]+)`/i]) ?? benchmarkFallback.execution,
+          observability: extractNumber(source, [/observability \|?\s*`?([0-9.]+)/i, /average observability overhead: `([0-9.]+)`/i]) ?? benchmarkFallback.observability,
+        };
+      };
+
       const hydrate = async () => {
-        renderBars(fallback);
+        renderBars(benchmarkFallback);
+        let supabaseLoaded = false;
         try {
-          const response = await fetch(ISSUE_COMMENTS, { headers: { Accept: "application/vnd.github+json" } });
-          if (!response.ok) throw new Error(`GitHub ${response.status}`);
-          const comments = await response.json();
-          renderHistory(comments);
-          const human = comments.filter((comment) => comment.user?.login === "jason-merrell").reverse();
-          const benchmark = human.find((comment) => comment.body.includes("Spatial-index optimization benchmark"));
-          const ppae = human.find((comment) => comment.body.includes("PPAE observability transport proven on PTR"));
-          const source = benchmark?.body ?? ppae?.body ?? "";
-          const room = source.match(/Room: `([^`]+)` \/ `([^`]+)`/);
-          if (room) {
-            document.querySelector("#room").textContent = room[1];
-            document.querySelector("#shard").textContent = room[2];
+          const controlPlane = await loadSupabase();
+          if (controlPlane) {
+            renderSnapshot(controlPlane.snapshot);
+            renderExperiments(controlPlane.experiments);
+            document.querySelector("#source-status").textContent = "snapshot live from Supabase control plane";
+            document.querySelector("#footer-note").textContent = "Data source: Supabase sanitized read model. GitHub issue #5 remains compatibility-only during migration.";
+            supabaseLoaded = true;
           }
-          const metrics = {
-            perception: extractNumber(source, [/perception \|?\s*`?([0-9.]+)/i, /average perception: `([0-9.]+)`/i]) ?? fallback.perception,
-            economy: extractNumber(source, [/economy planner \|?\s*`?([0-9.]+)/i, /economy `([0-9.]+)`/i]) ?? fallback.economy,
-            arbitration: extractNumber(source, [/arbitration \|?\s*`?([0-9.]+)/i, /average arbitration: `([0-9.]+)`/i]) ?? fallback.arbitration,
-            execution: extractNumber(source, [/execution \|?\s*`?([0-9.]+)/i, /average execution: `([0-9.]+)`/i]) ?? fallback.execution,
-            observability: extractNumber(source, [/observability \|?\s*`?([0-9.]+)/i, /average observability overhead: `([0-9.]+)`/i]) ?? fallback.observability,
-          };
-          const total = extractNumber(source, [/average total CPU \|?\s*`?([0-9.]+)/i, /average total CPU: `([0-9.]+)`/i]);
-          if (total !== null) document.querySelector("#avg-cpu").textContent = total.toFixed(3);
-          document.querySelector("#economy-cpu").textContent = metrics.economy.toFixed(3);
-          document.querySelector("#source-status").textContent = "live from GitHub issue #5";
-          renderBars(metrics);
         } catch (error) {
-          document.querySelector("#source-status").textContent = `ledger unavailable · showing bundled baseline (${error.message})`;
-          document.querySelector("#history").innerHTML = '<div class="empty">Ledger unavailable. Dashboard remains read-only with its last known baseline.</div>';
-          document.querySelector("#experiment-count").textContent = "—";
+          document.querySelector("#source-status").textContent = `Supabase unavailable (${error.message}); using compatibility telemetry`;
+        }
+
+        try {
+          const metrics = await loadGithubCompatibility();
+          renderBars(metrics);
+          if (!supabaseLoaded) {
+            document.querySelector("#source-status").textContent = "GitHub compatibility telemetry · Supabase snapshot not configured yet";
+          }
+        } catch (error) {
+          if (!supabaseLoaded) {
+            document.querySelector("#source-status").textContent = `control-plane sources unavailable · bundled baseline (${error.message})`;
+          }
         }
       };
 

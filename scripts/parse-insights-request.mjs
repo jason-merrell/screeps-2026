@@ -57,10 +57,11 @@ if (eventName === "issue_comment") {
       "/deploy-code",
       "/experiment",
       "/scenario",
+      "/snapshot",
     ].includes(commandToken)
   ) {
     fail(
-      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, /deploy-code, /experiment, or /scenario",
+      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, /deploy-code, /experiment, /scenario, or /snapshot",
     );
   }
 
@@ -77,7 +78,9 @@ if (eventName === "issue_comment") {
               ? "experiment"
               : commandToken === "/scenario"
                 ? "scenario"
-                : "collect";
+                : commandToken === "/snapshot"
+                  ? "snapshot"
+                  : "collect";
 
   const args = new Map();
   for (const token of tokens.slice(1)) {
@@ -99,7 +102,9 @@ if (eventName === "issue_comment") {
                 ? ["name", "target", "shard"]
                 : mode === "scenario"
                   ? ["name"]
-                  : ["room", "shard", "target"];
+                  : mode === "snapshot"
+                    ? ["room", "shard", "target"]
+                    : ["room", "shard", "target"];
     if (!allowed.includes(key)) fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
     args.set(key, value);
@@ -153,6 +158,16 @@ if (eventName === "issue_comment") {
     }
     target = "headless";
     command = `/scenario name=${scenario}`;
+  } else if (mode === "snapshot") {
+    room = normalizeRoom(args.get("room") || "");
+    shard = normalizeShard(args.get("shard") || "");
+    target = normalizeTarget(args.get("target") || "", "");
+    if (!room) fail("/snapshot requires room=<ROOM>");
+    if (!shard) fail("/snapshot requires shard=<SHARD>");
+    if (target !== "ptr") {
+      fail("/snapshot currently requires target=ptr while the control-plane contract is proven on PTR");
+    }
+    command = ["/snapshot", "target=ptr", `room=${room}`, `shard=${shard}`].join(" ");
   } else {
     room = normalizeRoom(args.get("room") || "");
     target = normalizeTarget(args.get("target") || "world");
