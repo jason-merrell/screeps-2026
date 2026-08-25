@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FspmActivityKpiSample } from "../../src/planning/fspm";
-import { computeTaskQi } from "../../src/planning/task-kpi";
+import { classifyActivityObservation, computeTaskQi } from "../../src/planning/task-kpi";
+
+vi.stubGlobal("OK", 0);
 
 const sample = (
   tick: number,
@@ -17,6 +19,11 @@ const sample = (
 });
 
 describe("FSPM Task QI", () => {
+  it("rates near-capacity task outcomes as exceptional", () => {
+    expect(classifyActivityObservation({ result: 0, movementRequired: false, outcome: { metric: "energy delivered", actual: 48, target: 50, unit: "energy" } })).toBe("exceptional");
+    expect(classifyActivityObservation({ result: 0, movementRequired: false, outcome: { metric: "energy delivered", actual: 20, target: 50, unit: "energy" } })).toBe("satisfactory");
+  });
+
   it("excludes in-progress travel from earned quality", () => {
     const qi = computeTaskQi(
       [sample(1, "in_progress", null), sample(2, "satisfactory", 1)],

@@ -70,6 +70,7 @@ export type FspmActivityKpi = {
   rating: FspmKpiRating;
   value: number | null;
   evidence: string;
+  outcome?: { metric: string; actual: number; target: number; unit: string; utilization: number };
 };
 export type FspmTask = FspmRecord & {
   deliverableId?: string;

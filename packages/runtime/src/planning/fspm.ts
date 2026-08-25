@@ -35,6 +35,7 @@ export interface FspmActivityKpiSample {
   rating: FspmKpiRating;
   value: number | null;
   evidence: string;
+  outcome?: { metric: string; actual: number; target: number; unit: string; utilization: number };
 }
 
 export interface FspmTaskQi {

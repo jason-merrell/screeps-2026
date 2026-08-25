@@ -185,8 +185,8 @@ function TaskCard({ task }: { task: FspmTask }) {
         <div className="mt-3 grid gap-1.5 border-t border-white/7 pt-3 text-[0.68rem] text-muted-foreground">
           {task.recentActivities.slice(-4).reverse().map((activity) => (
             <div key={activity.activityId} className="flex flex-wrap items-center justify-between gap-2">
-              <span>{activity.activityType} · {activity.actor}</span>
-              <span className="font-mono capitalize">{activity.rating}{activity.value === null ? "" : ` ${activity.value.toFixed(1)}`}</span>
+              <span>{activity.activityType} · {activity.actor}{activity.outcome ? ` · ${activity.outcome.actual}/${activity.outcome.target} ${activity.outcome.unit}` : ""}</span>
+              <span className="font-mono capitalize">{activity.rating}{activity.value === null ? "" : ` ${activity.value.toFixed(1)}`}{activity.outcome ? ` · ${Math.round(activity.outcome.utilization * 100)}%` : ""}</span>
             </div>
           ))}
         </div>
