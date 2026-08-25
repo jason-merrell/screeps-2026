@@ -1,3 +1,4 @@
+import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import type { RoomPlan, RoomPlanStructure } from "../../planning/room-plan";
 import type { WorldSnapshot } from "../../runtime/context";
@@ -71,6 +72,12 @@ function planRoomConstruction(room: Room): Intent[] {
       structureType: planned.structureType,
       priority: planned.priority,
       reason: `${planned.phase}: ${planned.reason}`,
+      trace: createIntentTrace({
+        roomName: room.name,
+        domain: "construction",
+        task: `execute-room-plan-v${roomPlan.version}`,
+        activity: `site:${planned.id}`,
+      }),
     });
     proposedByType.set(
       planned.structureType,
