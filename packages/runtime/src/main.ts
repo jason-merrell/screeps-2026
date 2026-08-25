@@ -18,6 +18,7 @@ import { reconcileTaskKpis } from "./planning/task-kpi";
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
+import { planScavenging } from "./systems/economy/scavenge";
 import { normalizeFreshRoomPlans } from "./systems/settlement/normalize";
 import { ensureSettlementPlans } from "./systems/settlement/plan";
 import { planSpawning } from "./systems/spawning/plan";
@@ -60,7 +61,7 @@ export const loop = (): void => {
     runPlanner("defense", () => planDefense(world)),
     runPlanner("spawning", () => planSpawning(world)),
     runPlanner("construction", () => planConstruction(world)),
-    runPlanner("economy", () => planEconomy(world)),
+    runPlanner("economy", () => [...planScavenging(world), ...planEconomy(world)]),
   ];
   const proposed = plannerRuns.flatMap((run) => run.intents);
   reconcileFspmLifecycle(proposed);
