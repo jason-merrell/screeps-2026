@@ -156,12 +156,13 @@ if (eventName === "issue_comment") {
     room = normalizeRoom(args.get("room") || "");
     shard = normalizeShard(args.get("shard") || "");
     target = normalizeTarget(args.get("target") || "", "");
-    if (!room) fail("/snapshot requires room=<ROOM>");
     if (!shard) fail("/snapshot requires shard=<SHARD>");
     if (target !== "ptr") {
       fail("/snapshot currently requires target=ptr while the control-plane contract is proven on PTR");
     }
-    command = ["/snapshot", "target=ptr", `room=${room}`, `shard=${shard}`].join(" ");
+    command = ["/snapshot", "target=ptr", room && `room=${room}`, `shard=${shard}`]
+      .filter(Boolean)
+      .join(" ");
   } else {
     room = normalizeRoom(args.get("room") || "");
     target = normalizeTarget(args.get("target") || "world");
