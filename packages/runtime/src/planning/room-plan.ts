@@ -60,8 +60,8 @@ export interface RoomPlanSourceAnchor extends PlannedPoint {
 }
 
 export interface RoomPlan {
-  planId: string;
-  deliverableId: string;
+  planId?: string;
+  deliverableId?: string;
   version: number;
   horizonRcl: number;
   roomName: string;
