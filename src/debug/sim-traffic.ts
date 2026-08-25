@@ -256,6 +256,15 @@ function scenarioComplete(specs: ScenarioParticipant[]): boolean {
   });
 }
 
+function clearParticipantCaches(state: SimTrafficState, specs: ScenarioParticipant[]): boolean {
+  for (const spec of specs) {
+    const creep = Game.creeps[spec.name];
+    if (!creep) return fail(state, `Participant ${spec.name} disappeared before scenario start`);
+    clearNativeMovementCache(creep);
+  }
+  return false;
+}
+
 export function runSimTrafficHarness(): boolean {
   const state = Memory.simTraffic;
   if (!state?.active) return false;
@@ -264,8 +273,11 @@ export function runSimTrafficHarness(): boolean {
   const room = Game.rooms.sim;
   if (!room) return fail(state, "Simulation room 'sim' is not visible");
 
-  state.arena ??= findArena(room) ?? undefined;
-  if (!state.arena) return fail(state, "Could not find an open 11-tile cross for deterministic traffic scenarios");
+  if (!state.arena) {
+    const arena = findArena(room);
+    if (!arena) return fail(state, "Could not find an open 11-tile cross for deterministic traffic scenarios");
+    state.arena = arena;
+  }
 
   const specs = participantSpecs(state.scenario, state.arena);
   state.participants = specs.map((spec) => spec.name);
@@ -278,7 +290,7 @@ export function runSimTrafficHarness(): boolean {
   if (state.phase === "spawning") {
     state.phase = "staging";
     state.phaseStartedAt = Game.time;
-    for (const spec of specs) clearNativeMovementCache(Game.creeps[spec.name]);
+    if (clearParticipantCaches(state, specs)) return true;
   }
 
   if (state.phase === "staging") {
@@ -289,7 +301,7 @@ export function runSimTrafficHarness(): boolean {
       state.runningTicks = 0;
       state.metrics = emptyMetrics();
       state.lastMetrics = emptyMetrics();
-      for (const spec of specs) clearNativeMovementCache(Game.creeps[spec.name]);
+      if (clearParticipantCaches(state, specs)) return true;
       console.log(`[simTraffic] ${state.scenario} staged; stress phase begins at tick ${Game.time}`);
       return true;
     }
