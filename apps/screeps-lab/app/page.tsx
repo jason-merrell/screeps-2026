@@ -74,11 +74,17 @@ function RoomGrid({ snapshot }: { snapshot: Snapshot | null }) {
     mark(site, "construction", `construction ${site.structureType ?? "site"}`);
   }
 
+  const cells = classes.map((classNames, index) => ({
+    id: `${index % 50}:${Math.floor(index / 50)}`,
+    className: [...classNames].join(" "),
+    title: titles[index]?.join("; ") || undefined,
+  }));
+
   return (
     <>
       <div className="room-grid" role="img" aria-label="50 by 50 Screeps room grid">
-        {classes.map((classNames, index) => (
-          <span key={index} className={[...classNames].join(" ")} title={titles[index]?.join("; ") || undefined} />
+        {cells.map((cell) => (
+          <span key={cell.id} className={cell.className} title={cell.title} />
         ))}
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
