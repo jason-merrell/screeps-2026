@@ -60,6 +60,7 @@ const parseRoomRef = (value) => {
 
 const average = (values) =>
   values.length === 0 ? null : Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 1000) / 1000;
+const sum = (values) => values.reduce((total, value) => total + value, 0);
 
 const status = requireOk("PTR world status", await requestJson("/api/user/world-status"));
 if (status.status !== "normal") {
@@ -128,7 +129,7 @@ for (let index = 0; index < sampleCount; index += 1) {
   }
 
   const traceSuffix = observability
-    ? ` cpu=${observability.cpu?.total ?? "?"} proposed=${observability.intents?.proposed ?? "?"} accepted=${observability.intents?.accepted ?? "?"} distanceLookups=${observability.spatial?.distanceLookups ?? "?"}`
+    ? ` cpu=${observability.cpu?.total ?? "?"} proposed=${observability.intents?.proposed ?? "?"} accepted=${observability.intents?.accepted ?? "?"} distanceLookups=${observability.spatial?.distanceLookups ?? "?"} flowMoves=${observability.movement?.flowMoves ?? "?"} flowBuilds=${observability.movement?.flowFieldBuilds ?? "?"}`
     : ` trace=unavailable status=${observabilityDiagnostic.status} data=${observabilityDiagnostic.hasData}`;
   console.log(
     `sample ${index + 1}/${sampleCount}: RCL${evaluation.summary.rcl} workforce=${evaluation.summary.workforce} spawnEnergy=${evaluation.summary.spawnEnergy} sites=${evaluation.summary.constructionSites}${traceSuffix}`,
@@ -169,6 +170,17 @@ const observabilitySummary = {
     averageDistanceCacheHits: average(traces.map((trace) => trace.spatial?.distanceCacheHits ?? 0)),
     averageDistanceCacheMisses: average(traces.map((trace) => trace.spatial?.distanceCacheMisses ?? 0)),
     latest: latestTrace?.spatial ?? null,
+  },
+  movement: {
+    averageMoveRequests: average(traces.map((trace) => trace.movement?.moveRequests ?? 0)),
+    averageFlowMoves: average(traces.map((trace) => trace.movement?.flowMoves ?? 0)),
+    averageFallbackMoveTo: average(traces.map((trace) => trace.movement?.fallbackMoveTo ?? 0)),
+    totalCostGridBuilds: sum(traces.map((trace) => trace.movement?.costGridBuilds ?? 0)),
+    totalCostGridCacheHits: sum(traces.map((trace) => trace.movement?.costGridCacheHits ?? 0)),
+    totalFlowFieldBuilds: sum(traces.map((trace) => trace.movement?.flowFieldBuilds ?? 0)),
+    totalFlowFieldCacheHits: sum(traces.map((trace) => trace.movement?.flowFieldCacheHits ?? 0)),
+    totalTopologyInvalidations: sum(traces.map((trace) => trace.movement?.topologyInvalidations ?? 0)),
+    latest: latestTrace?.movement ?? null,
   },
   intents: {
     averageProposed: average(traces.map((trace) => trace.intents.proposed)),
