@@ -124,7 +124,7 @@ function compactIntent(
     reason: intent.reason,
     actor: actorOf(intent),
     conflictKey: conflictKey(intent),
-    trace: intent.trace ? { ...intent.trace } : undefined,
+    ...(intent.trace ? { trace: { ...intent.trace } } : {}),
   };
 }
 
