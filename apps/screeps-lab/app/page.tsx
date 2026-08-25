@@ -1,7 +1,16 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LabShell } from "@/components/lab-shell";
-import { benchmarkFallback, loadControlPlane, type BenchmarkMetrics, type Point, type Snapshot } from "@/lib/control-plane";
+import {
+  benchmarkFallback,
+  loadControlPlane,
+  type BenchmarkMetrics,
+  type FspmColonySummary,
+  type FspmQuality,
+  type FspmRecord,
+  type Point,
+  type Snapshot,
+} from "@/lib/control-plane";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +112,134 @@ function RoomGrid({ snapshot }: { snapshot: Snapshot | null }) {
   );
 }
 
+const qualityTone = (quality?: FspmQuality) => {
+  if (!quality) return "border-white/10 text-muted-foreground";
+  if (quality.state === "healthy") return "border-emerald-400/20 bg-emerald-400/5 text-emerald-300";
+  if (quality.state === "watch") return "border-amber-400/20 bg-amber-400/5 text-amber-300";
+  return "border-red-400/20 bg-red-400/5 text-red-300";
+};
+
+const trendGlyph = (trend?: FspmQuality["trend"]) => {
+  if (trend === "improving") return "↑";
+  if (trend === "declining") return "↓";
+  if (trend === "stable") return "→";
+  return "•";
+};
+
+const domainFromId = (id: string) => id.split(":").at(-1)?.replaceAll("-", " ") ?? id;
+
+function HealthBadge({ quality }: { quality?: FspmQuality }) {
+  return (
+    <Badge variant="outline" className={`gap-1.5 capitalize ${qualityTone(quality)}`}>
+      <span aria-hidden="true">{trendGlyph(quality?.trend)}</span>
+      {quality ? `${quality.score} · ${quality.state}` : "unmeasured"}
+    </Badge>
+  );
+}
+
+function DomainHealthCard({ requirement, deliverable }: { requirement: FspmRecord; deliverable?: FspmRecord }) {
+  const quality = requirement.quality ?? deliverable?.quality;
+  const label = domainFromId(requirement.id);
+
+  return (
+    <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">Requirement</div>
+          <div className="mt-1 text-base font-medium capitalize text-foreground">{label}</div>
+        </div>
+        <HealthBadge quality={quality} />
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2 text-[0.68rem]">
+        <Badge variant="outline" className="capitalize text-muted-foreground">requirement {requirement.status}</Badge>
+        {deliverable ? <Badge variant="outline" className="capitalize text-muted-foreground">deliverable {deliverable.status}</Badge> : null}
+        {quality?.trend ? <Badge variant="outline" className="capitalize text-muted-foreground">trend {quality.trend}</Badge> : null}
+      </div>
+      {quality?.evidence?.length ? (
+        <div className="mt-4 grid gap-1.5 border-t border-white/7 pt-3 text-xs text-muted-foreground">
+          {quality.evidence.map((item) => <div key={item}>• {item}</div>)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ContractTrend({ fspm }: { fspm: FspmColonySummary }) {
+  const history = fspm.contractHistory ?? [];
+  if (!history.length) return <div className="text-xs text-muted-foreground">Trend history has not accumulated yet.</div>;
+  const min = Math.min(...history.map((sample) => sample.score), 0);
+  const max = Math.max(...history.map((sample) => sample.score), 100);
+  const range = Math.max(1, max - min);
+
+  return (
+    <div>
+      <div className="flex h-16 items-end gap-1" aria-label={`Contract quality history with ${history.length} samples`}>
+        {history.map((sample) => (
+          <div
+            key={sample.tick}
+            className="min-w-2 flex-1 rounded-t-sm bg-primary/70"
+            style={{ height: `${Math.max(8, ((sample.score - min) / range) * 100)}%` }}
+            title={`tick ${sample.tick}: ${sample.score} ${sample.state}`}
+          />
+        ))}
+      </div>
+      <div className="mt-2 flex justify-between font-mono text-[0.62rem] text-muted-foreground">
+        <span>{history.length} sample{history.length === 1 ? "" : "s"}</span>
+        <span>latest {history.at(-1)?.score ?? "—"}</span>
+      </div>
+    </div>
+  );
+}
+
+function ExecutiveHealth({ fspm }: { fspm: FspmColonySummary | null }) {
+  if (!fspm) {
+    return (
+      <Card className="lab-panel rounded-2xl border-white/8 bg-card/65 lg:col-span-12">
+        <CardHeader>
+          <CardTitle className="text-xl">Colony health</CardTitle>
+          <CardDescription>FSPM quality has not reached the latest sanitized snapshot yet.</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  const deliverableByDomain = new Map(fspm.deliverables.map((record) => [domainFromId(record.id), record]));
+
+  return (
+    <Card className="lab-panel overflow-hidden rounded-2xl border-white/8 bg-card/65 lg:col-span-12">
+      <CardHeader className="border-b border-white/8 pb-5">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+          <div>
+            <div className="text-[0.68rem] uppercase tracking-[0.18em] text-primary">Executive read model</div>
+            <CardTitle className="mt-2 text-2xl">Colony health · {fspm.roomName}</CardTitle>
+            <CardDescription className="mt-1">Lifecycle says what work exists. Quality says how the capability performs. Trend says which way it is moving.</CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="capitalize text-muted-foreground">contract {fspm.contract.status}</Badge>
+            <HealthBadge quality={fspm.contract.quality} />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-5 pt-6 lg:grid-cols-[minmax(0,1fr)_240px]">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {fspm.requirements.map((requirement) => {
+            const domain = domainFromId(requirement.id);
+            return <DomainHealthCard key={requirement.id} requirement={requirement} deliverable={deliverableByDomain.get(domain)} />;
+          })}
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-black/10 p-4">
+          <div className="text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">Contract trend</div>
+          <div className="mt-1 text-sm font-medium text-foreground">Bounded health window</div>
+          <div className="mt-5"><ContractTrend fspm={fspm} /></div>
+          <div className="mt-4 border-t border-white/7 pt-3 text-xs leading-5 text-muted-foreground">
+            Up to 12 samples, normally every 25 ticks, with immediate capture when health state changes.
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default async function Home() {
   let controlPlane = null;
   try {
@@ -116,13 +253,14 @@ export default async function Home() {
   const controller = snapshot?.colony?.controller;
   const energy = snapshot?.colony?.energy;
   const experiments = controlPlane?.experiments ?? [];
+  const fspm = snapshot?.runtimeTrace?.fspm?.colonies?.find((colony) => colony.roomName === snapshot?.room) ?? snapshot?.runtimeTrace?.fspm?.colonies?.[0] ?? null;
 
   return (
     <LabShell
       active="observability"
       eyebrow="remote experimentation control plane"
       title="Colony observability"
-      description="A compact read model for the colony’s current state, room plan, runtime profile, and completed experiments."
+      description="A compact read model for colony health, current state, room plan, runtime profile, and completed experiments."
       status={
         <Badge variant="outline" className="w-fit border-emerald-400/20 px-3 py-1.5 text-emerald-300">
           <span className="mr-2 h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_currentColor]" />
@@ -131,6 +269,8 @@ export default async function Home() {
       }
     >
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <ExecutiveHealth fspm={fspm} />
+
         <div className="lg:col-span-3">{metricCard("Colony", snapshot?.room ?? "W39S23", `${snapshot?.target ?? "ptr"} / ${snapshot?.shard ?? "shard3"}`)}</div>
         <div className="lg:col-span-3">{metricCard("RCL", controller?.level ?? "—", controller?.progressTotal ? `${controller.progress ?? 0} / ${controller.progressTotal}` : "controller progress unavailable")}</div>
         <div className="lg:col-span-3">{metricCard("Room energy", energy ? `${energy.available ?? 0} / ${energy.capacity ?? 0}` : "—", "available / capacity")}</div>
