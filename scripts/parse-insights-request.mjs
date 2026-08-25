@@ -127,10 +127,7 @@ if (eventName === "issue_comment") {
       .join(" ");
   } else if (mode === "deploy-code") {
     target = normalizeTarget(args.get("target") || "", "");
-    if (target !== "ptr") {
-      fail("/deploy-code currently requires target=ptr; World deployment is intentionally disabled here");
-    }
-    command = "/deploy-code target=ptr";
+    command = `/deploy-code target=${target}`;
   } else if (mode === "experiment") {
     target = normalizeTarget(args.get("target") || "", "");
     if (target !== "ptr") {
