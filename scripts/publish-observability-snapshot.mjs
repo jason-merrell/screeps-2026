@@ -12,6 +12,7 @@ const requestCommand = process.env.SCREEPS_COMMAND || "/snapshot";
 const apiPrefix = target === "ptr" ? "/ptr" : "";
 const supabaseIngestUrl = process.env.SUPABASE_INGEST_URL || "";
 const githubOidcToken = process.env.GITHUB_OIDC_TOKEN || "";
+const observabilitySegment = 99;
 
 if (!token) throw new Error("SCREEPS_TOKEN is required to publish an observability snapshot");
 if (!/^[WE]\d+[NS]\d+$/.test(room)) throw new Error("SCREEPS_ROOM is required for /snapshot");
@@ -110,12 +111,84 @@ const sanitizePlan = (plan) => {
   };
 };
 
+const finiteNumber = (value) => (Number.isFinite(value) ? value : null);
+const boundedString = (value, max = 240) =>
+  typeof value === "string" && value.length <= max ? value : null;
+
+const sanitizeLineage = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const lineage = {
+    contractId: boundedString(value.contractId),
+    requirementId: boundedString(value.requirementId),
+    deliverableId: boundedString(value.deliverableId),
+    taskId: boundedString(value.taskId),
+    activityId: boundedString(value.activityId),
+  };
+  return Object.values(lineage).every(Boolean) ? lineage : null;
+};
+
+const sanitizeIntentTrace = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const lineage = sanitizeLineage(value.trace);
+  return {
+    type: boundedString(value.type, 64),
+    planner: boundedString(value.planner, 64),
+    priority: finiteNumber(value.priority),
+    reason: boundedString(value.reason, 500),
+    actor: boundedString(value.actor, 240),
+    conflictKey: boundedString(value.conflictKey, 240),
+    ...(lineage ? { trace: lineage } : {}),
+  };
+};
+
+const sanitizeRuntimeTrace = (value) => {
+  if (!value || typeof value !== "object" || value.version !== 1) return null;
+  const intents = value.intents && typeof value.intents === "object" ? value.intents : {};
+  return {
+    version: 1,
+    tick: Number.isInteger(value.tick) ? value.tick : null,
+    cpu:
+      value.cpu && typeof value.cpu === "object"
+        ? {
+            limit: finiteNumber(value.cpu.limit),
+            bucket: finiteNumber(value.cpu.bucket),
+            perception: finiteNumber(value.cpu.perception),
+            settlement: finiteNumber(value.cpu.settlement),
+            arbitration: finiteNumber(value.cpu.arbitration),
+            execution: finiteNumber(value.cpu.execution),
+            observability: finiteNumber(value.cpu.observability),
+            total: finiteNumber(value.cpu.total),
+          }
+        : null,
+    intents: {
+      proposed: finiteNumber(intents.proposed),
+      accepted: finiteNumber(intents.accepted),
+      rejected: finiteNumber(intents.rejected),
+      acceptedSample: Array.isArray(intents.acceptedSample)
+        ? intents.acceptedSample.slice(0, 24).map(sanitizeIntentTrace).filter(Boolean)
+        : [],
+      rejectedSample: Array.isArray(intents.rejectedSample)
+        ? intents.rejectedSample.slice(0, 24).map((rejection) => ({
+            conflictKey: boundedString(rejection?.conflictKey, 240),
+            winner: sanitizeIntentTrace(rejection?.winner),
+            loser: sanitizeIntentTrace(rejection?.loser),
+          }))
+        : [],
+    },
+  };
+};
+
 const memory = await requestJson("/api/user/memory", {
   path: `colonies.${room}.roomPlan`,
   shard,
 });
+const traceMemory = await requestJson("/api/user/memory-segment", {
+  segment: observabilitySegment,
+  shard,
+});
 const roomObjects = await requestJson("/api/game/room-objects", { room, shard });
 const plan = sanitizePlan(decodeMemory(memory.data));
+const runtimeTrace = sanitizeRuntimeTrace(decodeMemory(traceMemory.data));
 if (!plan) throw new Error(`No durable room plan exists at Memory.colonies.${room}.roomPlan`);
 
 const objects = Array.isArray(roomObjects.objects) ? roomObjects.objects : [];
@@ -169,6 +242,7 @@ const snapshot = {
     })),
   },
   roomPlan: plan,
+  runtimeTrace,
 };
 
 let publication = {
