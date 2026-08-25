@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { gunzipSync } from "node:zlib";
 import { evaluateBootstrapState, projectBootstrapState } from "./lib/bootstrap-state.mjs";
+import { decodeScreepsMemory, summarizeMemoryResponse } from "./lib/screeps-memory.mjs";
 
 const token = process.env.SCREEPS_TOKEN;
 const host = process.env.SCREEPS_HOST || "https://screeps.com";
@@ -49,20 +49,6 @@ const requireOk = (label, response) => {
   return response.body;
 };
 
-const decodeMemoryData = (body) => {
-  const data = body?.data;
-  if (typeof data !== "string" || data.length === 0) return null;
-
-  try {
-    const json = data.startsWith("gz:")
-      ? gunzipSync(Buffer.from(data.slice(3), "base64")).toString("utf8")
-      : data;
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-};
-
 const parseRoomRef = (value) => {
   if (typeof value !== "string") return null;
   const qualified = value.match(/^(shard[^/]+)\/([WE]\d+[NS]\d+)$/i);
@@ -92,7 +78,7 @@ for (let index = 0; index < sampleCount; index += 1) {
     requestJson("/api/game/room-objects", { room: ref.room, shard: ref.shard }),
     requestJson("/api/game/room-overview", { room: ref.room, shard: ref.shard, interval: 8 }),
     requestJson("/api/user/world-status"),
-    requestJson("/api/user/memory", { path: "stats.observability" }),
+    requestJson("/api/user/memory", { path: "observability" }),
   ]);
 
   requireOk("PTR room objects", objects);
@@ -124,9 +110,12 @@ for (let index = 0; index < sampleCount; index += 1) {
   const state = projectBootstrapState(rawSnapshot, ref.room);
   const evaluation = evaluateBootstrapState(state);
   const observability = observabilityResponse.ok
-    ? decodeMemoryData(observabilityResponse.body)
+    ? decodeScreepsMemory(observabilityResponse.body)
     : null;
-  samples.push({ index, collectedAt, state, evaluation, observability });
+  const observabilityDiagnostic = observability
+    ? null
+    : summarizeMemoryResponse(observabilityResponse);
+  samples.push({ index, collectedAt, state, evaluation, observability, observabilityDiagnostic });
 
   for (const [milestone, reached] of Object.entries(evaluation.milestones)) {
     if (reached && transitions[milestone] === undefined) {
@@ -136,7 +125,7 @@ for (let index = 0; index < sampleCount; index += 1) {
 
   const traceSuffix = observability
     ? ` cpu=${observability.cpu?.total ?? "?"} proposed=${observability.intents?.proposed ?? "?"} accepted=${observability.intents?.accepted ?? "?"}`
-    : " trace=unavailable";
+    : ` trace=unavailable status=${observabilityDiagnostic.status} data=${observabilityDiagnostic.hasData}`;
   console.log(
     `sample ${index + 1}/${sampleCount}: RCL${evaluation.summary.rcl} workforce=${evaluation.summary.workforce} spawnEnergy=${evaluation.summary.spawnEnergy} sites=${evaluation.summary.constructionSites}${traceSuffix}`,
   );
@@ -153,6 +142,7 @@ const latestTrace = traces.at(-1) ?? null;
 const observabilitySummary = {
   samplesWithTrace: traces.length,
   latestTick: latestTrace?.tick ?? null,
+  latestDiagnostic: final?.observabilityDiagnostic ?? null,
   cpu: {
     averageTotal: average(traces.map((trace) => trace.cpu.total)),
     maxTotal: traces.length ? Math.max(...traces.map((trace) => trace.cpu.total)) : null,
