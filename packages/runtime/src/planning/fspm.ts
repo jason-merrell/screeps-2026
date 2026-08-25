@@ -3,12 +3,20 @@ import type { Intent } from "../intents/types";
 export type FspmDomain = "economy" | "spawning" | "construction" | "defense";
 export type FspmStatus = "active" | "completed" | "cancelled";
 export type FspmQualityState = "healthy" | "watch" | "degraded";
+export type FspmQualityTrend = "new" | "improving" | "stable" | "declining";
 
 export interface FspmQuality {
   score: number;
   state: FspmQualityState;
+  trend: FspmQualityTrend;
   measuredAt: number;
   evidence: string[];
+}
+
+export interface FspmQualitySample {
+  tick: number;
+  score: number;
+  state: FspmQualityState;
 }
 
 interface FspmRecordBase {
@@ -53,6 +61,7 @@ export interface ColonyFspmPortfolio {
   requirements: Partial<Record<FspmDomain, ColonyRequirement>>;
   deliverables: Partial<Record<FspmDomain, ColonyDeliverable>>;
   tasks: Record<string, ColonyTask>;
+  qualityHistory?: Record<string, FspmQualitySample[]>;
 }
 
 const titleCase = (value: string): string =>
@@ -107,10 +116,12 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
       requirements: {},
       deliverables: {},
       tasks: {},
+      qualityHistory: {},
     };
   }
 
   const portfolio = colony.fspm;
+  portfolio.qualityHistory ??= {};
   portfolio.contract.completionCriterion ??= "close only by explicit colony decommission";
   portfolio.contract.statusReason ??= "owned colony is operational";
 
