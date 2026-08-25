@@ -60,7 +60,11 @@ jobs:
       - name: Install runtime workspace dependencies
         run: pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
 
-      - run: pnpm check
+      - name: Check runtime
+        run: |
+          pnpm --filter @screeps/runtime lint
+          pnpm --filter @screeps/runtime typecheck
+          pnpm --filter @screeps/runtime test
 
       - run: pnpm run deploy:screeps
         env:
