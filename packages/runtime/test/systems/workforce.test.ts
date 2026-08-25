@@ -3,6 +3,8 @@ import {
   bodyCost,
   desiredBootstrapWorkforce,
   generalistBodyForCapacity,
+  sourceProducerBodyForCapacity,
+  transporterBodyForCapacity,
 } from "../../src/systems/spawning/workforce";
 
 describe("bootstrap workforce", () => {
@@ -28,5 +30,33 @@ describe("bootstrap workforce", () => {
       "move",
     ]);
     expect(bodyCost(generalistBodyForCapacity(600))).toBe(600);
+  });
+
+  it("concentrates source production into WORK-heavy bodies", () => {
+    expect(sourceProducerBodyForCapacity(550)).toEqual([
+      "work",
+      "work",
+      "work",
+      "work",
+      "carry",
+      "move",
+    ]);
+    expect(bodyCost(sourceProducerBodyForCapacity(550))).toBe(500);
+  });
+
+  it("concentrates transport into CARRY/MOVE bodies without WORK tax", () => {
+    expect(transporterBodyForCapacity(550)).toEqual([
+      "carry",
+      "move",
+      "carry",
+      "move",
+      "carry",
+      "move",
+      "carry",
+      "move",
+      "carry",
+      "move",
+    ]);
+    expect(bodyCost(transporterBodyForCapacity(550))).toBe(500);
   });
 });
