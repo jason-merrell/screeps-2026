@@ -26,6 +26,20 @@ interface CompactRejectionTrace {
   loser: CompactIntentTrace;
 }
 
+interface RoomPlanTraceSummary {
+  roomName: string;
+  version: number;
+  horizonRcl: number;
+  generatedAt: number;
+  generatedReason: string;
+  hub: { x: number; y: number };
+  automaticStructures: number;
+  demandStructures: number;
+  roadTiles: number;
+  roadEdges: number;
+  invalidated: boolean;
+}
+
 export interface TickObservabilityTrace {
   version: 1;
   tick: number;
@@ -40,6 +54,9 @@ export interface TickObservabilityTrace {
     execution: number;
     observability: number;
     total: number;
+  };
+  settlement: {
+    plans: RoomPlanTraceSummary[];
   };
   spatial: SpatialIndexMetrics;
   intents: {
@@ -106,6 +123,34 @@ function compactIntent(
   };
 }
 
+function roomPlanSummaries(): RoomPlanTraceSummary[] {
+  return Object.values(Memory.colonies)
+    .flatMap((colony) => {
+      const plan = colony.roomPlan;
+      if (!plan) return [];
+      return [
+        {
+          roomName: plan.roomName,
+          version: plan.version,
+          horizonRcl: plan.horizonRcl,
+          generatedAt: plan.generatedAt,
+          generatedReason: plan.generatedReason,
+          hub: { ...plan.anchors.hub },
+          automaticStructures: plan.structures.filter(
+            (structure) => structure.activation === "automatic",
+          ).length,
+          demandStructures: plan.structures.filter(
+            (structure) => structure.activation === "demand",
+          ).length,
+          roadTiles: plan.roads.length,
+          roadEdges: plan.roadGraph.edges.length,
+          invalidated: plan.invalidatedAt !== undefined,
+        },
+      ];
+    })
+    .sort((a, b) => a.roomName.localeCompare(b.roomName));
+}
+
 export function publishTickTrace(input: PublishTickTraceInput): TickObservabilityTrace {
   const observabilityStart = Game.cpu.getUsed();
   const proposed = input.plannerRuns.flatMap((run) => run.intents);
@@ -141,6 +186,9 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
       execution: roundCpu(input.executionCpu),
       observability: 0,
       total: 0,
+    },
+    settlement: {
+      plans: roomPlanSummaries(),
     },
     spatial: { ...input.spatial },
     intents: {
