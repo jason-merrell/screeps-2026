@@ -1,3 +1,5 @@
+import { recordTraffic } from "./traffic-heatmap";
+
 export interface MovementMetrics {
   requests: number;
   cachedPathAttempts: number;
@@ -174,6 +176,13 @@ export function resolveMovementRequests(requests: MovementRequest[]): MovementMe
 
   for (const request of ordered) {
     if (handled.has(request.creep.name)) continue;
+
+    recordTraffic(
+      request.creep.pos.roomName,
+      request.creep.pos.x,
+      request.creep.pos.y,
+      Game.time,
+    );
 
     const nextState = advanceMovementState(
       request.creep.memory.movement,
