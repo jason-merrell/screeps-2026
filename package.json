@@ -9,6 +9,7 @@
   "packageManager": "pnpm@10.15.0",
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@screeps/driver",
       "isolated-vm"
     ]
   },
