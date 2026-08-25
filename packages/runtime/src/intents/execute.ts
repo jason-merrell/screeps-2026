@@ -85,7 +85,10 @@ export function execute(intents: Intent[]): ExecutionResult {
     if (!creep || creep.spawning) continue;
 
     if (intent.type === "move") {
-      const target = Game.getObjectById(intent.targetId);
+      const target = Game.getObjectById(intent.targetId) as
+        | StructureContainer
+        | StructureSpawn
+        | null;
       if (!target) {
         observe(activities, intent, ERR_INVALID_TARGET, false);
         continue;

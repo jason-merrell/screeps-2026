@@ -32,7 +32,7 @@ interface CreepIntentBase extends IntentBase {
 
 export interface MoveIntent extends CreepIntentBase {
   type: "move";
-  targetId: Id<StructureContainer>;
+  targetId: Id<StructureContainer | StructureSpawn>;
   range: number;
 }
 

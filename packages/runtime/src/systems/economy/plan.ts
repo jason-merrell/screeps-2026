@@ -2,6 +2,11 @@ import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import type { WorldSnapshot } from "../../runtime/context";
 import { capabilitiesOf } from "../../workforce/capabilities";
+import {
+  plannedSourceRouteLength,
+  requiredCarryParts,
+  reserveTransportCapacity,
+} from "./logistics";
 import { assignRecoveryHarvesters } from "./source-allocation";
 
 const PEACETIME_TOWER_RESERVE = 400;
@@ -11,6 +16,7 @@ export type EnergyMode = "collect" | "deliver";
 interface BufferedSource {
   source: Source;
   container: StructureContainer;
+  sourceIndex: number;
 }
 
 declare global {
@@ -69,7 +75,7 @@ function bufferedSources(room: Room): BufferedSource[] {
   if (!plan) return [];
 
   const buffered: BufferedSource[] = [];
-  for (const anchor of plan.anchors.sources) {
+  for (const [sourceIndex, anchor] of plan.anchors.sources.entries()) {
     const source = Game.getObjectById(anchor.sourceId as Id<Source>);
     if (!source) continue;
 
@@ -79,7 +85,7 @@ function bufferedSources(room: Room): BufferedSource[] {
         (structure): structure is StructureContainer =>
           structure.structureType === STRUCTURE_CONTAINER,
       );
-    if (container) buffered.push({ source, container });
+    if (container) buffered.push({ source, container, sourceIndex });
   }
   return buffered;
 }
@@ -128,7 +134,9 @@ function transporterAssignments(
     const buffered = bufferedByRoom.get(room.name) ?? [];
     if (buffered.length === 0) continue;
 
-    const assignedCount = new Map(buffered.map((node) => [node.container.id, 0]));
+    const plan = Memory.colonies[room.name]?.roomPlan;
+    if (!plan) continue;
+
     const candidates = world.creeps
       .filter((creep) => {
         if (creep.spawning || creep.room.name !== room.name || producers.has(creep.name)) {
@@ -138,25 +146,36 @@ function transporterAssignments(
       })
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    for (const creep of candidates) {
-      const node = [...buffered].sort((a, b) => {
-        const energyDifference =
-          Number(b.container.store.getUsedCapacity(RESOURCE_ENERGY) > 0) -
-          Number(a.container.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
-        if (energyDifference !== 0) return energyDifference;
+    const producerByContainer = new Map(
+      [...producers.entries()].map(([creepName, node]) => [node.container.id, Game.creeps[creepName]]),
+    );
+    const reservations = reserveTransportCapacity(
+      buffered.flatMap((node) => {
+        const producer = producerByContainer.get(node.container.id);
+        if (!producer) return [];
+        return [{
+          id: node.container.id,
+          requiredCarry: requiredCarryParts(
+            plannedSourceRouteLength(plan, node.sourceIndex),
+            producer.getActiveBodyparts(WORK) * HARVEST_POWER,
+          ),
+        }];
+      }),
+      candidates.map((creep) => ({
+        name: creep.name,
+        carry: creep.getActiveBodyparts(CARRY),
+        rangeByNode: Object.fromEntries(
+          buffered.map((node) => [node.container.id, creep.pos.getRangeTo(node.container)]),
+        ),
+      })),
+    );
 
-        const countDifference =
-          (assignedCount.get(a.container.id) ?? 0) -
-          (assignedCount.get(b.container.id) ?? 0);
-        if (countDifference !== 0) return countDifference;
-
-        const rangeDifference = creep.pos.getRangeTo(a.container) - creep.pos.getRangeTo(b.container);
-        return rangeDifference || a.container.id.localeCompare(b.container.id);
-      })[0];
-
-      if (!node) continue;
-      assignments.set(creep.name, node);
-      assignedCount.set(node.container.id, (assignedCount.get(node.container.id) ?? 0) + 1);
+    const nodeById = new Map<string, BufferedSource>(
+      buffered.map((node) => [node.container.id, node]),
+    );
+    for (const [creepName, nodeId] of reservations) {
+      const node = nodeById.get(nodeId);
+      if (node) assignments.set(creepName, node);
     }
   }
 
@@ -315,6 +334,24 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
       }
 
       const recoverySource = recovery.get(creep.name);
+      if (!assigned && !capabilities.has("harvest")) {
+        const spawn = spatial.myStructures.find(
+          (structure): structure is StructureSpawn => structure.structureType === STRUCTURE_SPAWN,
+        );
+        if (spawn) {
+          intents.push({
+            type: "move",
+            creepName: creep.name,
+            targetId: spawn.id,
+            range: 2,
+            priority: 200,
+            reason: "park surplus transport capacity away from the source edge",
+            trace: trace(roomName, creep.name, "hold-surplus-transport", `park:${spawn.id}`),
+          });
+          continue;
+        }
+      }
+
       if (!recoverySource && assigned) {
         intents.push({
           type: "move",
