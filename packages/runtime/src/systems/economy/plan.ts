@@ -5,6 +5,24 @@ import { capabilitiesOf } from "../../workforce/capabilities";
 
 const PEACETIME_TOWER_RESERVE = 400;
 
+export type EnergyMode = "collect" | "deliver";
+
+declare global {
+  interface CreepMemory {
+    energyMode?: EnergyMode;
+  }
+}
+
+export function resolveEnergyMode(
+  previous: EnergyMode | undefined,
+  energy: number,
+  capacity: number,
+): EnergyMode {
+  if (energy <= 0) return "collect";
+  if (capacity > 0 && energy >= capacity) return "deliver";
+  return previous ?? "collect";
+}
+
 function trace(roomName: string, creepName: string, task: string, activity: string) {
   return createIntentTrace({
     roomName,
@@ -52,9 +70,11 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
 
     const capabilities = capabilitiesOf(creep);
     const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
-    const freeEnergy = creep.store.getFreeCapacity(RESOURCE_ENERGY);
+    const capacity = creep.store.getCapacity(RESOURCE_ENERGY) ?? energy;
+    let energyMode = resolveEnergyMode(creep.memory.energyMode, energy, capacity);
+    creep.memory.energyMode = energyMode;
 
-    if (freeEnergy > 0 && capabilities.has("harvest")) {
+    if (energyMode === "collect" && capabilities.has("harvest")) {
       const activeSources = spatial.sources.filter((source) => source.energy > 0);
       const source = world.spatial.nearest(creep.pos, activeSources);
       if (source) {
@@ -63,14 +83,19 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           creepName: creep.name,
           sourceId: source.id,
           priority: 1000,
-          reason: "fill worker energy before delivery or discretionary work",
+          reason: "complete collection cycle before delivery",
           trace: trace(roomName, creep.name, "maintain-energy-flow", `harvest:${source.id}`),
         });
         continue;
       }
+
+      if (energy > 0) {
+        energyMode = "deliver";
+        creep.memory.energyMode = energyMode;
+      }
     }
 
-    if (energy > 0 && capabilities.has("haul")) {
+    if (energyMode === "deliver" && energy > 0 && capabilities.has("haul")) {
       const reproductionTargets = spatial.myStructures.filter(
         (structure): structure is StructureSpawn | StructureExtension =>
           (structure.structureType === STRUCTURE_SPAWN ||
@@ -86,7 +111,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           targetId: reproductionTarget.id,
           resource: RESOURCE_ENERGY,
           priority: 950,
-          reason: "fund reproduction capacity before defensive reserves",
+          reason: "continue delivery cycle until worker is empty",
           trace: trace(
             roomName,
             creep.name,
@@ -121,7 +146,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
       }
     }
 
-    if (energy > 0 && capabilities.has("build")) {
+    if (energyMode === "deliver" && energy > 0 && capabilities.has("build")) {
       const site = world.spatial.nearest(creep.pos, spatial.constructionSites);
       if (site) {
         intents.push({
@@ -129,14 +154,14 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           creepName: creep.name,
           targetId: site.id,
           priority: 700,
-          reason: "bootstrap infrastructure demand",
+          reason: "spend delivery-cycle surplus on bootstrap infrastructure",
           trace: trace(roomName, creep.name, "build-infrastructure", `build:${site.id}`),
         });
         continue;
       }
     }
 
-    if (energy > 0 && capabilities.has("repair")) {
+    if (energyMode === "deliver" && energy > 0 && capabilities.has("repair")) {
       const repairTargets = spatial.structures.filter(needsBootstrapRepair);
       const repairTarget = world.spatial.nearest(creep.pos, repairTargets);
       if (repairTarget) {
@@ -145,20 +170,25 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           creepName: creep.name,
           targetId: repairTarget.id,
           priority: 500,
-          reason: "restore critical bootstrap infrastructure",
+          reason: "spend delivery-cycle surplus restoring bootstrap infrastructure",
           trace: trace(roomName, creep.name, "restore-infrastructure", `repair:${repairTarget.id}`),
         });
         continue;
       }
     }
 
-    if (energy > 0 && capabilities.has("upgrade") && creep.room.controller?.my) {
+    if (
+      energyMode === "deliver" &&
+      energy > 0 &&
+      capabilities.has("upgrade") &&
+      creep.room.controller?.my
+    ) {
       intents.push({
         type: "upgrade",
         creepName: creep.name,
         controllerId: creep.room.controller.id,
         priority: 100,
-        reason: "invest surplus energy in controller progression",
+        reason: "finish delivery cycle by investing surplus energy in controller progression",
         trace: trace(
           roomName,
           creep.name,
