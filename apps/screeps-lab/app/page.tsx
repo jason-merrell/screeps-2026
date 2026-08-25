@@ -173,7 +173,7 @@ function ContractTrend({ fspm }: { fspm: FspmColonySummary }) {
 
   return (
     <div>
-      <div className="flex h-16 items-end gap-1" aria-label={`Contract quality history with ${history.length} samples`}>
+      <div className="flex h-16 items-end gap-1" role="img" aria-label={`Contract quality history with ${history.length} samples`}>
         {history.map((sample) => (
           <div
             key={sample.tick}
