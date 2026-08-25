@@ -36,12 +36,16 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
   for (const creep of world.creeps) {
     if (creep.spawning) continue;
 
+    const spatial = world.spatial.byRoom[creep.room.name];
+    if (!spatial) continue;
+
     const capabilities = capabilitiesOf(creep);
     const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
     const freeEnergy = creep.store.getFreeCapacity(RESOURCE_ENERGY);
 
     if (freeEnergy > 0 && capabilities.has("harvest")) {
-      const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+      const activeSources = spatial.sources.filter((source) => source.energy > 0);
+      const source = world.spatial.nearest(creep.pos, activeSources);
       if (source) {
         intents.push({
           type: "harvest",
@@ -55,12 +59,13 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     }
 
     if (energy > 0 && capabilities.has("haul")) {
-      const reproductionTarget = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
-        filter: (structure) =>
+      const reproductionTargets = spatial.myStructures.filter(
+        (structure): structure is StructureSpawn | StructureExtension =>
           (structure.structureType === STRUCTURE_SPAWN ||
             structure.structureType === STRUCTURE_EXTENSION) &&
           structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0,
-      }) as StructureSpawn | StructureExtension | null;
+      );
+      const reproductionTarget = world.spatial.nearest(creep.pos, reproductionTargets);
 
       if (reproductionTarget) {
         intents.push({
@@ -74,12 +79,13 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
         continue;
       }
 
-      const underAttack = creep.room.find(FIND_HOSTILE_CREEPS).length > 0;
-      const tower = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
-        filter: (structure) =>
+      const underAttack = spatial.hostiles.length > 0;
+      const towers = spatial.myStructures.filter(
+        (structure): structure is StructureTower =>
           structure.structureType === STRUCTURE_TOWER &&
           towerNeedsReserve(structure as StructureTower, underAttack),
-      }) as StructureTower | null;
+      );
+      const tower = world.spatial.nearest(creep.pos, towers);
 
       if (tower) {
         intents.push({
@@ -97,7 +103,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     }
 
     if (energy > 0 && capabilities.has("build")) {
-      const site = creep.pos.findClosestByPath(FIND_MY_CONSTRUCTION_SITES);
+      const site = world.spatial.nearest(creep.pos, spatial.constructionSites);
       if (site) {
         intents.push({
           type: "build",
@@ -111,9 +117,8 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     }
 
     if (energy > 0 && capabilities.has("repair")) {
-      const repairTarget = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-        filter: needsBootstrapRepair,
-      });
+      const repairTargets = spatial.structures.filter(needsBootstrapRepair);
+      const repairTarget = world.spatial.nearest(creep.pos, repairTargets);
       if (repairTarget) {
         intents.push({
           type: "repair",
