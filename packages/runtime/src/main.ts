@@ -13,6 +13,7 @@ import {
 } from "./observability/trace";
 import { reconcileFspmLifecycle } from "./planning/fspm";
 import { ensureRoomPlanOwnership } from "./planning/ownership";
+import { reconcileFspmQuality } from "./planning/quality";
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
@@ -62,6 +63,7 @@ export const loop = (): void => {
   ];
   const proposed = plannerRuns.flatMap((run) => run.intents);
   reconcileFspmLifecycle(proposed);
+  reconcileFspmQuality(world);
 
   phaseStart = Game.cpu.getUsed();
   const arbitration = arbitrateDetailed(proposed);
