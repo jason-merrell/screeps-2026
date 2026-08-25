@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { findOwnedSpawnInObjects } from "./lib/owned-colony.mjs";
 import { rankStartRooms } from "./lib/start-room-recommender.mjs";
 
 const token = process.env.SCREEPS_TOKEN;
@@ -141,33 +142,53 @@ const scanSector = async (sector, shard) => {
   };
 };
 
-const findExistingRequestSpawn = async (shard) => {
+const findExistingOwnedSpawn = async (shard) => {
+  const roomTargets = new Map();
+  const addRoom = (value, fallbackShard = shard) => {
+    if (typeof value === "string") {
+      const ref = parseRoomRef(value, fallbackShard);
+      if (ref && (!requestedShard || ref.shard === requestedShard)) {
+        roomTargets.set(`${ref.shard}/${ref.room}`, ref);
+      }
+      return;
+    }
+
+    const roomName = value?.room || value?._id;
+    if (typeof roomName === "string") addRoom(roomName, fallbackShard);
+  };
+
   const roomsResponse = await requestJson("/api/user/rooms", {
     params: { interval: 8 },
   });
-  if (!roomsResponse.ok) return null;
+  if (roomsResponse.ok && roomsResponse.body?.shards) {
+    for (const [shardName, shardRooms] of Object.entries(roomsResponse.body.shards)) {
+      if (!Array.isArray(shardRooms)) continue;
+      for (const value of shardRooms) addRoom(value, shardName);
+    }
+  }
 
-  const shardRooms = roomsResponse.body?.shards?.[shard];
-  if (!Array.isArray(shardRooms)) return null;
+  const startRoomResponse = await requestJson("/api/user/world-start-room");
+  if (startRoomResponse.ok && Array.isArray(startRoomResponse.body?.room)) {
+    for (const value of startRoomResponse.body.room) addRoom(value, shard);
+  }
 
-  for (const value of shardRooms) {
-    const roomName =
-      typeof value === "string" ? value : value?.room || value?._id || null;
-    if (typeof roomName !== "string") continue;
-
+  for (const ref of roomTargets.values()) {
     const objectsResponse = await requestJson("/api/game/room-objects", {
-      params: { room: roomName, shard },
+      params: { room: ref.room, shard: ref.shard },
     });
     if (!objectsResponse.ok) continue;
 
-    const objects = Array.isArray(objectsResponse.body?.objects)
-      ? objectsResponse.body.objects
-      : [];
-    const spawn = objects.find(
-      (object) => object.type === "spawn" && object.name === spawnName,
-    );
-    if (spawn) {
-      return { room: roomName, x: spawn.x, y: spawn.y, name: spawn.name, shard };
+    const owned = findOwnedSpawnInObjects(objectsResponse.body?.objects, spawnName);
+    if (owned) {
+      return {
+        room: ref.room,
+        shard: ref.shard,
+        name: owned.name,
+        x: owned.x,
+        y: owned.y,
+        user: owned.user,
+        controller: owned.controller,
+      };
     }
   }
 
@@ -198,10 +219,10 @@ const initialStatus = requireOk(
 const shard = requestedShard || defaultShard;
 
 if (initialStatus.status !== "empty") {
-  const existing = await findExistingRequestSpawn(shard);
+  const existing = await findExistingOwnedSpawn(shard);
   if (!existing) {
     throw new Error(
-      `${targetLabel} is not empty (status=${initialStatus.status}) and no spawn for request ${requestId} exists; refusing to mutate it`,
+      `${targetLabel} is not empty (status=${initialStatus.status}) but no authenticated owned spawn was discovered; refusing to mutate it`,
     );
   }
 
@@ -210,13 +231,13 @@ if (initialStatus.status !== "empty") {
     collectedAt: new Date().toISOString(),
     host,
     target,
-    result: "already-placed",
+    result: "already-owned",
     activation,
     spawn: existing,
     worldStatus: initialStatus,
   });
   console.log(
-    `${targetLabel} request ${requestId} was already placed at ${existing.room} (${existing.x},${existing.y}).`,
+    `${targetLabel} already owns spawn ${existing.name} at ${existing.room} (${existing.x},${existing.y}); no placement needed.`,
   );
   process.exit(0);
 }
