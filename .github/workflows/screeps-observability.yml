@@ -1,0 +1,115 @@
+name: Screeps Observability Snapshot
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+jobs:
+  snapshot:
+    if: >-
+      github.event.issue.number == 5 &&
+      startsWith(github.event.comment.body, '/snapshot') &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: screeps-observability-${{ github.event.comment.id }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Validate atomic snapshot request
+        id: request
+        run: node scripts/parse-insights-request.mjs
+        env:
+          SCREEPS_REQUEST: ${{ github.event.comment.body }}
+          SCREEPS_COMMENT_ID: ${{ github.event.comment.id }}
+
+      - name: Check idempotency receipt
+        id: dedupe
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER: ${{ steps.request.outputs.marker }}
+        run: |
+          set -euo pipefail
+          completed=false
+          if gh api "repos/${GITHUB_REPOSITORY}/issues/5/comments" --paginate --jq '.[].body' | grep -Fq -- "$MARKER"; then
+            completed=true
+            echo "Snapshot request already completed; no collection will run."
+          fi
+          echo "completed=$completed" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Infisical configuration
+        if: steps.dedupe.outputs.completed != 'true'
+        shell: bash
+        env:
+          INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
+          INFISICAL_PROJECT_SLUG: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          INFISICAL_ENV_SLUG: ${{ vars.INFISICAL_ENV_SLUG }}
+        run: |
+          test -n "$INFISICAL_IDENTITY_ID" || (echo "Missing repository variable INFISICAL_IDENTITY_ID" && exit 1)
+          test -n "$INFISICAL_PROJECT_SLUG" || (echo "Missing repository variable INFISICAL_PROJECT_SLUG" && exit 1)
+          test -n "$INFISICAL_ENV_SLUG" || (echo "Missing repository variable INFISICAL_ENV_SLUG" && exit 1)
+
+      - name: Fetch collector secrets from Infisical
+        if: steps.dedupe.outputs.completed != 'true'
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          secret-path: /deploy
+          recursive: false
+          include-imports: false
+
+      - name: Publish sanitized snapshot
+        if: steps.dedupe.outputs.completed != 'true'
+        run: node scripts/publish-observability-snapshot.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+          SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
+          SCREEPS_TARGET: ${{ steps.request.outputs.target }}
+          SCREEPS_ROOM: ${{ steps.request.outputs.room }}
+          SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
+          SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+
+      - name: Upload snapshot fallback artifact
+        if: steps.dedupe.outputs.completed != 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.request.outputs.artifact_name }}
+          path: |
+            artifacts/screeps-insights.json
+            artifacts/screeps-public-snapshot.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+      - name: Write compatibility receipt
+        if: steps.dedupe.outputs.completed != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER: ${{ steps.request.outputs.marker }}
+          REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          COMMAND: ${{ steps.request.outputs.command }}
+          ARTIFACT: ${{ steps.request.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\nartifact: `%s`\ncontrol-plane: `supabase-preferred`\nrun: %s/%s/actions/runs/%s' \
+            "$MARKER" "$COMMAND" "$REQUEST_ID" "$ARTIFACT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/5/comments" -f body="$BODY" >/dev/null
