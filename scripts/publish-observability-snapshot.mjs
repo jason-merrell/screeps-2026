@@ -54,10 +54,16 @@ const point = (value) =>
     ? { x: value.x, y: value.y }
     : null;
 
+const finiteNumber = (value) => (Number.isFinite(value) ? value : null);
+const boundedString = (value, max = 240) =>
+  typeof value === "string" && value.length <= max ? value : null;
+
 const sanitizePlan = (plan) => {
   if (!plan || typeof plan !== "object") return null;
   const controller = plan.anchors?.controller;
   return {
+    planId: boundedString(plan.planId),
+    deliverableId: boundedString(plan.deliverableId),
     version: plan.version ?? null,
     horizonRcl: plan.horizonRcl ?? null,
     roomName: plan.roomName ?? room,
@@ -111,10 +117,6 @@ const sanitizePlan = (plan) => {
   };
 };
 
-const finiteNumber = (value) => (Number.isFinite(value) ? value : null);
-const boundedString = (value, max = 240) =>
-  typeof value === "string" && value.length <= max ? value : null;
-
 const sanitizeLineage = (value) => {
   if (!value || typeof value !== "object") return null;
   const lineage = {
@@ -141,6 +143,39 @@ const sanitizeIntentTrace = (value) => {
   };
 };
 
+const sanitizeFspmRecord = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const id = boundedString(value.id);
+  const status = ["active", "completed", "cancelled"].includes(value.status)
+    ? value.status
+    : null;
+  return id && status ? { id, status } : null;
+};
+
+const sanitizeFspm = (value) => {
+  const colonies = Array.isArray(value?.colonies) ? value.colonies.slice(0, 16) : [];
+  return {
+    colonies: colonies
+      .map((colony) => {
+        const contract = sanitizeFspmRecord(colony?.contract);
+        const roomName = boundedString(colony?.roomName, 32);
+        if (!contract || !roomName) return null;
+        const clean = (records) =>
+          Array.isArray(records)
+            ? records.slice(0, 128).map(sanitizeFspmRecord).filter(Boolean)
+            : [];
+        return {
+          roomName,
+          contract,
+          requirements: clean(colony.requirements),
+          deliverables: clean(colony.deliverables),
+          tasks: clean(colony.tasks),
+        };
+      })
+      .filter(Boolean),
+  };
+};
+
 const sanitizeRuntimeTrace = (value) => {
   if (!value || typeof value !== "object" || value.version !== 1) return null;
   const intents = value.intents && typeof value.intents === "object" ? value.intents : {};
@@ -160,6 +195,7 @@ const sanitizeRuntimeTrace = (value) => {
             total: finiteNumber(value.cpu.total),
           }
         : null,
+    fspm: sanitizeFspm(value.fspm),
     intents: {
       proposed: finiteNumber(intents.proposed),
       accepted: finiteNumber(intents.accepted),
