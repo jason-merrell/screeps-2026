@@ -9,9 +9,8 @@ const target = process.env.SCREEPS_TARGET || "ptr";
 const requestId = process.env.SCREEPS_REQUEST_ID || "unknown";
 const requestCommand = process.env.SCREEPS_COMMAND || "/snapshot";
 const apiPrefix = target === "ptr" ? "/ptr" : "";
-const supabaseUrl = process.env.SUPABASE_URL || "";
-const supabaseSecret =
-  process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabaseIngestUrl = process.env.SUPABASE_INGEST_URL || "";
+const githubOidcToken = process.env.GITHUB_OIDC_TOKEN || "";
 
 if (!token) throw new Error("SCREEPS_TOKEN is required to publish an observability snapshot");
 if (!/^[WE]\d+[NS]\d+$/.test(room)) throw new Error("SCREEPS_ROOM is required for /snapshot");
@@ -110,26 +109,6 @@ const sanitizePlan = (plan) => {
   };
 };
 
-const supabaseRequest = async (path, { method = "GET", body, prefer } = {}) => {
-  const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
-    method,
-    headers: {
-      apikey: supabaseSecret,
-      Authorization: `Bearer ${supabaseSecret}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(prefer ? { Prefer: prefer } : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  const parsed = text ? JSON.parse(text) : null;
-  if (!response.ok) {
-    throw new Error(`Supabase ${method} ${path} failed with HTTP ${response.status}: ${text}`);
-  }
-  return parsed;
-};
-
 const memory = await requestJson("/api/user/memory", {
   path: `colonies.${room}.roomPlan`,
   shard,
@@ -196,34 +175,33 @@ let publication = {
   configured: false,
 };
 
-if (supabaseUrl && supabaseSecret) {
-  const colonies = await supabaseRequest("colonies?on_conflict=target,shard,room_name", {
+if (supabaseIngestUrl && githubOidcToken) {
+  const response = await fetch(supabaseIngestUrl, {
     method: "POST",
-    prefer: "resolution=merge-duplicates,return=representation",
-    body: [{ target, shard, room_name: room }],
+    headers: {
+      Authorization: `Bearer ${githubOidcToken}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ requestId, snapshot }),
   });
-  const colonyId = colonies?.[0]?.id;
-  if (!colonyId) throw new Error("Supabase colony upsert returned no colony id");
-
-  const rows = await supabaseRequest("observability_snapshots?on_conflict=source_request_id", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=representation",
-    body: [
-      {
-        schema: snapshot.schema,
-        schema_version: snapshot.schemaVersion,
-        colony_id: colonyId,
-        captured_at: snapshot.capturedAt,
-        source_request_id: requestId,
-        payload: snapshot,
-      },
-    ],
-  });
+  const text = await response.text();
+  let result;
+  try {
+    result = text ? JSON.parse(text) : null;
+  } catch {
+    result = { raw: text };
+  }
+  if (!response.ok || result?.ok !== true) {
+    throw new Error(
+      `Supabase ingest failed with HTTP ${response.status}: ${JSON.stringify(result)}`,
+    );
+  }
   publication = {
-    destination: "supabase",
+    destination: "supabase-edge-oidc",
     configured: true,
-    colonyId,
-    snapshotId: rows?.[0]?.id ?? null,
+    colonyId: result.colonyId ?? null,
+    snapshotId: result.snapshotId ?? null,
   };
 }
 
