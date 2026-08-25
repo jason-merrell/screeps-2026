@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LabShell } from "@/components/lab-shell";
 import { benchmarkFallback, loadControlPlane, type BenchmarkMetrics, type Point, type Snapshot } from "@/lib/control-plane";
 
 export const dynamic = "force-dynamic";
@@ -8,12 +9,12 @@ const phases: Array<keyof BenchmarkMetrics> = ["perception", "economy", "arbitra
 
 function metricCard(label: string, value: string | number, detail: string) {
   return (
-    <Card>
+    <Card className="lab-panel rounded-2xl border-white/8 bg-card/65">
       <CardHeader className="pb-3">
-        <CardDescription className="text-[0.7rem] uppercase tracking-[0.14em]">{label}</CardDescription>
-        <CardTitle className="text-3xl tracking-tight">{value}</CardTitle>
+        <CardDescription className="text-[0.68rem] uppercase tracking-[0.18em]">{label}</CardDescription>
+        <CardTitle className="lab-stat-value text-3xl tracking-[-0.035em]">{value}</CardTitle>
       </CardHeader>
-      <CardContent className="text-sm text-muted-foreground">{detail}</CardContent>
+      <CardContent className="text-xs leading-5 text-muted-foreground">{detail}</CardContent>
     </Card>
   );
 }
@@ -21,17 +22,17 @@ function metricCard(label: string, value: string | number, detail: string) {
 function CpuBars({ metrics }: { metrics: BenchmarkMetrics }) {
   const max = Math.max(...Object.values(metrics), 1);
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-4">
       {phases.map((phase) => (
-        <div key={phase} className="grid grid-cols-[92px_1fr_64px] items-center gap-3 text-sm text-muted-foreground">
-          <span>{phase}</span>
-          <div className="h-2 overflow-hidden rounded-full bg-secondary">
+        <div key={phase} className="grid grid-cols-[88px_1fr_64px] items-center gap-3 text-sm text-muted-foreground">
+          <span className="capitalize">{phase}</span>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/6">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-400"
+              className="h-full rounded-full bg-primary/80"
               style={{ width: `${Math.max(2, (metrics[phase] / max) * 100)}%` }}
             />
           </div>
-          <span className="text-right font-mono text-xs">{metrics[phase].toFixed(3)}</span>
+          <span className="text-right font-mono text-xs text-foreground/70">{metrics[phase].toFixed(3)}</span>
         </div>
       ))}
     </div>
@@ -87,7 +88,7 @@ function RoomGrid({ snapshot }: { snapshot: Snapshot | null }) {
           <span key={cell.id} className={cell.className} title={cell.title} />
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         {[
           `plan v${plan?.version ?? "?"}`,
           `RCL${plan?.horizonRcl ?? "?"} horizon`,
@@ -95,7 +96,7 @@ function RoomGrid({ snapshot }: { snapshot: Snapshot | null }) {
           "outlined = built",
           "dashed = construction",
         ].map((label) => (
-          <Badge key={label} variant="outline" className="text-muted-foreground">{label}</Badge>
+          <Badge key={label} variant="outline" className="text-[0.68rem] text-muted-foreground">{label}</Badge>
         ))}
       </div>
     </>
@@ -117,64 +118,89 @@ export default async function Home() {
   const experiments = controlPlane?.experiments ?? [];
 
   return (
-    <main className="mx-auto w-[min(1440px,calc(100vw-32px))] py-8 pb-16">
-      <header className="mb-6 flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
-        <div>
-          <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Remote experimentation control plane</div>
-          <h1 className="mt-1 text-5xl font-bold tracking-[-0.06em] md:text-7xl">Screeps Lab</h1>
-        </div>
-        <Badge variant="outline" className="px-3 py-1.5 text-sky-300">Read-only observability</Badge>
-      </header>
-
+    <LabShell
+      active="observability"
+      eyebrow="remote experimentation control plane"
+      title="Colony observability"
+      description="A compact read model for the colony’s current state, room plan, runtime profile, and completed experiments."
+      status={
+        <Badge variant="outline" className="w-fit border-emerald-400/20 px-3 py-1.5 text-emerald-300">
+          <span className="mr-2 h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_currentColor]" />
+          {controlPlane?.sourceHealthy ? "Supabase live" : "Baseline fallback"}
+        </Badge>
+      }
+    >
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <div className="lg:col-span-3">{metricCard("Colony", snapshot?.room ?? "W39S23", `${snapshot?.target ?? "ptr"} / ${snapshot?.shard ?? "shard3"}`)}</div>
         <div className="lg:col-span-3">{metricCard("RCL", controller?.level ?? "—", controller?.progressTotal ? `${controller.progress ?? 0} / ${controller.progressTotal}` : "controller progress unavailable")}</div>
         <div className="lg:col-span-3">{metricCard("Room energy", energy ? `${energy.available ?? 0} / ${energy.capacity ?? 0}` : "—", "available / capacity")}</div>
         <div className="lg:col-span-3">{metricCard("Workforce", snapshot?.colony?.creeps ?? "—", "visible creeps")}</div>
 
-        <Card className="lg:col-span-7">
-          <CardHeader>
-            <CardTitle>PPAE benchmark</CardTitle>
-            <CardDescription>{controlPlane?.sourceHealthy ? "live from Supabase control plane" : "bundled baseline while control plane is unavailable"}</CardDescription>
+        <Card className="lab-panel rounded-2xl border-white/8 bg-card/65 lg:col-span-7">
+          <CardHeader className="border-b border-white/8 pb-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-xl">PPAE runtime profile</CardTitle>
+                <CardDescription className="mt-1">Per-phase CPU from the latest benchmark sample.</CardDescription>
+              </div>
+              <Badge variant="outline" className="font-mono text-[0.68rem] text-muted-foreground">CPU</Badge>
+            </div>
           </CardHeader>
-          <CardContent><CpuBars metrics={metrics} /></CardContent>
+          <CardContent className="pt-6"><CpuBars metrics={metrics} /></CardContent>
         </Card>
 
-        <Card className="lg:col-span-5">
-          <CardHeader>
-            <CardTitle>Movement</CardTitle>
-            <CardDescription>Current routing strategy</CardDescription>
+        <Card className="lab-panel rounded-2xl border-white/8 bg-card/65 lg:col-span-5">
+          <CardHeader className="border-b border-white/8 pb-5">
+            <CardTitle className="text-xl">Movement strategy</CardTitle>
+            <CardDescription className="mt-1">Current runtime routing posture.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4 text-sm leading-6 text-muted-foreground">
+          <CardContent className="space-y-5 pt-6 text-sm leading-6 text-muted-foreground">
             <p>Native Screeps pathing owns routing, with traffic-aware cached movement, congestion detection, and bounded swap/repath fallback.</p>
-            <Badge variant="outline" className="text-emerald-300">next target: burst pathfinding cost</Badge>
+            <div className="rounded-xl border border-primary/15 bg-primary/5 p-4">
+              <div className="text-[0.68rem] uppercase tracking-[0.16em] text-primary">Next measurement</div>
+              <div className="mt-1 text-sm font-medium text-foreground">Burst pathfinding cost</div>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-5">
-          <CardHeader><CardTitle>Room plan</CardTitle></CardHeader>
-          <CardContent><RoomGrid snapshot={snapshot} /></CardContent>
+        <Card className="lab-panel rounded-2xl border-white/8 bg-card/65 lg:col-span-5">
+          <CardHeader className="border-b border-white/8 pb-5">
+            <CardTitle className="text-xl">Room plan</CardTitle>
+            <CardDescription className="mt-1">Planned geometry overlaid with built state.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6"><RoomGrid snapshot={snapshot} /></CardContent>
         </Card>
 
-        <Card className="lg:col-span-7">
-          <CardHeader>
-            <CardTitle>Experiment history</CardTitle>
-            <CardDescription>Completed experiments from the Supabase read model</CardDescription>
+        <Card className="lab-panel rounded-2xl border-white/8 bg-card/65 lg:col-span-7">
+          <CardHeader className="border-b border-white/8 pb-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-xl">Experiment history</CardTitle>
+                <CardDescription className="mt-1">Completed experiments from the authoritative read model.</CardDescription>
+              </div>
+              <Badge variant="outline" className="text-muted-foreground">{experiments.length} complete</Badge>
+            </div>
           </CardHeader>
-          <CardContent>
-            <div className="grid max-h-[320px] gap-3 overflow-auto">
+          <CardContent className="pt-5">
+            <div className="grid max-h-[340px] gap-2 overflow-auto pr-1">
               {experiments.length ? experiments.map((experiment) => (
-                <div key={experiment.experiment_key} className="rounded-lg border bg-background/30 p-3">
-                  <div><code className="text-emerald-300">{experiment.experiment_key}</code> · {experiment.name}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">{[experiment.runtime_sha, experiment.completed_at].filter(Boolean).join(" · ")}</div>
+                <div key={experiment.experiment_key} className="group rounded-xl border border-white/7 bg-black/10 p-4 transition hover:border-white/12 hover:bg-white/[0.025]">
+                  <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
+                    <div><code className="text-primary">{experiment.experiment_key}</code> <span className="text-muted-foreground">·</span> {experiment.name}</div>
+                    {experiment.completed_at ? <div className="text-xs text-muted-foreground">{experiment.completed_at}</div> : null}
+                  </div>
+                  {experiment.runtime_sha ? <div className="mt-2 font-mono text-[0.68rem] text-muted-foreground">runtime {experiment.runtime_sha}</div> : null}
                 </div>
-              )) : <div className="text-sm italic text-muted-foreground">No completed experiment rows yet.</div>}
+              )) : <div className="rounded-xl border border-dashed border-white/8 p-6 text-sm text-muted-foreground">No completed experiment rows yet.</div>}
             </div>
           </CardContent>
         </Card>
       </section>
 
-      <p className="mt-5 text-xs text-muted-foreground">Data source: Supabase sanitized read model. GitHub issue #5 is legacy compatibility ingress only.</p>
-    </main>
+      <div className="mt-6 flex flex-col justify-between gap-2 border-t border-white/8 pt-5 text-xs text-muted-foreground sm:flex-row">
+        <span>Data source: Supabase sanitized read model.</span>
+        <span>GitHub issue #5 remains compatibility ingress only.</span>
+      </div>
+    </LabShell>
   );
 }
