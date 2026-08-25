@@ -18,6 +18,10 @@ export async function sendMagicLink(formData: FormData) {
     },
   });
 
-  if (error) redirect("/login?error=signin");
+  if (error) {
+    const code = error.code === "over_email_send_rate_limit" ? "rate-limit" : "signin";
+    redirect(`/login?error=${code}`);
+  }
+
   redirect("/login?sent=1");
 }

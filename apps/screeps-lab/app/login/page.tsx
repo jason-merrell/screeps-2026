@@ -5,12 +5,21 @@ import { sendMagicLink } from "./actions";
 
 export const dynamic = "force-dynamic";
 
+const errorMessage = (error?: string) => {
+  if (error === "rate-limit") return "Too many magic-link requests. Supabase is temporarily rate-limiting email sends. Try again shortly.";
+  if (error === "invalid-email") return "Enter a valid email address.";
+  if (error === "callback") return "The sign-in link could not be completed. Request a fresh magic link and try again.";
+  if (error) return "Sign-in could not be started. Check the address and try again.";
+  return null;
+};
+
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ sent?: string; error?: string }>;
 }) {
   const params = await searchParams;
+  const message = errorMessage(params.error);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md items-center px-4 py-12">
@@ -32,9 +41,7 @@ export default async function LoginPage({
                 <label htmlFor="email" className="text-sm font-medium leading-none">Email</label>
                 <Input id="email" name="email" type="email" autoComplete="email" required />
               </div>
-              {params.error ? (
-                <p className="text-sm text-red-300">Sign-in could not be started. Check the address and try again.</p>
-              ) : null}
+              {message ? <p className="text-sm text-red-300">{message}</p> : null}
               <Button type="submit">Send magic link</Button>
             </form>
           )}
