@@ -3,6 +3,9 @@ name: Screeps Observability Snapshot
 on:
   issue_comment:
     types: [created]
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,6 +15,7 @@ permissions:
 jobs:
   snapshot:
     if: >-
+      github.event_name == 'issue_comment' &&
       github.event.issue.number == 5 &&
       startsWith(github.event.comment.body, '/snapshot') &&
       github.event.comment.user.login == github.repository_owner
@@ -148,3 +152,136 @@ jobs:
           printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\nartifact: `%s`\ncommand-ledger: `supabase`\nrun: %s/%s/actions/runs/%s' \
             "$MARKER" "$COMMAND" "$REQUEST_ID" "$ARTIFACT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/5/comments" -f body="$BODY" >/dev/null
+
+  native-snapshot:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: screeps-native-command-worker
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Mint short-lived Supabase control-plane identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsSL \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=screeps-supabase-ingest")"
+          token="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>process.stdout.write(JSON.parse(s).value))')"
+          test -n "$token"
+          echo "::add-mask::$token"
+          printf 'GITHUB_OIDC_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+
+      - name: Claim next native snapshot command
+        id: claim
+        shell: bash
+        env:
+          SUPABASE_CONTROL_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
+        run: |
+          set -euo pipefail
+          worker_id="github:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}"
+          payload="$(WORKER_ID="$worker_id" node -e 'console.log(JSON.stringify({operation:"claim_command",workerId:process.env.WORKER_ID,supportedTypes:["snapshot"]}))')"
+          response="$(curl -fsSL -X POST "$SUPABASE_CONTROL_URL" \
+            -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$payload")"
+          printf '%s' "$response" > /tmp/claim.json
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/claim.json', 'utf8'));
+          const c = body.command;
+          if (!c) {
+            console.log('has_command=false');
+            process.exit(0);
+          }
+          console.log('has_command=true');
+          console.log(`command_key=${c.command_key}`);
+          console.log(`target=${c.target}`);
+          console.log(`shard=${c.shard ?? ''}`);
+          console.log(`room=${c.room_name ?? ''}`);
+          NODE
+
+      - name: Validate Infisical configuration
+        if: steps.claim.outputs.has_command == 'true'
+        shell: bash
+        env:
+          INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
+          INFISICAL_PROJECT_SLUG: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          INFISICAL_ENV_SLUG: ${{ vars.INFISICAL_ENV_SLUG }}
+        run: |
+          test -n "$INFISICAL_IDENTITY_ID" || (echo "Missing repository variable INFISICAL_IDENTITY_ID" && exit 1)
+          test -n "$INFISICAL_PROJECT_SLUG" || (echo "Missing repository variable INFISICAL_PROJECT_SLUG" && exit 1)
+          test -n "$INFISICAL_ENV_SLUG" || (echo "Missing repository variable INFISICAL_ENV_SLUG" && exit 1)
+
+      - name: Fetch collector secrets from Infisical
+        if: steps.claim.outputs.has_command == 'true'
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          secret-path: /deploy
+          recursive: false
+          include-imports: false
+
+      - name: Mark native command executing
+        if: steps.claim.outputs.has_command == 'true'
+        shell: bash
+        env:
+          COMMAND_KEY: ${{ steps.claim.outputs.command_key }}
+          SUPABASE_CONTROL_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
+        run: |
+          set -euo pipefail
+          payload="$(node -e 'console.log(JSON.stringify({operation:"transition_command",commandKey:process.env.COMMAND_KEY,status:"executing",eventType:"executing",detail:{runId:process.env.GITHUB_RUN_ID,source:"native-worker"}}))')"
+          curl -fsSL -X POST "$SUPABASE_CONTROL_URL" \
+            -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$payload" >/dev/null
+
+      - name: Publish native sanitized snapshot
+        if: steps.claim.outputs.has_command == 'true'
+        run: node scripts/publish-observability-snapshot.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+          SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
+          SCREEPS_TARGET: ${{ steps.claim.outputs.target }}
+          SCREEPS_ROOM: ${{ steps.claim.outputs.room }}
+          SCREEPS_REQUESTED_SHARD: ${{ steps.claim.outputs.shard }}
+          SCREEPS_REQUEST_ID: ${{ steps.claim.outputs.command_key }}
+          SCREEPS_COMMAND_KEY: ${{ steps.claim.outputs.command_key }}
+          SCREEPS_COMMAND: /snapshot
+          SUPABASE_INGEST_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
+
+      - name: Upload native snapshot fallback artifact
+        if: steps.claim.outputs.has_command == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: native-snapshot-${{ github.run_id }}
+          path: |
+            artifacts/screeps-insights.json
+            artifacts/screeps-public-snapshot.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+      - name: Mark native command failed
+        if: failure() && steps.claim.outputs.has_command == 'true'
+        shell: bash
+        env:
+          COMMAND_KEY: ${{ steps.claim.outputs.command_key }}
+          SUPABASE_CONTROL_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
+        run: |
+          set -euo pipefail
+          payload="$(node -e 'console.log(JSON.stringify({operation:"transition_command",commandKey:process.env.COMMAND_KEY,status:"failed",eventType:"failed",detail:{runId:process.env.GITHUB_RUN_ID,source:"native-worker"}}))')"
+          curl -fsSL -X POST "$SUPABASE_CONTROL_URL" \
+            -H "Authorization: Bearer $GITHUB_OIDC_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$payload" >/dev/null

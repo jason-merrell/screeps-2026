@@ -14,6 +14,9 @@ const json = (body: unknown, status = 200): Response =>
     headers: { "content-type": "application/json" },
   });
 
+const validCommandKey = (value: string) =>
+  value.length > 0 && value.length <= 240 && /^[A-Za-z0-9:_-]+$/.test(value);
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -52,6 +55,20 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const operation = body?.operation ?? "ingest_snapshot";
 
+    if (operation === "claim_command") {
+      const workerId = String(body?.workerId ?? "");
+      const supportedTypes = Array.isArray(body?.supportedTypes)
+        ? body.supportedTypes.map((value: unknown) => String(value))
+        : ["snapshot"];
+      const { data, error } = await admin.rpc("claim_next_command", {
+        p_worker_id: workerId,
+        p_supported_types: supportedTypes,
+        p_lease_seconds: 600,
+      });
+      if (error) throw error;
+      return json({ ok: true, command: data ?? null });
+    }
+
     if (operation === "register_command") {
       const requestId = String(body?.requestId ?? "");
       const commandKey = `github-comment:${requestId}`;
@@ -69,10 +86,16 @@ Deno.serve(async (req: Request) => {
     }
 
     if (operation === "transition_command") {
+      const suppliedCommandKey = String(body?.commandKey ?? "");
       const requestId = String(body?.requestId ?? "");
-      if (!/^\d+$/.test(requestId)) return json({ error: "invalid_request_id" }, 400);
+      const commandKey = suppliedCommandKey || `github-comment:${requestId}`;
+      if (suppliedCommandKey) {
+        if (!validCommandKey(commandKey)) return json({ error: "invalid_command_key" }, 400);
+      } else if (!/^\d+$/.test(requestId)) {
+        return json({ error: "invalid_request_id" }, 400);
+      }
       const { data, error } = await admin.rpc("transition_command", {
-        p_command_key: `github-comment:${requestId}`,
+        p_command_key: commandKey,
         p_status: body?.status,
         p_event_type: body?.eventType ?? body?.status,
         p_detail: body?.detail ?? {},
@@ -81,9 +104,14 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true, command: data });
     }
 
+    const suppliedCommandKey = String(body?.commandKey ?? "");
     const requestId = String(body?.requestId ?? "");
     const snapshot = body?.snapshot;
-    if (!/^\d+$/.test(requestId)) return json({ error: "invalid_request_id" }, 400);
+    if (suppliedCommandKey) {
+      if (!validCommandKey(suppliedCommandKey)) return json({ error: "invalid_command_key" }, 400);
+    } else if (!/^\d+$/.test(requestId)) {
+      return json({ error: "invalid_request_id" }, 400);
+    }
     if (
       !snapshot ||
       snapshot.schema !== "screeps-observability-snapshot/v1" ||
@@ -95,16 +123,20 @@ Deno.serve(async (req: Request) => {
     if (!/^shard\d+$/.test(snapshot.shard ?? "")) return json({ error: "invalid_shard" }, 400);
     if (!/^[WE]\d+[NS]\d+$/.test(snapshot.room ?? "")) return json({ error: "invalid_room" }, 400);
 
-    const commandKey = `github-comment:${requestId}`;
-    const { error: registerError } = await admin.rpc("register_command", {
-      p_command_key: commandKey,
-      p_command_type: "snapshot",
-      p_target: snapshot.target,
-      p_shard: snapshot.shard,
-      p_room_name: snapshot.room,
-      p_payload: { requestId, source: "snapshot-ingest" },
-    });
-    if (registerError) throw registerError;
+    const commandKey = suppliedCommandKey || `github-comment:${requestId}`;
+    const sourceRequestId = suppliedCommandKey || requestId;
+
+    if (!suppliedCommandKey) {
+      const { error: registerError } = await admin.rpc("register_command", {
+        p_command_key: commandKey,
+        p_command_type: "snapshot",
+        p_target: snapshot.target,
+        p_shard: snapshot.shard,
+        p_room_name: snapshot.room,
+        p_payload: { requestId, source: "snapshot-ingest" },
+      });
+      if (registerError) throw registerError;
+    }
 
     const { error: executingError } = await admin.rpc("transition_command", {
       p_command_key: commandKey,
@@ -133,7 +165,7 @@ Deno.serve(async (req: Request) => {
           colony_id: colony.id,
           captured_at: snapshot.capturedAt,
           game_tick: snapshot.gameTick ?? null,
-          source_request_id: requestId,
+          source_request_id: sourceRequestId,
           payload: snapshot,
         },
         { onConflict: "source_request_id" },
