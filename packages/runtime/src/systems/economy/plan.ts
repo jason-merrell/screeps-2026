@@ -269,7 +269,14 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     let energyMode = resolveEnergyMode(creep.memory.energyMode, energy, capacity);
     creep.memory.energyMode = energyMode;
 
+    const roomBuffers = bufferedByRoom.get(roomName) ?? [];
     const producer = producers.get(creep.name);
+    const surplusTransport =
+      roomBuffers.length > 0 &&
+      !producer &&
+      !transporters.has(creep.name) &&
+      capabilities.has("haul") &&
+      !capabilities.has("harvest");
     if (producer) {
       if (energy < capacity && producer.source.energy > 0) {
         intents.push({
@@ -307,7 +314,6 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
       }
     }
 
-    const roomBuffers = bufferedByRoom.get(roomName) ?? [];
     if (
       !producer &&
       roomBuffers.length > 0 &&
@@ -334,7 +340,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
       }
 
       const recoverySource = recovery.get(creep.name);
-      if (!assigned && !capabilities.has("harvest")) {
+      if (surplusTransport) {
         const spawn = spatial.myStructures.find(
           (structure): structure is StructureSpawn => structure.structureType === STRUCTURE_SPAWN,
         );
@@ -507,6 +513,24 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           `upgrade:${creep.room.controller.id}`,
         ),
       });
+      continue;
+    }
+
+    if (surplusTransport) {
+      const spawn = spatial.myStructures.find(
+        (structure): structure is StructureSpawn => structure.structureType === STRUCTURE_SPAWN,
+      );
+      if (spawn) {
+        intents.push({
+          type: "move",
+          creepName: creep.name,
+          targetId: spawn.id,
+          range: 2,
+          priority: 200,
+          reason: "park surplus transport capacity away from the source edge",
+          trace: trace(roomName, creep.name, "hold-surplus-transport", `park:${spawn.id}`),
+        });
+      }
     }
   }
 
