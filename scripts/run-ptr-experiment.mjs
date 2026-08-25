@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { evaluateBootstrapState, projectBootstrapState } from "./lib/bootstrap-state.mjs";
-import { decodeScreepsMemory, summarizeMemoryResponse } from "./lib/screeps-memory.mjs";
+import { decodeScreepsSegment, summarizeSegmentResponse } from "./lib/screeps-memory.mjs";
 
 const token = process.env.SCREEPS_TOKEN;
 const host = process.env.SCREEPS_HOST || "https://screeps.com";
@@ -12,6 +12,7 @@ const experimentName = process.env.SCREEPS_EXPERIMENT || "bootstrap-rcl3";
 const sampleCount = Math.max(1, Math.min(24, Number(process.env.SCREEPS_EXPERIMENT_SAMPLES || 12)));
 const intervalMs = Math.max(1000, Math.min(30_000, Number(process.env.SCREEPS_EXPERIMENT_INTERVAL_MS || 5000)));
 const PTR_PREFIX = "/ptr";
+const OBSERVABILITY_SEGMENT = 99;
 
 if (!token) throw new Error("SCREEPS_TOKEN is required for PTR experiments");
 if (experimentName !== "bootstrap-rcl3") {
@@ -78,7 +79,10 @@ for (let index = 0; index < sampleCount; index += 1) {
     requestJson("/api/game/room-objects", { room: ref.room, shard: ref.shard }),
     requestJson("/api/game/room-overview", { room: ref.room, shard: ref.shard, interval: 8 }),
     requestJson("/api/user/world-status"),
-    requestJson("/api/user/memory", { path: "observability" }),
+    requestJson("/api/user/memory-segment", {
+      segment: OBSERVABILITY_SEGMENT,
+      shard: ref.shard,
+    }),
   ]);
 
   requireOk("PTR room objects", objects);
@@ -110,11 +114,11 @@ for (let index = 0; index < sampleCount; index += 1) {
   const state = projectBootstrapState(rawSnapshot, ref.room);
   const evaluation = evaluateBootstrapState(state);
   const observability = observabilityResponse.ok
-    ? decodeScreepsMemory(observabilityResponse.body)
+    ? decodeScreepsSegment(observabilityResponse.body)
     : null;
   const observabilityDiagnostic = observability
     ? null
-    : summarizeMemoryResponse(observabilityResponse);
+    : summarizeSegmentResponse(observabilityResponse);
   samples.push({ index, collectedAt, state, evaluation, observability, observabilityDiagnostic });
 
   for (const [milestone, reached] of Object.entries(evaluation.milestones)) {
@@ -140,6 +144,7 @@ const traces = samples.map((sample) => sample.observability).filter((trace) => t
 const plannerNames = ["defense", "spawning", "construction", "economy"];
 const latestTrace = traces.at(-1) ?? null;
 const observabilitySummary = {
+  transport: { kind: "memory-segment", segment: OBSERVABILITY_SEGMENT },
   samplesWithTrace: traces.length,
   latestTick: latestTrace?.tick ?? null,
   latestDiagnostic: final?.observabilityDiagnostic ?? null,
