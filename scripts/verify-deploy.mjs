@@ -4,14 +4,19 @@ import { readFile } from "node:fs/promises";
 const token = process.env.SCREEPS_TOKEN;
 const branch = process.env.SCREEPS_BRANCH || "default";
 const host = process.env.SCREEPS_HOST || "https://screeps.com";
+const target = process.env.SCREEPS_TARGET || "world";
 const bundlePath = "packages/runtime/dist/main.js";
 
 if (!token) {
   throw new Error("SCREEPS_TOKEN is required for deployment verification");
 }
+if (target !== "world" && target !== "ptr") {
+  throw new Error(`SCREEPS_TARGET must be 'world' or 'ptr', received '${target}'`);
+}
 
 const expectedCode = await readFile(bundlePath, "utf8");
-const endpoint = new URL("/api/user/code", host);
+const apiPrefix = target === "ptr" ? "/ptr" : "";
+const endpoint = new URL(`${apiPrefix}/api/user/code`, host);
 endpoint.searchParams.set("branch", branch);
 
 const response = await fetch(endpoint, {
@@ -53,5 +58,5 @@ if (deployedCode !== expectedCode) {
 }
 
 console.log(
-  `Verified Screeps branch '${branch}' main module (${fingerprint(deployedCode)}) from ${bundlePath}.`,
+  `Verified Screeps ${target} branch '${branch}' main module (${fingerprint(deployedCode)}) from ${bundlePath}.`,
 );
