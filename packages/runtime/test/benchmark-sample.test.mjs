@@ -35,9 +35,9 @@ const artifact = {
       collectedAt: "2026-08-25T20:00:10.000Z",
       state: {
         controller: { level: 2, progress: 47, progressTotal: 45000 },
-        workforce: { total: 3 },
-        energy: { spawnEnergy: 300 },
-        constructionSites: { total: 5 },
+        spawn: { energy: 300, capacity: 300 },
+        workforce: { target: 5, total: 5 },
+        structures: { constructionSites: 6, extensionSites: 5, extensions: 0 },
       },
       evaluation: { status: "progressing" },
     },
@@ -45,7 +45,7 @@ const artifact = {
 };
 
 describe("experiment benchmark samples", () => {
-  it("builds stable identity and longitudinal metrics from a PTR experiment", () => {
+  it("builds stable identity and longitudinal metrics from the actual PTR state shape", () => {
     const result = buildExperimentBenchmark(artifact, { runtimeSha: "366fa1bed2aa9ec3d57de23d06906acf4edcb725" });
 
     expect(result?.sampleKey).toBe("ptr-experiment:5416836682");
@@ -55,6 +55,13 @@ describe("experiment benchmark samples", () => {
       durationMs: 10000,
       startRcl: 1,
       finalRcl: 2,
+      finalWorkforce: 5,
+      finalWorkforceTarget: 5,
+      finalSpawnEnergy: 300,
+      finalSpawnCapacity: 300,
+      finalConstructionSites: 6,
+      finalExtensionSites: 5,
+      finalExtensions: 0,
       controllerProgressDelta: 24,
       harvestedDelta: 32,
       controllerSpendDelta: 20,
