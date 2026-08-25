@@ -1,3 +1,4 @@
+import type { TrafficMemory } from "../movement/traffic-heatmap";
 import type { ColonyFspmPortfolio } from "../planning/fspm";
 import type { RoomPlan } from "../planning/room-plan";
 
@@ -8,6 +9,7 @@ export interface ColonyMemory {
   discoveredAt: number;
   fspm?: ColonyFspmPortfolio;
   roomPlan?: RoomPlan;
+  traffic?: TrafficMemory;
 }
 
 export interface ScreepsMemorySchema {

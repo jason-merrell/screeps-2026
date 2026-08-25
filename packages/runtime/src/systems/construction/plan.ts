@@ -1,5 +1,6 @@
 import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
+import { hotTrafficTiles } from "../../movement/traffic-heatmap";
 import type { RoomPlan, RoomPlanRoad, RoomPlanStructure } from "../../planning/room-plan";
 import type { WorldSnapshot } from "../../runtime/context";
 import { shouldActivateSourceBuffers } from "../economy/logistics";
@@ -72,14 +73,38 @@ function hasPlannedSite(room: Room, planned: RoomPlanStructure): boolean {
     .some((site) => site.structureType === planned.structureType);
 }
 
-function hasRoad(room: Room, road: RoomPlanRoad): boolean {
+function hasRoadAt(room: Room, x: number, y: number): boolean {
   return room
-    .lookForAt(LOOK_STRUCTURES, road.x, road.y)
+    .lookForAt(LOOK_STRUCTURES, x, y)
     .some((structure) => structure.structureType === STRUCTURE_ROAD);
 }
 
+function hasRoad(room: Room, road: RoomPlanRoad): boolean {
+  return hasRoadAt(room, road.x, road.y);
+}
+
+function hasAnySiteAt(room: Room, x: number, y: number): boolean {
+  return room.lookForAt(LOOK_CONSTRUCTION_SITES, x, y).length > 0;
+}
+
 function hasAnySite(room: Room, road: RoomPlanRoad): boolean {
-  return room.lookForAt(LOOK_CONSTRUCTION_SITES, road.x, road.y).length > 0;
+  return hasAnySiteAt(room, road.x, road.y);
+}
+
+function adaptiveRoadBuildable(room: Room, x: number, y: number): boolean {
+  if (x <= 1 || x >= 48 || y <= 1 || y >= 48) return false;
+  if (room.getTerrain().get(x, y) === TERRAIN_MASK_WALL) return false;
+  if (hasRoadAt(room, x, y) || hasAnySiteAt(room, x, y)) return false;
+  if (room.controller?.pos.x === x && room.controller.pos.y === y) return false;
+  if (room.find(FIND_SOURCES).some((source) => source.pos.x === x && source.pos.y === y)) {
+    return false;
+  }
+
+  return room.lookForAt(LOOK_STRUCTURES, x, y).every(
+    (structure) =>
+      structure.structureType === STRUCTURE_CONTAINER ||
+      structure.structureType === STRUCTURE_RAMPART,
+  );
 }
 
 function structureLimit(structureType: BuildableStructureConstant, level: number): number {
@@ -167,6 +192,29 @@ function planRoomConstruction(room: Room): Intent[] {
           domain: "construction",
           task: `execute-room-plan-v${roomPlan.version}`,
           activity: `road:${road.id}`,
+        }),
+      });
+      proposedRoadSites += 1;
+    }
+
+    for (const tile of hotTrafficTiles(room.name)) {
+      if (intents.length >= MAX_NEW_SITES_PER_ROOM) break;
+      if (existingRoadSites + proposedRoadSites >= MAX_ACTIVE_ROAD_SITES_PER_ROOM) break;
+      if (!adaptiveRoadBuildable(room, tile.x, tile.y)) continue;
+
+      intents.push({
+        type: "createConstructionSite",
+        roomName: room.name,
+        x: tile.x,
+        y: tile.y,
+        structureType: STRUCTURE_ROAD,
+        priority: 200 + Math.min(120, Math.floor(tile.score)),
+        reason: `adaptive traffic: sustained movement heat ${tile.score.toFixed(1)}`,
+        trace: createIntentTrace({
+          roomName: room.name,
+          domain: "construction",
+          task: `optimize-observed-traffic-v${roomPlan.version}`,
+          activity: `adaptive-road:${tile.x}:${tile.y}`,
         }),
       });
       proposedRoadSites += 1;
