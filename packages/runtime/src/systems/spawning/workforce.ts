@@ -26,6 +26,26 @@ export function generalistBodyForCapacity(capacity: number): BodyPartConstant[] 
   return body;
 }
 
+export function sourceProducerBodyForCapacity(capacity: number): BodyPartConstant[] {
+  if (capacity < GENERALIST_UNIT_COST) return generalistBodyForCapacity(capacity);
+
+  const workParts = Math.max(1, Math.min(5, Math.floor((capacity - 100) / 100)));
+  return [
+    ...Array.from({ length: workParts }, () => "work" as const),
+    "carry",
+    "move",
+  ];
+}
+
+export function transporterBodyForCapacity(capacity: number): BodyPartConstant[] {
+  const pairs = Math.max(1, Math.min(12, Math.floor(capacity / 100)));
+  const body: BodyPartConstant[] = [];
+  for (let index = 0; index < pairs; index += 1) {
+    body.push("carry", "move");
+  }
+  return body;
+}
+
 export function bodyCost(body: BodyPartConstant[]): number {
   const costs: Record<BodyPartConstant, number> = {
     move: 50,
