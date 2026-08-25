@@ -1,5 +1,5 @@
-export interface SourceCoverage {
-  id: string;
+export interface SourceCoverage<TSourceId extends string = string> {
+  id: TSourceId;
   assignedWork: number;
 }
 
@@ -9,13 +9,13 @@ export interface RecoveryHarvesterCandidate {
   rangeBySource: Record<string, number>;
 }
 
-export function assignRecoveryHarvesters(
-  sources: SourceCoverage[],
+export function assignRecoveryHarvesters<TSourceId extends string>(
+  sources: SourceCoverage<TSourceId>[],
   candidates: RecoveryHarvesterCandidate[],
   usefulWorkPerSource = 5,
-): Map<string, string> {
-  const assignments = new Map<string, string>();
-  const overflowBySource = new Map<string, number>();
+): Map<string, TSourceId> {
+  const assignments = new Map<string, TSourceId>();
+  const overflowBySource = new Map<TSourceId, number>();
   const coverage = new Map(sources.map((source) => [source.id, source.assignedWork]));
 
   for (const candidate of [...candidates].sort((a, b) => a.name.localeCompare(b.name))) {
