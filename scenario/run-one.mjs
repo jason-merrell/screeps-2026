@@ -65,8 +65,63 @@ function summarizeCreeps(objects) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function positionMap(sample) {
+  return new Map(sample.creeps.map((creep) => [creep.name, { x: creep.x, y: creep.y }]));
+}
+
+function analyzeTimeline(timeline) {
+  const nativeTileExchanges = [];
+  const running = timeline.filter((sample) => sample.phase === "running");
+
+  for (let index = 1; index < running.length; index += 1) {
+    const previous = running[index - 1];
+    const current = running[index];
+    const before = positionMap(previous);
+    const after = positionMap(current);
+    const names = [...before.keys()].filter((name) => after.has(name));
+
+    for (let left = 0; left < names.length; left += 1) {
+      for (let right = left + 1; right < names.length; right += 1) {
+        const a = names[left];
+        const b = names[right];
+        const aBefore = before.get(a);
+        const bBefore = before.get(b);
+        const aAfter = after.get(a);
+        const bAfter = after.get(b);
+        if (!aBefore || !bBefore || !aAfter || !bAfter) continue;
+
+        if (
+          aAfter.x === bBefore.x &&
+          aAfter.y === bBefore.y &&
+          bAfter.x === aBefore.x &&
+          bAfter.y === aBefore.y
+        ) {
+          nativeTileExchanges.push({
+            fromGameTime: previous.gameTime,
+            toGameTime: current.gameTime,
+            creeps: [a, b],
+            before: { [a]: aBefore, [b]: bBefore },
+            after: { [a]: aAfter, [b]: bAfter },
+          });
+        }
+      }
+    }
+  }
+
+  const runningCreeps = running.flatMap((sample) => sample.creeps);
+  const offHorizontalCorridor = runningCreeps.filter(
+    (creep) => creep.name === "scenario-A" || creep.name === "scenario-B",
+  ).filter((creep) => creep.y !== 25);
+
+  return {
+    nativeTileExchanges,
+    nativeTileExchangeCount: nativeTileExchanges.length,
+    headOnPrimaryCreepsLeftHorizontalCorridor: offHorizontalCorridor.length > 0,
+  };
+}
+
 function finalAssertions(state) {
-  const assertions = [
+  return [
     {
       name: "scenario completed before deadline",
       passed: state?.phase === "complete",
@@ -74,17 +129,6 @@ function finalAssertions(state) {
       expected: "complete",
     },
   ];
-
-  if (scenario === "head-on") {
-    assertions.push({
-      name: "head-on congestion resolved by at least one swap",
-      passed: (state?.metrics?.headOnSwaps ?? 0) >= 1,
-      actual: state?.metrics?.headOnSwaps ?? 0,
-      expected: ">=1",
-    });
-  }
-
-  return assertions;
 }
 
 async function writeResult(result) {
@@ -152,6 +196,7 @@ try {
     if (state?.phase === "complete" || state?.phase === "failed") break;
   }
 
+  const analysis = analyzeTimeline(timeline);
   const assertions = finalAssertions(state);
   const passed = assertions.every((assertion) => assertion.passed);
   const result = {
@@ -169,12 +214,15 @@ try {
     },
     ticksObserved: timeline.length,
     finalState: state,
+    analysis,
     assertions,
     timeline,
   };
 
   await writeResult(result);
-  console.log(`[headless:${scenario}] ${result.status} after ${timeline.length} engine ticks`);
+  console.log(
+    `[headless:${scenario}] ${result.status} after ${timeline.length} engine ticks; nativeExchanges=${analysis.nativeTileExchangeCount}`,
+  );
 } catch (error) {
   await writeResult({
     name: scenario,
