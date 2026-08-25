@@ -34,6 +34,7 @@ export interface TickObservabilityTrace {
     bucket: number;
     memory: number;
     perception: number;
+    settlement: number;
     planners: Record<PlannerName, number>;
     arbitration: number;
     execution: number;
@@ -57,6 +58,7 @@ export interface PublishTickTraceInput {
   tickStartCpu: number;
   memoryCpu: number;
   perceptionCpu: number;
+  settlementCpu: number;
   plannerRuns: PlannerRunTrace[];
   arbitrationCpu: number;
   executionCpu: number;
@@ -133,6 +135,7 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
       bucket: Game.cpu.bucket,
       memory: roundCpu(input.memoryCpu),
       perception: roundCpu(input.perceptionCpu),
+      settlement: roundCpu(input.settlementCpu),
       planners: plannerCpu,
       arbitration: roundCpu(input.arbitrationCpu),
       execution: roundCpu(input.executionCpu),
