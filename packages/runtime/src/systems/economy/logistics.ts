@@ -30,3 +30,39 @@ export function logisticsCoverage(requiredCarry: number, availableCarry: number)
   if (requiredCarry <= 0) return 1;
   return Math.max(0, Math.min(1, availableCarry / requiredCarry));
 }
+
+export interface TransportReservationNode {
+  id: string;
+  requiredCarry: number;
+}
+
+export interface TransportReservationCandidate {
+  name: string;
+  carry: number;
+  rangeByNode: Record<string, number>;
+}
+
+export function reserveTransportCapacity(
+  nodes: TransportReservationNode[],
+  candidates: TransportReservationCandidate[],
+): Map<string, string> {
+  const reservations = new Map<string, string>();
+
+  for (const node of [...nodes].sort((a, b) => a.id.localeCompare(b.id))) {
+    let reservedCarry = 0;
+    const available = candidates
+      .filter((candidate) => !reservations.has(candidate.name) && candidate.carry > 0)
+      .sort((a, b) =>
+        (a.rangeByNode[node.id] ?? Number.POSITIVE_INFINITY) -
+          (b.rangeByNode[node.id] ?? Number.POSITIVE_INFINITY) || a.name.localeCompare(b.name),
+      );
+
+    for (const candidate of available) {
+      if (reservedCarry >= node.requiredCarry) break;
+      reservations.set(candidate.name, node.id);
+      reservedCarry += candidate.carry;
+    }
+  }
+
+  return reservations;
+}
