@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { buildExperimentBenchmark } from "./lib/benchmark-sample.mjs";
+import { buildBenchmarkSample } from "./lib/benchmark-sample.mjs";
 
 const artifactPath = process.env.SCREEPS_INSIGHTS_PATH || "artifacts/screeps-insights.json";
 const benchmarkUrl = process.env.SUPABASE_BENCHMARK_URL || "";
@@ -14,9 +14,9 @@ if (!oidcRequestUrl || !oidcRequestToken) {
 }
 
 const raw = JSON.parse(await readFile(artifactPath, "utf8"));
-const benchmark = buildExperimentBenchmark(raw, { runtimeSha });
+const benchmark = buildBenchmarkSample(raw, { runtimeSha });
 if (!benchmark) {
-  console.log("Artifact is not a supported PTR experiment; benchmark persistence is a no-op.");
+  console.log("Artifact is not a supported benchmark source; benchmark persistence is a no-op.");
   process.exit(0);
 }
 
@@ -52,5 +52,5 @@ if (!response.ok || body?.ok === false) {
 }
 
 console.log(
-  `Persisted ${benchmark.benchmarkName} benchmark ${benchmark.sampleKey} for ${benchmark.shard}/${benchmark.room} at ${runtimeSha ?? "unknown-sha"}.`,
+  `Persisted ${benchmark.benchmarkName} benchmark ${benchmark.sampleKey} for ${benchmark.target}/${benchmark.shard}/${benchmark.room} at ${benchmark.runtimeSha ?? runtimeSha ?? "unknown-sha"}.`,
 );
