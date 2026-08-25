@@ -22,6 +22,41 @@ export type RoomPlan = {
   structures?: Array<Point & { structureType?: string | null }>;
   roads?: Point[];
 };
+
+export type FspmStatus = "active" | "completed" | "cancelled";
+export type FspmQualityState = "healthy" | "watch" | "degraded";
+export type FspmTrend = "new" | "improving" | "stable" | "declining";
+export type FspmQuality = {
+  score: number;
+  state: FspmQualityState;
+  trend?: FspmTrend;
+  evidence?: string[];
+};
+export type FspmRecord = {
+  id: string;
+  status: FspmStatus;
+  quality?: FspmQuality;
+};
+export type FspmHistorySample = {
+  tick: number;
+  score: number;
+  state: FspmQualityState;
+};
+export type FspmColonySummary = {
+  roomName: string;
+  contract: FspmRecord;
+  requirements: FspmRecord[];
+  deliverables: FspmRecord[];
+  tasks: FspmRecord[];
+  contractHistory?: FspmHistorySample[];
+};
+export type RuntimeTrace = {
+  tick?: number | null;
+  fspm?: {
+    colonies?: FspmColonySummary[];
+  } | null;
+};
+
 export type Snapshot = {
   target?: string;
   shard?: string;
@@ -34,6 +69,7 @@ export type Snapshot = {
     constructionSites?: Array<Point & { structureType?: string | null }>;
   };
   roomPlan?: RoomPlan | null;
+  runtimeTrace?: RuntimeTrace | null;
 };
 export type Experiment = {
   experiment_key: string;
