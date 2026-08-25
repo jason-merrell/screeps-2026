@@ -34,7 +34,7 @@ export function LabShell({ children, active, eyebrow = "Screeps control plane", 
             <a
               href="/"
               className={cn(
-                buttonVariants({ variant: active === "observability" ? "secondary" : "ghost", size: "sm" }),
+                buttonVariants({ variant: active === "observability" ? "default" : "ghost", size: "sm" }),
                 "rounded-lg px-3",
               )}
               aria-current={active === "observability" ? "page" : undefined}
@@ -44,7 +44,7 @@ export function LabShell({ children, active, eyebrow = "Screeps control plane", 
             <a
               href="/operator"
               className={cn(
-                buttonVariants({ variant: active === "operator" ? "secondary" : "ghost", size: "sm" }),
+                buttonVariants({ variant: active === "operator" ? "default" : "ghost", size: "sm" }),
                 "rounded-lg px-3",
               )}
               aria-current={active === "operator" ? "page" : undefined}
