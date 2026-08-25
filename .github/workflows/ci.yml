@@ -5,17 +5,34 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10.15.0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: pnpm install --frozen-lockfile=false
+          package-manager-cache: false
+
+      - name: Set up Turborepo Remote Cache
+        uses: vercel/setup-turborepo-remote-cache-action@v1.0.0
+        with:
+          team: jason-merrells-projects
+
+      - name: Install lightweight workspace dependencies
+        run: pnpm install --filter . --filter @screeps/runtime --filter @screeps/lab --frozen-lockfile=false
+
       - run: pnpm check
       - run: pnpm build

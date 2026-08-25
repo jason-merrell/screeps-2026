@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - uses: pnpm/action-setup@v4
         with:
@@ -26,6 +28,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          package-manager-cache: false
+
+      - name: Set up Turborepo Remote Cache
+        uses: vercel/setup-turborepo-remote-cache-action@v1.0.0
+        with:
+          team: jason-merrells-projects
 
       - name: Validate Infisical configuration
         shell: bash
@@ -49,12 +57,16 @@ jobs:
           recursive: false
           include-imports: false
 
-      - run: pnpm install --frozen-lockfile=false
+      - name: Install runtime workspace dependencies
+        run: pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
+
       - run: pnpm check
+
       - run: pnpm run deploy:screeps
         env:
           SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+
       - name: Verify deployed Screeps code
         run: pnpm run verify:screeps
         env:

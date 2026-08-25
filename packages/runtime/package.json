@@ -1,0 +1,12 @@
+{
+  "name": "@screeps/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cd ../.. && node scripts/build.mjs",
+    "lint": "cd ../.. && biome lint packages/runtime/src packages/runtime/test scripts",
+    "test": "cd ../.. && vitest run packages/runtime/test",
+    "typecheck": "cd ../.. && tsc --noEmit"
+  }
+}

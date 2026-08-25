@@ -1,7 +1,13 @@
 {
-  "name": "screeps-headless-scenarios",
+  "name": "@screeps/scenario",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "cd .. && node scripts/build-headless-scenario.mjs",
+    "lint": "cd .. && biome lint scenario",
+    "scenario": "npm install --no-audit --no-fund && cd .. && node scenario/run.mjs"
+  },
   "dependencies": {
     "screeps-server-mockup": "1.5.1"
   }

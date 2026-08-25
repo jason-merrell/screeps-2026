@@ -6,12 +6,13 @@ const host = process.env.SCREEPS_HOST || "https://screeps.com";
 const branch = process.env.SCREEPS_BRANCH || "default";
 const requestId = process.env.SCREEPS_REQUEST_ID || "unknown";
 const requestCommand = process.env.SCREEPS_COMMAND || "/deploy-code target=ptr";
+const bundlePath = "packages/runtime/dist/main.js";
 
 if (!token) {
   throw new Error("SCREEPS_TOKEN is required for PTR code deployment");
 }
 
-const code = await readFile("dist/main.js", "utf8");
+const code = await readFile(bundlePath, "utf8");
 const endpoint = new URL("/ptr/api/user/code", host);
 
 const response = await fetch(endpoint, {
@@ -92,5 +93,5 @@ await writeFile(
 );
 
 console.log(
-  `Deployed and verified PTR branch '${branch}' (${snapshot.fingerprint}, ${snapshot.bytes} bytes).`,
+  `Deployed and verified PTR branch '${branch}' from ${bundlePath} (${snapshot.fingerprint}, ${snapshot.bytes} bytes).`,
 );

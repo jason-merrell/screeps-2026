@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 const token = process.env.SCREEPS_TOKEN;
 const branch = process.env.SCREEPS_BRANCH || "default";
 const host = process.env.SCREEPS_HOST || "https://screeps.com";
+const bundlePath = "packages/runtime/dist/main.js";
 
 if (!token) {
   throw new Error("SCREEPS_TOKEN is required for deployment");
 }
 
-const code = await readFile("dist/main.js", "utf8");
+const code = await readFile(bundlePath, "utf8");
 const endpoint = new URL("/api/user/code", host);
 
 const response = await fetch(endpoint, {
@@ -42,4 +43,4 @@ if (result.ok !== 1) {
   throw new Error(`Screeps deploy was not acknowledged: ${body}`);
 }
 
-console.log(`Deployed dist/main.js to ${endpoint.host}, Screeps branch '${branch}'.`);
+console.log(`Deployed ${bundlePath} to ${endpoint.host}, Screeps branch '${branch}'.`);

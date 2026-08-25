@@ -4,7 +4,7 @@ import { build } from "esbuild";
 await mkdir("scenario/dist", { recursive: true });
 
 await build({
-  entryPoints: ["src/scenarios/headless-traffic.ts"],
+  entryPoints: ["packages/runtime/src/scenarios/headless-traffic.ts"],
   outfile: "scenario/dist/main.js",
   bundle: true,
   format: "cjs",
