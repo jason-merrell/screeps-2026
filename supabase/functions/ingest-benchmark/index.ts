@@ -6,7 +6,7 @@ const jwks = createRemoteJWKSet(
 );
 const expectedRepository = "jason-merrell/screeps-2026";
 const expectedWorkflow =
-  `${expectedRepository}/.github/workflows/screeps-insights.yml@refs/heads/main`;
+  `${expectedRepository}/.github/workflows/persist-ptr-benchmark.yml@refs/heads/main`;
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
