@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildExperimentBenchmark } from "../../../scripts/lib/benchmark-sample.mjs";
+import {
+  buildBenchmarkSample,
+  buildExperimentBenchmark,
+  buildHeadlessComparisonBenchmark,
+} from "../../../scripts/lib/benchmark-sample.mjs";
 
 const artifact = {
   request: { id: "5416836682", mode: "experiment", target: "ptr" },
@@ -44,7 +48,36 @@ const artifact = {
   },
 };
 
-describe("experiment benchmark samples", () => {
+const headlessArtifact = {
+  request: { id: "5417000000", mode: "benchmark", target: "headless" },
+  benchmark: {
+    name: "traffic-suite",
+    target: "headless",
+    shard: "headless",
+    room: "W0N0",
+    fixtureVersion: "traffic-v1",
+    tickBudget: 320,
+    repetitions: 2,
+    baselineSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    candidateSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    completedAt: "2026-08-25T21:00:00.000Z",
+    comparison: {
+      schema: "screeps-headless-comparison/v1",
+      schemaVersion: 1,
+      comparable: true,
+      verdict: "equivalent",
+      comparisons: {
+        "head-on": {
+          baselineStatus: "passed",
+          candidateStatus: "passed",
+          deltas: { runningTicks: 0, pathFinds: 0 },
+        },
+      },
+    },
+  },
+};
+
+describe("benchmark samples", () => {
   it("builds stable identity and longitudinal metrics from the actual PTR state shape", () => {
     const result = buildExperimentBenchmark(artifact, { runtimeSha: "366fa1bed2aa9ec3d57de23d06906acf4edcb725" });
 
@@ -52,6 +85,7 @@ describe("experiment benchmark samples", () => {
     expect(result?.benchmarkName).toBe("bootstrap-rcl3");
     expect(result?.room).toBe("E52N38");
     expect(result?.metrics).toMatchObject({
+      evidenceClass: "live-ptr-longitudinal",
       durationMs: 10000,
       startRcl: 1,
       finalRcl: 2,
@@ -72,6 +106,29 @@ describe("experiment benchmark samples", () => {
     });
   });
 
+  it("normalizes a controlled headless comparison without confusing it with PTR evidence", () => {
+    const result = buildHeadlessComparisonBenchmark(headlessArtifact);
+    expect(result).toMatchObject({
+      sampleKey: "headless-benchmark:5417000000",
+      benchmarkName: "traffic-suite controlled comparison",
+      runtimeSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      target: "headless",
+      shard: "headless",
+      room: "W0N0",
+      metrics: {
+        evidenceClass: "controlled-headless-comparison",
+        fixtureVersion: "traffic-v1",
+        tickBudget: 320,
+        repetitions: 2,
+        baselineSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        candidateSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        comparable: true,
+        verdict: "equivalent",
+      },
+    });
+    expect(buildBenchmarkSample(headlessArtifact)).toEqual(result);
+  });
+
   it("is idempotent for the same immutable request artifact", () => {
     const first = buildExperimentBenchmark(artifact, { runtimeSha: "366fa1b" });
     const second = buildExperimentBenchmark(structuredClone(artifact), { runtimeSha: "366fa1b" });
@@ -79,7 +136,7 @@ describe("experiment benchmark samples", () => {
     expect(second).toEqual(first);
   });
 
-  it("ignores non-experiment artifacts", () => {
-    expect(buildExperimentBenchmark({ request: { id: "123" } })).toBeNull();
+  it("ignores unsupported artifacts", () => {
+    expect(buildBenchmarkSample({ request: { id: "123" } })).toBeNull();
   });
 });
