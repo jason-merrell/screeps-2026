@@ -143,7 +143,7 @@ jobs:
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
 
-      - name: Deploy code to PTR
+      - name: Deploy code
         if: >-
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
           steps.request.outputs.mode == 'deploy-code'
@@ -153,10 +153,12 @@ jobs:
           pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
           pnpm check
           pnpm build:runtime
-          node scripts/deploy-code-ptr.mjs
+          node scripts/deploy-code.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
+          SCREEPS_TARGET: ${{ steps.request.outputs.target }}
+          SCREEPS_ALLOW_WORLD_DEPLOYMENT: ${{ steps.request.outputs.target == 'world' }}
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
 
