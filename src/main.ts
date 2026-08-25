@@ -61,6 +61,7 @@ export const loop = (): void => {
     plannerRuns,
     arbitrationCpu,
     executionCpu,
+    spatial: world.spatial.metrics,
     accepted: arbitration.accepted,
     rejected: arbitration.rejected,
     plannerByIntent,
