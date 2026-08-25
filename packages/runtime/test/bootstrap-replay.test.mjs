@@ -4,7 +4,7 @@ import {
   BOOTSTRAP_STATE_VERSION,
   evaluateBootstrapState,
   projectBootstrapState,
-} from "../scripts/lib/bootstrap-state.mjs";
+} from "../../../scripts/lib/bootstrap-state.mjs";
 
 const fixturePath = new URL("./fixtures/bootstrap/ptr-rcl1-self-reproducing.json", import.meta.url);
 

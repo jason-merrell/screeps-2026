@@ -1,0 +1,34 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalPassThroughEnv": [
+    "GITHUB_*",
+    "SCREEPS_*",
+    "SCENARIO_*"
+  ],
+  "tasks": {
+    "build": {
+      "outputs": [
+        "dist/**",
+        ".vercel/output/**"
+      ]
+    },
+    "@screeps/scenario#build": {
+      "dependsOn": [
+        "@screeps/runtime#build"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
+    },
+    "lint": {},
+    "typecheck": {},
+    "test": {},
+    "scenario": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false
+    }
+  }
+}

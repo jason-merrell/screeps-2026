@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateStartRoom, rankStartRooms } from "../scripts/lib/start-room-recommender.mjs";
+import { evaluateStartRoom, rankStartRooms } from "../../../scripts/lib/start-room-recommender.mjs";
 
 const plainTerrain = "0".repeat(2500);
 

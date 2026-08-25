@@ -4,6 +4,8 @@ coverage/
 .env
 .DS_Store
 *.log
+.turbo/
+.vercel/
 scenario/package-lock.json
 scenario/.runtime/
 scenario/.results/

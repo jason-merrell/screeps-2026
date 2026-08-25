@@ -1,8 +1,8 @@
 import { build } from "esbuild";
 
 await build({
-  entryPoints: ["src/main.ts"],
-  outfile: "dist/main.js",
+  entryPoints: ["packages/runtime/src/main.ts"],
+  outfile: "packages/runtime/dist/main.js",
   bundle: true,
   format: "cjs",
   platform: "neutral",

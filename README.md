@@ -36,35 +36,46 @@ Execution
 Game commands
 ```
 
-## Current vertical slice
+## Workspace
 
-The initial bot can:
+The repository is orchestrated with Turborepo and pnpm workspaces:
 
-1. migrate and validate versioned Memory;
-2. perceive owned rooms, creeps, spawns, and CPU state;
-3. bootstrap a `[WORK, CARRY, MOVE]` worker when the colony has no creeps;
-4. infer creep capabilities from active body parts;
-5. harvest energy, refill spawns/extensions, and use surplus energy to upgrade;
-6. resolve conflicting actions deterministically before execution.
+```text
+apps/
+  screeps-lab/          Vercel control-plane shell
+packages/
+  runtime/              production Screeps runtime and tests
+scenario/               headless private-server harness
+scripts/                deploy, insights, replay, and build tooling
+```
 
-This is deliberately small. The purpose of the first milestone is to prove the architecture with a living colony before adding richer logistics, construction, defense, expansion, or scheduling systems.
+Turborepo owns task ordering and cache boundaries. Vercel Remote Cache is used by GitHub Actions through OIDC, while the heavyweight private-server dependency remains isolated to the scenario runtime.
 
 ## Development
 
 Requires Node.js 22+ and pnpm.
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile=false
 pnpm check
 pnpm build
 ```
 
-The Screeps bundle is emitted to `dist/main.js`.
+Useful focused commands:
 
-## Structure
+```bash
+pnpm build:runtime
+pnpm build:scenario
+pnpm lab:build
+pnpm scenario:headless
+```
+
+The production Screeps bundle is emitted to `packages/runtime/dist/main.js`.
+
+## Runtime structure
 
 ```text
-src/
+packages/runtime/src/
   intents/       intent contracts, arbitration, execution
   memory/        durable schema and migrations
   runtime/       tick and CPU context
