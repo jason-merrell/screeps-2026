@@ -49,6 +49,18 @@ export function execute(intents: Intent[]): MovementMetrics {
     if (!creep || creep.spawning) continue;
 
     switch (intent.type) {
+      case "move": {
+        const target = Game.getObjectById(intent.targetId);
+        if (!target || creep.pos.inRangeTo(target, intent.range)) break;
+        movementRequests.push({
+          creep,
+          target,
+          range: intent.range,
+          priority: intent.priority,
+          reason: intent.reason,
+        });
+        break;
+      }
       case "harvest": {
         const source = Game.getObjectById(intent.sourceId);
         if (!source) break;
