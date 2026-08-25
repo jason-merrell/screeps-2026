@@ -106,7 +106,7 @@
 
         <article class="panel span-5">
           <h2>Room plan</h2>
-          <div class="room-grid" id="room-grid" aria-label="50 by 50 Screeps room grid"></div>
+          <div class="room-grid" id="room-grid" role="img" aria-label="50 by 50 Screeps room grid"></div>
           <div class="legend" id="room-legend">
             <span class="chip">awaiting Supabase snapshot</span>
           </div>
@@ -118,12 +118,11 @@
         </article>
       </section>
 
-      <div class="footer-note" id="footer-note">Supabase is the preferred control-plane read model. GitHub issue #5 remains a temporary compatibility fallback.</div>
+      <div class="footer-note" id="footer-note">Data source: Supabase sanitized read model. GitHub issue #5 is command-trigger only.</div>
     </main>
 
     <script src="/supabase-config.js"></script>
     <script type="module">
-      const ISSUE_COMMENTS = "https://api.github.com/repos/jason-merrell/screeps-2026/issues/5/comments?per_page=100";
       const phases = ["perception", "economy", "arbitration", "execution", "observability"];
       const benchmarkFallback = { perception: 0.036, economy: 0.165, arbitration: 0.018, execution: 0.76, observability: 0.033 };
       const cells = [];
@@ -220,9 +219,10 @@
 
       const renderBars = (metrics) => {
         const root = document.querySelector("#cpu-bars");
-        const max = Math.max(...Object.values(metrics), 1);
+        const max = Math.max(...phases.map((phase) => Number(metrics?.[phase] ?? 0)), 1);
         root.replaceChildren();
         for (const phase of phases) {
+          const metric = Number(metrics?.[phase] ?? 0);
           const row = document.createElement("div");
           row.className = "bar-row";
           const label = document.createElement("span");
@@ -231,10 +231,10 @@
           track.className = "track";
           const fill = document.createElement("div");
           fill.className = "fill";
-          fill.style.width = `${Math.max(2, (metrics[phase] / max) * 100)}%`;
+          fill.style.width = `${Math.max(2, (metric / max) * 100)}%`;
           track.append(fill);
           const value = document.createElement("span");
-          value.textContent = metrics[phase].toFixed(3);
+          value.textContent = metric.toFixed(3);
           row.append(label, track, value);
           root.append(row);
         }
@@ -253,21 +253,31 @@
         const { supabaseUrl = "", supabaseKey = "" } = window.__SCREEPS_LAB_CONFIG__ ?? {};
         if (!supabaseUrl || !supabaseKey) return null;
 
-        const snapshotResponse = await fetch(
-          `${supabaseUrl}/rest/v1/observability_snapshots?select=payload,captured_at&order=captured_at.desc&limit=1`,
-          { headers: supabaseHeaders() },
-        );
-        if (!snapshotResponse.ok) throw new Error(`Supabase snapshots ${snapshotResponse.status}`);
-        const snapshots = await snapshotResponse.json();
-        const snapshot = snapshots?.[0]?.payload ?? null;
-        if (!snapshot) return null;
+        const [snapshotResponse, experimentResponse, benchmarkResponse] = await Promise.all([
+          fetch(
+            `${supabaseUrl}/rest/v1/observability_snapshots?select=payload,captured_at&order=captured_at.desc&limit=1`,
+            { headers: supabaseHeaders() },
+          ),
+          fetch(
+            `${supabaseUrl}/rest/v1/experiments?select=experiment_key,name,runtime_sha,completed_at,status&status=eq.succeeded&order=completed_at.desc&limit=12`,
+            { headers: supabaseHeaders() },
+          ),
+          fetch(
+            `${supabaseUrl}/rest/v1/benchmark_samples?select=sample_key,benchmark_name,runtime_sha,metrics,captured_at,inserted_at&order=inserted_at.desc&limit=1`,
+            { headers: supabaseHeaders() },
+          ),
+        ]);
 
-        const experimentResponse = await fetch(
-          `${supabaseUrl}/rest/v1/experiments?select=experiment_key,name,runtime_sha,completed_at,status&status=eq.succeeded&order=completed_at.desc&limit=12`,
-          { headers: supabaseHeaders() },
-        );
+        if (!snapshotResponse.ok) throw new Error(`Supabase snapshots ${snapshotResponse.status}`);
+        if (!benchmarkResponse.ok) throw new Error(`Supabase benchmarks ${benchmarkResponse.status}`);
+
+        const snapshots = await snapshotResponse.json();
         const experiments = experimentResponse.ok ? await experimentResponse.json() : [];
-        return { snapshot, experiments };
+        const benchmarks = await benchmarkResponse.json();
+        const snapshot = snapshots?.[0]?.payload ?? null;
+        const benchmark = benchmarks?.[0] ?? null;
+        if (!snapshot) return null;
+        return { snapshot, experiments, benchmark };
       };
 
       const renderExperiments = (experiments) => {
@@ -276,7 +286,7 @@
         if (!experiments?.length) {
           const empty = document.createElement("div");
           empty.className = "empty";
-          empty.textContent = "No Supabase experiment rows yet. Historical receipts remain in GitHub during migration.";
+          empty.textContent = "No succeeded Supabase experiment rows yet.";
           root.append(empty);
           return;
         }
@@ -295,57 +305,29 @@
         }
       };
 
-      const extractNumber = (body, patterns) => {
-        for (const pattern of patterns) {
-          const match = body.match(pattern);
-          if (match) return Number(match[1]);
-        }
-        return null;
-      };
-
-      const loadGithubCompatibility = async () => {
-        const response = await fetch(ISSUE_COMMENTS, { headers: { Accept: "application/vnd.github+json" } });
-        if (!response.ok) throw new Error(`GitHub ${response.status}`);
-        const comments = await response.json();
-        const human = comments.filter((comment) => comment.user?.login === "jason-merrell").reverse();
-        const benchmark = human.find((comment) => comment.body.includes("Spatial-index optimization benchmark"));
-        const ppae = human.find((comment) => comment.body.includes("PPAE observability transport proven on PTR"));
-        const source = benchmark?.body ?? ppae?.body ?? "";
-        return {
-          perception: extractNumber(source, [/perception \|?\s*`?([0-9.]+)/i, /average perception: `([0-9.]+)`/i]) ?? benchmarkFallback.perception,
-          economy: extractNumber(source, [/economy planner \|?\s*`?([0-9.]+)/i, /economy `([0-9.]+)`/i]) ?? benchmarkFallback.economy,
-          arbitration: extractNumber(source, [/arbitration \|?\s*`?([0-9.]+)/i, /average arbitration: `([0-9.]+)`/i]) ?? benchmarkFallback.arbitration,
-          execution: extractNumber(source, [/execution \|?\s*`?([0-9.]+)/i, /average execution: `([0-9.]+)`/i]) ?? benchmarkFallback.execution,
-          observability: extractNumber(source, [/observability \|?\s*`?([0-9.]+)/i, /average observability overhead: `([0-9.]+)`/i]) ?? benchmarkFallback.observability,
-        };
-      };
-
       const hydrate = async () => {
         renderBars(benchmarkFallback);
-        let supabaseLoaded = false;
         try {
           const controlPlane = await loadSupabase();
-          if (controlPlane) {
-            renderSnapshot(controlPlane.snapshot);
-            renderExperiments(controlPlane.experiments);
-            document.querySelector("#source-status").textContent = "snapshot live from Supabase control plane";
-            document.querySelector("#footer-note").textContent = "Data source: Supabase sanitized read model. GitHub issue #5 remains compatibility-only during migration.";
-            supabaseLoaded = true;
+          if (!controlPlane) {
+            document.querySelector("#source-status").textContent = "Supabase read model has no snapshot yet · bundled benchmark baseline";
+            return;
           }
-        } catch (error) {
-          document.querySelector("#source-status").textContent = `Supabase unavailable (${error.message}); using compatibility telemetry`;
-        }
 
-        try {
-          const metrics = await loadGithubCompatibility();
-          renderBars(metrics);
-          if (!supabaseLoaded) {
-            document.querySelector("#source-status").textContent = "GitHub compatibility telemetry · Supabase snapshot not configured yet";
+          renderSnapshot(controlPlane.snapshot);
+          renderExperiments(controlPlane.experiments);
+          if (controlPlane.benchmark?.metrics) {
+            renderBars(controlPlane.benchmark.metrics);
+            const label = controlPlane.benchmark.runtime_sha
+              ? `${controlPlane.benchmark.benchmark_name} · ${controlPlane.benchmark.runtime_sha}`
+              : controlPlane.benchmark.benchmark_name;
+            document.querySelector("#source-status").textContent = `${label} · Supabase`;
+          } else {
+            document.querySelector("#source-status").textContent = "snapshot live from Supabase · bundled benchmark baseline";
           }
+          document.querySelector("#footer-note").textContent = "Data source: Supabase sanitized read model. GitHub issue #5 is command-trigger only.";
         } catch (error) {
-          if (!supabaseLoaded) {
-            document.querySelector("#source-status").textContent = `control-plane sources unavailable · bundled baseline (${error.message})`;
-          }
+          document.querySelector("#source-status").textContent = `Supabase unavailable · bundled benchmark baseline (${error.message})`;
         }
       };
 
