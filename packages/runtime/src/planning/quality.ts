@@ -1,22 +1,80 @@
 import type { WorldSnapshot } from "../runtime/context";
 import { desiredBootstrapWorkforce } from "../systems/spawning/workforce";
-import type { FspmDomain, FspmQuality } from "./fspm";
+import type {
+  ColonyFspmPortfolio,
+  FspmDomain,
+  FspmQuality,
+  FspmQualitySample,
+  FspmQualityTrend,
+} from "./fspm";
+
+const HISTORY_INTERVAL_TICKS = 25;
+const HISTORY_LIMIT = 12;
+const TREND_DELTA = 5;
 
 const clampScore = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
 
 const qualityState = (score: number): FspmQuality["state"] =>
   score >= 85 ? "healthy" : score >= 60 ? "watch" : "degraded";
 
+export function qualityTrendFromSamples(samples: FspmQualitySample[]): FspmQualityTrend {
+  if (samples.length < 2) return "new";
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  if (!first || !last || last.tick - first.tick < HISTORY_INTERVAL_TICKS) return "new";
+
+  const delta = last.score - first.score;
+  if (delta > TREND_DELTA) return "improving";
+  if (delta < -TREND_DELTA) return "declining";
+  return "stable";
+}
+
 function sameQuality(left: FspmQuality | undefined, right: FspmQuality): boolean {
   return (
     left?.score === right.score &&
     left.state === right.state &&
+    left.trend === right.trend &&
     left.evidence.length === right.evidence.length &&
     left.evidence.every((value, index) => value === right.evidence[index])
   );
 }
 
-function measureEconomy(room: Room, creeps: Creep[]): FspmQuality {
+type QualityMeasurement = Omit<FspmQuality, "trend">;
+
+function applyQuality(
+  portfolio: ColonyFspmPortfolio,
+  record: { id: string; quality?: FspmQuality },
+  measurement: QualityMeasurement,
+): void {
+  portfolio.qualityHistory ??= {};
+  const history = portfolio.qualityHistory[record.id] ?? [];
+  const last = history[history.length - 1];
+  const shouldSample =
+    !last ||
+    Game.time - last.tick >= HISTORY_INTERVAL_TICKS ||
+    last.state !== measurement.state;
+
+  if (shouldSample) {
+    history.push({ tick: Game.time, score: measurement.score, state: measurement.state });
+    if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
+    portfolio.qualityHistory[record.id] = history;
+  }
+
+  const trendSamples = shouldSample
+    ? history
+    : [
+        ...history,
+        { tick: Game.time, score: measurement.score, state: measurement.state },
+      ];
+  const quality: FspmQuality = {
+    ...measurement,
+    trend: qualityTrendFromSamples(trendSamples),
+  };
+
+  if (!sameQuality(record.quality, quality)) record.quality = quality;
+}
+
+function measureEconomy(room: Room, creeps: Creep[]): QualityMeasurement {
   const sources = room.find(FIND_SOURCES).length;
   const targetWorkers = Math.max(1, sources + 1);
   const workerCoverage = Math.min(1, creeps.length / targetWorkers);
@@ -35,7 +93,7 @@ function measureEconomy(room: Room, creeps: Creep[]): FspmQuality {
   };
 }
 
-function measureSpawning(room: Room, creeps: Creep[]): FspmQuality {
+function measureSpawning(room: Room, creeps: Creep[]): QualityMeasurement {
   const desired = desiredBootstrapWorkforce(
     room.controller?.level ?? 1,
     room.find(FIND_SOURCES).length,
@@ -51,7 +109,7 @@ function measureSpawning(room: Room, creeps: Creep[]): FspmQuality {
   };
 }
 
-function measureConstruction(roomName: string): FspmQuality {
+function measureConstruction(roomName: string): QualityMeasurement {
   const plan = Memory.colonies[roomName]?.roomPlan;
   const owned = Boolean(plan?.planId && plan?.deliverableId);
   const invalidated = plan?.invalidatedAt !== undefined;
@@ -69,7 +127,7 @@ function measureConstruction(roomName: string): FspmQuality {
   };
 }
 
-function measureDefense(room: Room): FspmQuality {
+function measureDefense(room: Room): QualityMeasurement {
   const hostiles = room.find(FIND_HOSTILE_CREEPS);
   const towers = room
     .find(FIND_MY_STRUCTURES)
@@ -103,7 +161,7 @@ function measureDomain(
   domain: FspmDomain,
   room: Room,
   creeps: Creep[],
-): FspmQuality {
+): QualityMeasurement {
   switch (domain) {
     case "economy":
       return measureEconomy(room, creeps);
@@ -114,6 +172,11 @@ function measureDomain(
     case "defense":
       return measureDefense(room);
   }
+}
+
+export function rollupContractScore(scores: number[]): number | null {
+  if (scores.length === 0) return null;
+  return clampScore(scores.reduce((sum, score) => sum + score, 0) / scores.length);
 }
 
 export function reconcileFspmQuality(world: WorldSnapshot): void {
@@ -127,9 +190,27 @@ export function reconcileFspmQuality(world: WorldSnapshot): void {
       const deliverable = portfolio.deliverables[domain];
       if (!requirement || !deliverable) continue;
 
-      const quality = measureDomain(domain, room, creeps);
-      if (!sameQuality(requirement.quality, quality)) requirement.quality = quality;
-      if (!sameQuality(deliverable.quality, quality)) deliverable.quality = quality;
+      const measurement = measureDomain(domain, room, creeps);
+      applyQuality(portfolio, requirement, measurement);
+      applyQuality(portfolio, deliverable, measurement);
     }
+
+    const requirements = Object.values(portfolio.requirements).flatMap((requirement) =>
+      requirement?.quality ? [requirement] : [],
+    );
+    const contractScore = rollupContractScore(requirements.map((requirement) => requirement.quality!.score));
+    if (contractScore === null) continue;
+
+    applyQuality(portfolio, portfolio.contract, {
+      score: contractScore,
+      state: qualityState(contractScore),
+      measuredAt: Game.time,
+      evidence: requirements
+        .sort((a, b) => a.domain.localeCompare(b.domain))
+        .map(
+          (requirement) =>
+            `${requirement.domain} ${requirement.quality!.score} ${requirement.quality!.state}`,
+        ),
+    });
   }
 }
