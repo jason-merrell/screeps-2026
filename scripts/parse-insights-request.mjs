@@ -40,6 +40,7 @@ let target = "world";
 let mode = "collect";
 let experiment = "";
 let scenario = "";
+let benchmarkRuns = "";
 let command = "/collect";
 
 if (eventName === "issue_comment") {
@@ -57,11 +58,12 @@ if (eventName === "issue_comment") {
       "/deploy-code",
       "/experiment",
       "/scenario",
+      "/benchmark",
       "/snapshot",
     ].includes(commandToken)
   ) {
     fail(
-      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, /deploy-code, /experiment, /scenario, or /snapshot",
+      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, /deploy-code, /experiment, /scenario, /benchmark, or /snapshot",
     );
   }
 
@@ -78,9 +80,11 @@ if (eventName === "issue_comment") {
               ? "experiment"
               : commandToken === "/scenario"
                 ? "scenario"
-                : commandToken === "/snapshot"
-                  ? "snapshot"
-                  : "collect";
+                : commandToken === "/benchmark"
+                  ? "benchmark"
+                  : commandToken === "/snapshot"
+                    ? "snapshot"
+                    : "collect";
 
   const args = new Map();
   for (const token of tokens.slice(1)) {
@@ -102,9 +106,11 @@ if (eventName === "issue_comment") {
                 ? ["name", "target", "shard"]
                 : mode === "scenario"
                   ? ["name"]
-                  : mode === "snapshot"
-                    ? ["room", "shard", "target"]
-                    : ["room", "shard", "target"];
+                  : mode === "benchmark"
+                    ? ["name", "runs"]
+                    : mode === "snapshot"
+                      ? ["room", "shard", "target"]
+                      : ["room", "shard", "target"];
     if (!allowed.includes(key)) fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
     args.set(key, value);
@@ -152,6 +158,18 @@ if (eventName === "issue_comment") {
     }
     target = "headless";
     command = `/scenario name=${scenario}`;
+  } else if (mode === "benchmark") {
+    scenario = (args.get("name") || "").toLowerCase();
+    if (scenario !== "traffic-suite") {
+      fail("/benchmark currently requires name=traffic-suite");
+    }
+    const runs = args.get("runs") || "2";
+    if (!/^[2-5]$/.test(runs)) {
+      fail("/benchmark runs must be an integer from 2 through 5");
+    }
+    benchmarkRuns = runs;
+    target = "headless";
+    command = `/benchmark name=traffic-suite runs=${benchmarkRuns}`;
   } else if (mode === "snapshot") {
     room = normalizeRoom(args.get("room") || "");
     shard = normalizeShard(args.get("shard") || "");
@@ -200,6 +218,7 @@ const lines = [
   `target=${target}`,
   `experiment=${experiment}`,
   `scenario=${scenario}`,
+  `benchmark_runs=${benchmarkRuns}`,
   `command=${command}`,
   `marker=${marker}`,
   `artifact_name=${artifactName}`,
