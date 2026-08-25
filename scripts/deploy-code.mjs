@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 const token = process.env.SCREEPS_TOKEN;
 const host = process.env.SCREEPS_HOST || "https://screeps.com";
-const branch = process.env.SCREEPS_BRANCH || "default";
+const configuredBranch = process.env.SCREEPS_BRANCH || "default";
 const target = (process.env.SCREEPS_TARGET || "ptr").toLowerCase();
 const requestId = process.env.SCREEPS_REQUEST_ID || "unknown";
 const requestCommand =
@@ -25,6 +25,42 @@ if (target === "world" && !allowWorldDeployment) {
   );
 }
 
+const resolveActiveWorldBranch = async () => {
+  const branchesEndpoint = new URL("/api/user/branches", host);
+  const branchesResponse = await fetch(branchesEndpoint, {
+    headers: { "X-Token": token },
+  });
+  const branchesText = await branchesResponse.text();
+  let branches;
+  try {
+    branches = JSON.parse(branchesText);
+  } catch {
+    throw new Error("World branch discovery returned invalid JSON");
+  }
+
+  if (!branchesResponse.ok || branches?.ok !== 1 || !Array.isArray(branches?.list)) {
+    throw new Error(
+      `World branch discovery failed (${branchesResponse.status}): ${branchesText}`,
+    );
+  }
+
+  const active = branches.list.find(
+    (candidate) => candidate?.activeWorld === true && typeof candidate?.branch === "string",
+  );
+  if (!active) {
+    throw new Error("World branch discovery found no branch marked activeWorld");
+  }
+
+  if (configuredBranch !== active.branch) {
+    console.log(
+      `Configured branch '${configuredBranch}' is not active for World; deploying to authoritative activeWorld branch '${active.branch}'.`,
+    );
+  }
+
+  return active.branch;
+};
+
+const branch = target === "world" ? await resolveActiveWorldBranch() : configuredBranch;
 const code = await readFile(bundlePath, "utf8");
 const endpoint = new URL(`${apiPrefix}/api/user/code`, host);
 
@@ -95,6 +131,8 @@ const snapshot = {
   host,
   target,
   branch,
+  configuredBranch,
+  branchSource: target === "world" ? "activeWorld" : "configured",
   result: "deployed-and-verified",
   fingerprint: fingerprint(code),
   bytes: Buffer.byteLength(code, "utf8"),
