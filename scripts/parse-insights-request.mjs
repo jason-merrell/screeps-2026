@@ -8,6 +8,7 @@ const outputPath = process.env.GITHUB_OUTPUT;
 
 const roomPattern = /^[WE]\d+[NS]\d+$/i;
 const shardPattern = /^shard\d+$/i;
+const scenarioNames = new Set(["head-on", "funnel", "crossing", "traffic-suite"]);
 
 const fail = (message) => {
   throw new Error(`Invalid Screeps insights request: ${message}`);
@@ -38,6 +39,7 @@ let shard = "";
 let target = "world";
 let mode = "collect";
 let experiment = "";
+let scenario = "";
 let command = "/collect";
 
 if (eventName === "issue_comment") {
@@ -54,10 +56,11 @@ if (eventName === "issue_comment") {
       "/place-start",
       "/deploy-code",
       "/experiment",
+      "/scenario",
     ].includes(commandToken)
   ) {
     fail(
-      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, /deploy-code, or /experiment",
+      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, /deploy-code, /experiment, or /scenario",
     );
   }
 
@@ -72,7 +75,9 @@ if (eventName === "issue_comment") {
             ? "deploy-code"
             : commandToken === "/experiment"
               ? "experiment"
-              : "collect";
+              : commandToken === "/scenario"
+                ? "scenario"
+                : "collect";
 
   const args = new Map();
   for (const token of tokens.slice(1)) {
@@ -92,7 +97,9 @@ if (eventName === "issue_comment") {
               ? ["target"]
               : mode === "experiment"
                 ? ["name", "target", "shard"]
-                : ["room", "shard", "target"];
+                : mode === "scenario"
+                  ? ["name"]
+                  : ["room", "shard", "target"];
     if (!allowed.includes(key)) fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
     args.set(key, value);
@@ -139,6 +146,13 @@ if (eventName === "issue_comment") {
     ]
       .filter(Boolean)
       .join(" ");
+  } else if (mode === "scenario") {
+    scenario = (args.get("name") || "").toLowerCase();
+    if (!scenarioNames.has(scenario)) {
+      fail("/scenario requires name=head-on, name=funnel, name=crossing, or name=traffic-suite");
+    }
+    target = "headless";
+    command = `/scenario name=${scenario}`;
   } else {
     room = normalizeRoom(args.get("room") || "");
     target = normalizeTarget(args.get("target") || "world");
@@ -175,6 +189,7 @@ const lines = [
   `shard=${shard}`,
   `target=${target}`,
   `experiment=${experiment}`,
+  `scenario=${scenario}`,
   `command=${command}`,
   `marker=${marker}`,
   `artifact_name=${artifactName}`,
