@@ -171,12 +171,63 @@ const sanitizeQualitySample = (value) => {
 const sanitizeFspmRecord = (value) => {
   if (!value || typeof value !== "object") return null;
   const id = boundedString(value.id);
+  const title = boundedString(value.title, 160) ?? id;
   const status = ["active", "completed", "cancelled"].includes(value.status)
     ? value.status
     : null;
   if (!id || !status) return null;
   const quality = sanitizeQuality(value.quality);
-  return { id, status, ...(quality ? { quality } : {}) };
+  return { id, title, status, ...(quality ? { quality } : {}) };
+};
+
+const sanitizeProgram = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const id = boundedString(value.id);
+  const title = boundedString(value.title, 160);
+  const status = ["active", "completed", "cancelled"].includes(value.status) ? value.status : null;
+  if (!id || !title || value.type !== "program" || value.subType !== "service_program" || !status) return null;
+  return { id, title, type: "program", subType: "service_program", status };
+};
+
+const sanitizeKpiMetric = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const metric = boundedString(value.metric, 240);
+  const exceptional = boundedString(value.exceptional, 320);
+  const satisfactory = boundedString(value.satisfactory, 320);
+  const unsatisfactory = boundedString(value.unsatisfactory, 320);
+  return metric && exceptional && satisfactory && unsatisfactory
+    ? { metric, exceptional, satisfactory, unsatisfactory }
+    : null;
+};
+
+const sanitizeTaskQi = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const score = finiteNumber(value.score);
+  const measuredAt = Number.isInteger(value.measuredAt) ? value.measuredAt : null;
+  const ratedActivities = Number.isInteger(value.ratedActivities) ? value.ratedActivities : null;
+  const totalActivities = Number.isInteger(value.totalActivities) ? value.totalActivities : null;
+  const exceptional = Number.isInteger(value.exceptional) ? value.exceptional : null;
+  const satisfactory = Number.isInteger(value.satisfactory) ? value.satisfactory : null;
+  const unsatisfactory = Number.isInteger(value.unsatisfactory) ? value.unsatisfactory : null;
+  return score !== null && score >= 0 && score <= 1.5 && measuredAt !== null && ratedActivities !== null && totalActivities !== null && exceptional !== null && satisfactory !== null && unsatisfactory !== null
+    ? { score, measuredAt, ratedActivities, totalActivities, exceptional, satisfactory, unsatisfactory }
+    : null;
+};
+
+const sanitizeActivityKpi = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const tick = Number.isInteger(value.tick) ? value.tick : null;
+  const activityId = boundedString(value.activityId);
+  const activityType = boundedString(value.activityType, 64);
+  const actor = boundedString(value.actor, 160);
+  const rating = ["exceptional", "satisfactory", "unsatisfactory", "in_progress"].includes(value.rating)
+    ? value.rating
+    : null;
+  const evidence = boundedString(value.evidence, 240);
+  const numeric = value.value === null ? null : finiteNumber(value.value);
+  if (tick === null || !activityId || !activityType || !actor || !rating || !evidence) return null;
+  if (numeric !== null && (numeric < 0 || numeric > 1.5)) return null;
+  return { tick, activityId, activityType, actor, rating, value: numeric, evidence };
 };
 
 const sanitizeFspm = (value) => {
@@ -187,20 +238,56 @@ const sanitizeFspm = (value) => {
         const contract = sanitizeFspmRecord(colony?.contract);
         const roomName = boundedString(colony?.roomName, 32);
         if (!contract || !roomName) return null;
-        const clean = (records) =>
-          Array.isArray(records)
-            ? records.slice(0, 128).map(sanitizeFspmRecord).filter(Boolean)
-            : [];
         const contractHistory = Array.isArray(colony.contractHistory)
           ? colony.contractHistory.slice(-12).map(sanitizeQualitySample).filter(Boolean)
           : [];
+        const requirements = Array.isArray(colony.requirements)
+          ? colony.requirements.slice(0, 128).map((record) => {
+              const base = sanitizeFspmRecord(record);
+              const contractId = boundedString(record?.contractId);
+              const domain = boundedString(record?.domain, 32);
+              return base && contractId && domain ? { ...base, contractId, domain } : null;
+            }).filter(Boolean)
+          : [];
+        const deliverables = Array.isArray(colony.deliverables)
+          ? colony.deliverables.slice(0, 128).map((record) => {
+              const base = sanitizeFspmRecord(record);
+              const requirementId = boundedString(record?.requirementId);
+              const domain = boundedString(record?.domain, 32);
+              return base && requirementId && domain ? { ...base, requirementId, domain } : null;
+            }).filter(Boolean)
+          : [];
+        const tasks = Array.isArray(colony.tasks)
+          ? colony.tasks.slice(0, 256).map((record) => {
+              const base = sanitizeFspmRecord(record);
+              const deliverableId = boundedString(record?.deliverableId);
+              const domain = boundedString(record?.domain, 32);
+              const taskKey = boundedString(record?.taskKey, 120);
+              const kpiMetric = sanitizeKpiMetric(record?.kpiMetric);
+              if (!base || !deliverableId || !domain || !taskKey || !kpiMetric) return null;
+              const qi = sanitizeTaskQi(record?.qi);
+              const recentActivities = Array.isArray(record?.recentActivities)
+                ? record.recentActivities.slice(-8).map(sanitizeActivityKpi).filter(Boolean)
+                : [];
+              return {
+                ...base,
+                deliverableId,
+                domain,
+                taskKey,
+                kpiMetric,
+                ...(qi ? { qi } : {}),
+                recentActivities,
+              };
+            }).filter(Boolean)
+          : [];
         return {
           roomName,
+          program: sanitizeProgram(colony.program),
           contract,
           contractHistory,
-          requirements: clean(colony.requirements),
-          deliverables: clean(colony.deliverables),
-          tasks: clean(colony.tasks),
+          requirements,
+          deliverables,
+          tasks,
         };
       })
       .filter(Boolean),
