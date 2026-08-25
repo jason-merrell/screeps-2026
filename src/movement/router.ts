@@ -11,6 +11,7 @@ export interface MovementMetrics {
   moveRequests: number;
   flowMoves: number;
   fallbackMoveTo: number;
+  reservationRelaxations: number;
   costGridBuilds: number;
   costGridCacheHits: number;
   flowFieldBuilds: number;
@@ -142,6 +143,7 @@ export class TickMovementRouter {
     moveRequests: 0,
     flowMoves: 0,
     fallbackMoveTo: 0,
+    reservationRelaxations: 0,
     costGridBuilds: 0,
     costGridCacheHits: 0,
     flowFieldBuilds: 0,
@@ -180,12 +182,19 @@ export class TickMovementRouter {
       this.metrics.flowFieldBuilds += 1;
     }
 
-    const step = chooseFlowStep(
+    const origin = { x: creep.pos.x, y: creep.pos.y };
+    let step = chooseFlowStep(
       field.distances,
       routing.costs,
-      { x: creep.pos.x, y: creep.pos.y },
+      origin,
       this.reservedDestinations,
     );
+
+    if (!step && this.reservedDestinations.size > 0) {
+      step = chooseFlowStep(field.distances, routing.costs, origin);
+      if (step) this.metrics.reservationRelaxations += 1;
+    }
+
     if (!step) return this.fallback(creep, target);
 
     const direction = creep.pos.getDirectionTo(step.x, step.y);
