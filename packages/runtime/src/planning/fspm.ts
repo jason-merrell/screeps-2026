@@ -1,3 +1,5 @@
+import type { Intent } from "../intents/types";
+
 export type FspmDomain = "economy" | "spawning" | "construction" | "defense";
 export type FspmStatus = "active" | "completed" | "cancelled";
 
@@ -5,8 +7,12 @@ interface FspmRecordBase {
   id: string;
   title: string;
   status: FspmStatus;
+  completionCriterion: string;
+  statusReason?: string;
   createdAt: number;
   updatedAt: number;
+  completedAt?: number;
+  reopenedAt?: number;
 }
 
 export interface ColonyContract extends FspmRecordBase {
@@ -46,6 +52,32 @@ const titleCase = (value: string): string =>
     .map((part) => (part.length > 0 ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part))
     .join(" ");
 
+const taskCriterion =
+  "complete when the planner emits no activity for this task during the current tick; reopen when demand returns";
+const childRollupCriterion =
+  "complete when at least one child task exists and every materialized child task is completed";
+
+function transitionStatus(
+  record: FspmRecordBase,
+  next: Exclude<FspmStatus, "cancelled">,
+  reason: string,
+): void {
+  if (record.status === "cancelled") return;
+  if (record.status === next && record.statusReason === reason) return;
+
+  const previous = record.status;
+  record.status = next;
+  record.statusReason = reason;
+  record.updatedAt = Game.time;
+
+  if (next === "completed") {
+    record.completedAt = Game.time;
+  } else if (previous === "completed") {
+    record.reopenedAt = Game.time;
+    delete record.completedAt;
+  }
+}
+
 export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
   const colony = Memory.colonies[roomName];
   if (!colony) throw new Error(`Cannot create FSPM portfolio for unknown colony ${roomName}`);
@@ -58,6 +90,8 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
         roomName,
         title: `Operate colony ${roomName}`,
         status: "active",
+        completionCriterion: "close only by explicit colony decommission",
+        statusReason: "owned colony is operational",
         createdAt: Game.time,
         updatedAt: Game.time,
       },
@@ -67,7 +101,23 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
     };
   }
 
-  return colony.fspm;
+  const portfolio = colony.fspm;
+  portfolio.contract.completionCriterion ??= "close only by explicit colony decommission";
+  portfolio.contract.statusReason ??= "owned colony is operational";
+
+  for (const requirement of Object.values(portfolio.requirements)) {
+    if (!requirement) continue;
+    requirement.completionCriterion ??= childRollupCriterion;
+  }
+  for (const deliverable of Object.values(portfolio.deliverables)) {
+    if (!deliverable) continue;
+    deliverable.completionCriterion ??= childRollupCriterion;
+  }
+  for (const task of Object.values(portfolio.tasks)) {
+    task.completionCriterion ??= taskCriterion;
+  }
+
+  return portfolio;
 }
 
 export function ensureDomainHierarchy(roomName: string, domain: FspmDomain) {
@@ -83,6 +133,8 @@ export function ensureDomainHierarchy(roomName: string, domain: FspmDomain) {
       domain,
       title: `${titleCase(domain)} capability`,
       status: "active",
+      completionCriterion: childRollupCriterion,
+      statusReason: "domain work has not yet rolled up to completion",
       createdAt: Game.time,
       updatedAt: Game.time,
     };
@@ -98,6 +150,8 @@ export function ensureDomainHierarchy(roomName: string, domain: FspmDomain) {
       domain,
       title: `${titleCase(domain)} operating system`,
       status: "active",
+      completionCriterion: childRollupCriterion,
+      statusReason: "domain work has not yet rolled up to completion",
       createdAt: Game.time,
       updatedAt: Game.time,
     };
@@ -121,9 +175,50 @@ export function ensureTask(roomName: string, domain: FspmDomain, taskKey: string
     taskKey,
     title: titleCase(taskKey),
     status: "active",
+    completionCriterion: taskCriterion,
+    statusReason: "planner demand created activity",
     createdAt: Game.time,
     updatedAt: Game.time,
   };
   portfolio.tasks[id] = task;
   return task;
+}
+
+export function reconcileFspmLifecycle(intents: Intent[]): void {
+  const demandedTaskIds = new Set(
+    intents.flatMap((intent) => (intent.trace?.taskId ? [intent.trace.taskId] : [])),
+  );
+
+  for (const colony of Object.values(Memory.colonies)) {
+    const portfolio = colony.fspm;
+    if (!portfolio) continue;
+
+    for (const task of Object.values(portfolio.tasks)) {
+      const demanded = demandedTaskIds.has(task.id);
+      transitionStatus(
+        task,
+        demanded ? "active" : "completed",
+        demanded ? "planner emitted activity this tick" : "planner emitted no activity this tick",
+      );
+    }
+
+    for (const domain of ["economy", "spawning", "construction", "defense"] as const) {
+      const requirement = portfolio.requirements[domain];
+      const deliverable = portfolio.deliverables[domain];
+      if (!requirement || !deliverable) continue;
+
+      const tasks = Object.values(portfolio.tasks).filter((task) => task.domain === domain);
+      const complete = tasks.length > 0 && tasks.every((task) => task.status === "completed");
+      const reason = complete
+        ? `${tasks.length} materialized task${tasks.length === 1 ? "" : "s"} completed`
+        : tasks.length === 0
+          ? "no materialized tasks yet"
+          : `${tasks.filter((task) => task.status === "active").length} active task${tasks.filter((task) => task.status === "active").length === 1 ? "" : "s"}`;
+
+      transitionStatus(deliverable, complete ? "completed" : "active", reason);
+      transitionStatus(requirement, complete ? "completed" : "active", reason);
+    }
+
+    transitionStatus(portfolio.contract, "active", "owned colony is operational");
+  }
 }
