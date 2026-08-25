@@ -29,7 +29,8 @@ jobs:
         startsWith(github.event.comment.body, '/recommend-start') ||
         startsWith(github.event.comment.body, '/place-start') ||
         startsWith(github.event.comment.body, '/deploy-code') ||
-        startsWith(github.event.comment.body, '/experiment')) &&
+        startsWith(github.event.comment.body, '/experiment') ||
+        startsWith(github.event.comment.body, '/scenario')) &&
        github.event.comment.user.login == github.repository_owner)
     runs-on: ubuntu-latest
 
@@ -75,7 +76,9 @@ jobs:
           echo "completed=$completed" >> "$GITHUB_OUTPUT"
 
       - name: Validate Infisical configuration
-        if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
+        if: >-
+          (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode != 'scenario'
         shell: bash
         env:
           INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
@@ -87,7 +90,9 @@ jobs:
           test -n "$INFISICAL_ENV_SLUG" || (echo "Missing repository variable INFISICAL_ENV_SLUG" && exit 1)
 
       - name: Fetch Screeps token from Infisical
-        if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
+        if: >-
+          (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode != 'scenario'
         uses: Infisical/secrets-action@v1.0.12
         with:
           method: oidc
@@ -103,7 +108,8 @@ jobs:
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
           steps.request.outputs.mode != 'place-start' &&
           steps.request.outputs.mode != 'deploy-code' &&
-          steps.request.outputs.mode != 'experiment'
+          steps.request.outputs.mode != 'experiment' &&
+          steps.request.outputs.mode != 'scenario'
         run: node scripts/collect-insights.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
@@ -167,6 +173,23 @@ jobs:
           SCREEPS_EXPERIMENT: ${{ steps.request.outputs.experiment }}
           SCREEPS_EXPERIMENT_SAMPLES: 12
           SCREEPS_EXPERIMENT_INTERVAL_MS: 5000
+
+      - name: Run headless scenario
+        if: >-
+          (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode == 'scenario'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile=false
+          pnpm check
+          pnpm build:scenario
+          npm install --prefix scenario --no-audit --no-fund
+          node scenario/run.mjs
+        env:
+          SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
+          SCREEPS_SCENARIO: ${{ steps.request.outputs.scenario }}
 
       - name: Upload Screeps insights
         if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
