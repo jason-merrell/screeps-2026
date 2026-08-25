@@ -1,0 +1,8 @@
+{
+  "name": "screeps-headless-scenarios",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "screeps-server-mockup": "1.5.1"
+  }
+}
