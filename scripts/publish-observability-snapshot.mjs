@@ -147,10 +147,25 @@ const sanitizeQuality = (value) => {
   if (!value || typeof value !== "object") return null;
   const score = finiteNumber(value.score);
   const state = ["healthy", "watch", "degraded"].includes(value.state) ? value.state : null;
+  const trend = ["new", "improving", "stable", "declining"].includes(value.trend)
+    ? value.trend
+    : null;
   const evidence = Array.isArray(value.evidence)
     ? value.evidence.slice(0, 8).map((item) => boundedString(item, 160)).filter(Boolean)
     : [];
-  return score !== null && score >= 0 && score <= 100 && state ? { score, state, evidence } : null;
+  return score !== null && score >= 0 && score <= 100 && state && trend
+    ? { score, state, trend, evidence }
+    : null;
+};
+
+const sanitizeQualitySample = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const tick = Number.isInteger(value.tick) && value.tick >= 0 ? value.tick : null;
+  const score = finiteNumber(value.score);
+  const state = ["healthy", "watch", "degraded"].includes(value.state) ? value.state : null;
+  return tick !== null && score !== null && score >= 0 && score <= 100 && state
+    ? { tick, score, state }
+    : null;
 };
 
 const sanitizeFspmRecord = (value) => {
@@ -176,9 +191,13 @@ const sanitizeFspm = (value) => {
           Array.isArray(records)
             ? records.slice(0, 128).map(sanitizeFspmRecord).filter(Boolean)
             : [];
+        const contractHistory = Array.isArray(colony.contractHistory)
+          ? colony.contractHistory.slice(-12).map(sanitizeQualitySample).filter(Boolean)
+          : [];
         return {
           roomName,
           contract,
+          contractHistory,
           requirements: clean(colony.requirements),
           deliverables: clean(colony.deliverables),
           tasks: clean(colony.tasks),
