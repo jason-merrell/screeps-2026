@@ -3,17 +3,17 @@ import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 
 import { enqueueSnapshot } from "@/app/operator/actions";
+import { LabShell } from "@/components/lab-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { LabShell } from "@/components/lab-shell";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 type OperatorPageProps = {
-  searchParams: Promise<{ queued?: string; error?: string }>;
+  searchParams: Promise<{ queued?: string; error?: string; wake?: string }>;
 };
 
 export default async function OperatorPage({ searchParams }: OperatorPageProps) {
@@ -66,6 +66,13 @@ export default async function OperatorPage({ searchParams }: OperatorPageProps) 
                   <div className="rounded-xl border border-primary/20 bg-primary/7 p-4 text-sm">
                     <div className="font-medium text-primary">Command accepted</div>
                     <div className="mt-1 break-all font-mono text-xs text-muted-foreground">{params.queued}</div>
+                    <div className="mt-3 text-xs leading-5 text-muted-foreground">
+                      {params.wake === "dispatched"
+                        ? "Trusted worker dispatched immediately."
+                        : params.wake === "unconfigured"
+                          ? "Immediate worker wake is not configured yet; the queued command remains durable for fallback execution."
+                          : "Immediate worker wake failed; the queued command remains durable for fallback execution."}
+                    </div>
                   </div>
                 ) : null}
 
