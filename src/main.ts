@@ -3,6 +3,7 @@ import { arbitrateDetailed, conflictKey } from "./intents/arbitrate";
 import type { Intent } from "./intents/types";
 import { execute } from "./intents/execute";
 import { migrateMemory } from "./memory/migrate";
+import { activateMemorySegments } from "./memory/segments";
 import {
   publishTickTrace,
   type PlannerName,
@@ -18,6 +19,7 @@ installSpawnAdvisor();
 
 export const loop = (): void => {
   const tickStartCpu = Game.cpu.getUsed();
+  activateMemorySegments();
 
   let phaseStart = Game.cpu.getUsed();
   migrateMemory();
