@@ -5,6 +5,7 @@ export type Intent =
   | TowerAttackIntent;
 export type CreepIntent =
   | HarvestIntent
+  | WithdrawIntent
   | TransferIntent
   | BuildIntent
   | RepairIntent
@@ -33,9 +34,15 @@ export interface HarvestIntent extends CreepIntentBase {
   sourceId: Id<Source>;
 }
 
+export interface WithdrawIntent extends CreepIntentBase {
+  type: "withdraw";
+  targetId: Id<StructureContainer>;
+  resource: ResourceConstant;
+}
+
 export interface TransferIntent extends CreepIntentBase {
   type: "transfer";
-  targetId: Id<StructureSpawn | StructureExtension | StructureTower>;
+  targetId: Id<StructureSpawn | StructureExtension | StructureTower | StructureContainer>;
   resource: ResourceConstant;
 }
 

@@ -63,6 +63,20 @@ export function execute(intents: Intent[]): MovementMetrics {
         );
         break;
       }
+      case "withdraw": {
+        const target = Game.getObjectById(intent.targetId);
+        if (!target) break;
+        requestMovement(
+          movementRequests,
+          creep,
+          target,
+          1,
+          creep.withdraw(target, intent.resource),
+          intent.priority,
+          intent.reason,
+        );
+        break;
+      }
       case "transfer": {
         const target = Game.getObjectById(intent.targetId);
         if (!target) break;

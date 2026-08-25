@@ -2,16 +2,29 @@ import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import type { RoomPlan, RoomPlanRoad, RoomPlanStructure } from "../../planning/room-plan";
 import type { WorldSnapshot } from "../../runtime/context";
+import { shouldActivateSourceBuffers } from "../economy/logistics";
 
 const MAX_NEW_SITES_PER_ROOM = 3;
 const MAX_ACTIVE_SITES_PER_ROOM = 6;
 const MAX_ACTIVE_ROAD_SITES_PER_ROOM = 3;
 
-export function eligiblePlannedStructures(plan: RoomPlan, controllerLevel: number): RoomPlanStructure[] {
+export function eligiblePlannedStructures(
+  plan: RoomPlan,
+  controllerLevel: number,
+  workforceCount = 0,
+): RoomPlanStructure[] {
+  const sourceBuffersActive = shouldActivateSourceBuffers(
+    controllerLevel,
+    workforceCount,
+    plan.anchors.sources.length,
+  );
+
   return plan.structures
     .filter(
       (structure) =>
-        structure.activation === "automatic" && structure.minRcl <= controllerLevel,
+        structure.minRcl <= controllerLevel &&
+        (structure.activation === "automatic" ||
+          (sourceBuffersActive && structure.phase === "source-logistics")),
     )
     .sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
 }
@@ -94,8 +107,9 @@ function planRoomConstruction(room: Room): Intent[] {
 
   const intents: Intent[] = [];
   const proposedByType = new Map<BuildableStructureConstant, number>();
+  const workforceCount = room.find(FIND_MY_CREEPS).length;
 
-  for (const planned of eligiblePlannedStructures(roomPlan, level)) {
+  for (const planned of eligiblePlannedStructures(roomPlan, level, workforceCount)) {
     if (intents.length >= MAX_NEW_SITES_PER_ROOM) break;
     if (hasPlannedStructure(room, planned) || hasPlannedSite(room, planned)) continue;
 
@@ -127,7 +141,6 @@ function planRoomConstruction(room: Room): Intent[] {
     );
   }
 
-  const workforceCount = room.find(FIND_MY_CREEPS).length;
   const existingRoadSites = sitesByType.get(STRUCTURE_ROAD) ?? 0;
   let proposedRoadSites = 0;
 
