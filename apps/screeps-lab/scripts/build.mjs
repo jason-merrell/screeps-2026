@@ -1,9 +1,12 @@
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 
 const outputRoot = ".vercel/output";
-const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseUrl =
+  process.env.SUPABASE_URL || "https://nflcqzcqpodnfkzjarwv.supabase.co";
 const supabaseKey =
-  process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+  process.env.SUPABASE_PUBLISHABLE_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  "sb_publishable_2g6FV2odRFonTpEDZ0rzSw_0MaZSAUt";
 
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(`${outputRoot}/static`, { recursive: true });
@@ -22,6 +25,4 @@ await writeFile(
   "utf8",
 );
 
-console.log(
-  `Built Screeps Lab control-plane shell (${supabaseUrl && supabaseKey ? "Supabase enabled" : "GitHub compatibility mode"}).`,
-);
+console.log("Built Screeps Lab control-plane shell (Supabase read model enabled).");
