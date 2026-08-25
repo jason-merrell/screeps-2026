@@ -4,3 +4,6 @@ coverage/
 .env
 .DS_Store
 *.log
+scenario/package-lock.json
+scenario/.runtime/
+scenario/.results/
