@@ -1,4 +1,4 @@
-export const ROOM_PLAN_VERSION = 2;
+export const ROOM_PLAN_VERSION = 3;
 export const ROOM_PLAN_HORIZON_RCL = 3;
 
 export interface PlannedPoint {
@@ -60,6 +60,8 @@ export interface RoomPlanSourceAnchor extends PlannedPoint {
 }
 
 export interface RoomPlan {
+  planId?: string;
+  deliverableId?: string;
   version: number;
   horizonRcl: number;
   roomName: string;

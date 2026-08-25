@@ -2,8 +2,8 @@ import { installRoomPlanDebug } from "./debug/room-plan";
 import { installSimTrafficDebug, runSimTrafficHarness } from "./debug/sim-traffic";
 import { installSpawnAdvisor } from "./debug/spawn-advisor";
 import { arbitrateDetailed, conflictKey } from "./intents/arbitrate";
-import type { Intent } from "./intents/types";
 import { execute } from "./intents/execute";
+import type { Intent } from "./intents/types";
 import { migrateMemory } from "./memory/migrate";
 import { activateMemorySegments } from "./memory/segments";
 import {
@@ -11,6 +11,7 @@ import {
   type PlannerName,
   type PlannerRunTrace,
 } from "./observability/trace";
+import { ensureRoomPlanOwnership } from "./planning/ownership";
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
@@ -40,6 +41,7 @@ export const loop = (): void => {
   phaseStart = Game.cpu.getUsed();
   ensureSettlementPlans(world);
   normalizeFreshRoomPlans();
+  ensureRoomPlanOwnership();
   const settlementCpu = Game.cpu.getUsed() - phaseStart;
 
   const plannerByIntent = new Map<Intent, PlannerName>();

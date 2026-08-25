@@ -1,6 +1,7 @@
+import { ensureDomainHierarchy, ensureTask, type FspmDomain } from "../planning/fspm";
 import type { IntentTrace } from "./types";
 
-export type TraceDomain = "economy" | "spawning" | "construction" | "defense";
+export type TraceDomain = FspmDomain;
 
 interface IntentTraceInput {
   roomName: string;
@@ -10,12 +11,18 @@ interface IntentTraceInput {
 }
 
 export function createIntentTrace(input: IntentTraceInput): IntentTrace {
+  const { portfolio, requirement, deliverable } = ensureDomainHierarchy(
+    input.roomName,
+    input.domain,
+  );
+  const task = ensureTask(input.roomName, input.domain, input.task);
   const scope = `${input.roomName}:${input.domain}`;
+
   return {
-    contractId: `contract:colony:${input.roomName}`,
-    requirementId: `requirement:${scope}`,
-    deliverableId: `deliverable:${scope}`,
-    taskId: `task:${scope}:${input.task}`,
+    contractId: portfolio.contract.id,
+    requirementId: requirement.id,
+    deliverableId: deliverable.id,
+    taskId: task.id,
     activityId: `activity:${Game.time}:${scope}:${input.activity}`,
   };
 }
