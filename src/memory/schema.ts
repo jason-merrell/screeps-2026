@@ -7,14 +7,10 @@ export interface ColonyMemory {
   discoveredAt: number;
 }
 
-export interface StatsMemory {
-  observability?: TickObservabilityTrace;
-}
-
 export interface ScreepsMemorySchema {
   version: number;
   colonies: Record<string, ColonyMemory>;
-  stats?: StatsMemory;
+  observability?: TickObservabilityTrace;
 }
 
 declare global {
