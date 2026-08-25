@@ -1,3 +1,5 @@
+import type { TickObservabilityTrace } from "../observability/trace";
+
 export const MEMORY_VERSION = 1;
 
 export interface ColonyMemory {
@@ -5,9 +7,14 @@ export interface ColonyMemory {
   discoveredAt: number;
 }
 
+export interface StatsMemory {
+  observability?: TickObservabilityTrace;
+}
+
 export interface ScreepsMemorySchema {
   version: number;
   colonies: Record<string, ColonyMemory>;
+  stats?: StatsMemory;
 }
 
 declare global {

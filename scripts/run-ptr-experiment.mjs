@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 import { evaluateBootstrapState, projectBootstrapState } from "./lib/bootstrap-state.mjs";
 
 const token = process.env.SCREEPS_TOKEN;
@@ -48,6 +49,20 @@ const requireOk = (label, response) => {
   return response.body;
 };
 
+const decodeMemoryData = (body) => {
+  const data = body?.data;
+  if (typeof data !== "string" || data.length === 0) return null;
+
+  try {
+    const json = data.startsWith("gz:")
+      ? gunzipSync(Buffer.from(data.slice(3), "base64")).toString("utf8")
+      : data;
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+};
+
 const parseRoomRef = (value) => {
   if (typeof value !== "string") return null;
   const qualified = value.match(/^(shard[^/]+)\/([WE]\d+[NS]\d+)$/i);
@@ -55,6 +70,9 @@ const parseRoomRef = (value) => {
   if (/^[WE]\d+[NS]\d+$/i.test(value)) return { shard: defaultShard, room: value.toUpperCase() };
   return null;
 };
+
+const average = (values) =>
+  values.length === 0 ? null : Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 1000) / 1000;
 
 const status = requireOk("PTR world status", await requestJson("/api/user/world-status"));
 if (status.status !== "normal") {
@@ -70,10 +88,11 @@ const samples = [];
 const transitions = {};
 
 for (let index = 0; index < sampleCount; index += 1) {
-  const [objects, overview, worldStatus] = await Promise.all([
+  const [objects, overview, worldStatus, observabilityResponse] = await Promise.all([
     requestJson("/api/game/room-objects", { room: ref.room, shard: ref.shard }),
     requestJson("/api/game/room-overview", { room: ref.room, shard: ref.shard, interval: 8 }),
     requestJson("/api/user/world-status"),
+    requestJson("/api/user/memory", { path: "stats.observability" }),
   ]);
 
   requireOk("PTR room objects", objects);
@@ -104,7 +123,10 @@ for (let index = 0; index < sampleCount; index += 1) {
 
   const state = projectBootstrapState(rawSnapshot, ref.room);
   const evaluation = evaluateBootstrapState(state);
-  samples.push({ index, collectedAt, state, evaluation });
+  const observability = observabilityResponse.ok
+    ? decodeMemoryData(observabilityResponse.body)
+    : null;
+  samples.push({ index, collectedAt, state, evaluation, observability });
 
   for (const [milestone, reached] of Object.entries(evaluation.milestones)) {
     if (reached && transitions[milestone] === undefined) {
@@ -112,8 +134,11 @@ for (let index = 0; index < sampleCount; index += 1) {
     }
   }
 
+  const traceSuffix = observability
+    ? ` cpu=${observability.cpu?.total ?? "?"} proposed=${observability.intents?.proposed ?? "?"} accepted=${observability.intents?.accepted ?? "?"}`
+    : " trace=unavailable";
   console.log(
-    `sample ${index + 1}/${sampleCount}: RCL${evaluation.summary.rcl} workforce=${evaluation.summary.workforce} spawnEnergy=${evaluation.summary.spawnEnergy} sites=${evaluation.summary.constructionSites}`,
+    `sample ${index + 1}/${sampleCount}: RCL${evaluation.summary.rcl} workforce=${evaluation.summary.workforce} spawnEnergy=${evaluation.summary.spawnEnergy} sites=${evaluation.summary.constructionSites}${traceSuffix}`,
   );
 
   if (evaluation.status === "passed") break;
@@ -122,6 +147,36 @@ for (let index = 0; index < sampleCount; index += 1) {
 
 const first = samples[0];
 const final = samples.at(-1);
+const traces = samples.map((sample) => sample.observability).filter((trace) => trace?.version === 1);
+const plannerNames = ["defense", "spawning", "construction", "economy"];
+const latestTrace = traces.at(-1) ?? null;
+const observabilitySummary = {
+  samplesWithTrace: traces.length,
+  latestTick: latestTrace?.tick ?? null,
+  cpu: {
+    averageTotal: average(traces.map((trace) => trace.cpu.total)),
+    maxTotal: traces.length ? Math.max(...traces.map((trace) => trace.cpu.total)) : null,
+    averagePerception: average(traces.map((trace) => trace.cpu.perception)),
+    averageArbitration: average(traces.map((trace) => trace.cpu.arbitration)),
+    averageExecution: average(traces.map((trace) => trace.cpu.execution)),
+    averageObservability: average(traces.map((trace) => trace.cpu.observability)),
+    averagePlanners: Object.fromEntries(
+      plannerNames.map((name) => [
+        name,
+        average(traces.map((trace) => trace.cpu.planners?.[name] ?? 0)),
+      ]),
+    ),
+    bucket: latestTrace?.cpu.bucket ?? null,
+  },
+  intents: {
+    averageProposed: average(traces.map((trace) => trace.intents.proposed)),
+    averageAccepted: average(traces.map((trace) => trace.intents.accepted)),
+    averageRejected: average(traces.map((trace) => trace.intents.rejected)),
+    latestAcceptedSample: latestTrace?.intents.acceptedSample ?? [],
+    latestRejectedSample: latestTrace?.intents.rejectedSample ?? [],
+  },
+};
+
 const result = {
   request: {
     id: requestId,
@@ -150,6 +205,7 @@ const result = {
           controllerSpend: final.state.energy.controllerSpendTotal - first.state.energy.controllerSpendTotal,
         }
       : null,
+    observability: observabilitySummary,
     final: final ?? null,
     samples,
   },
@@ -159,5 +215,5 @@ await mkdir("artifacts", { recursive: true });
 await writeFile("artifacts/screeps-insights.json", `${JSON.stringify(result, null, 2)}\n`, "utf8");
 
 console.log(
-  `PTR experiment ${experimentName} finished with status=${result.experiment.status} after ${samples.length} samples.`,
+  `PTR experiment ${experimentName} finished with status=${result.experiment.status} after ${samples.length} samples; traces=${traces.length}.`,
 );
