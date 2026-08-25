@@ -1,5 +1,6 @@
 import type { ArbitrationRejection } from "../intents/arbitrate";
 import type { Intent } from "../intents/types";
+import { writeObservabilitySegment } from "../memory/segments";
 
 export type PlannerName = "defense" | "spawning" | "construction" | "economy";
 
@@ -101,6 +102,7 @@ function compactIntent(
 }
 
 export function publishTickTrace(input: PublishTickTraceInput): TickObservabilityTrace {
+  const observabilityStart = Game.cpu.getUsed();
   const proposed = input.plannerRuns.flatMap((run) => run.intents);
   const proposedByPlanner = {
     defense: 0,
@@ -152,10 +154,9 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
     },
   };
 
-  const observabilityStart = Game.cpu.getUsed();
-  Memory.observability = trace;
   trace.cpu.observability = roundCpu(Game.cpu.getUsed() - observabilityStart);
   trace.cpu.total = roundCpu(Game.cpu.getUsed() - input.tickStartCpu);
+  writeObservabilitySegment(JSON.stringify(trace));
 
   return trace;
 }
