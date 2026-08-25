@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function sendMagicLink(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  if (!email || !email.includes("@")) redirect("/login?error=invalid-email");
+  if (!email?.includes("@")) redirect("/login?error=invalid-email");
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
