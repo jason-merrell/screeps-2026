@@ -17,6 +17,20 @@ import {
 } from "./stamps";
 
 const pointKey = (point: PlannedPoint): string => `${point.x}:${point.y}`;
+
+function parsePointKey(key: string): PlannedPoint {
+  const separator = key.indexOf(":");
+  if (separator <= 0 || separator >= key.length - 1) {
+    throw new Error(`Invalid room-plan point key '${key}'`);
+  }
+  const x = Number(key.slice(0, separator));
+  const y = Number(key.slice(separator + 1));
+  if (!Number.isInteger(x) || !Number.isInteger(y)) {
+    throw new Error(`Invalid room-plan point key '${key}'`);
+  }
+  return { x, y };
+}
+
 const inPlanningBounds = (point: PlannedPoint): boolean =>
   point.x >= 2 && point.x <= 47 && point.y >= 2 && point.y <= 47;
 
@@ -248,7 +262,11 @@ function buildRoadGraph(
   const roadKeys = new Set<string>();
   for (const offset of RAPID_FILL_ROAD_OFFSETS) {
     const point = translateStampPoint(spawn.pos, offset);
-    if (inPlanningBounds(point) && !hardBlocked.has(pointKey(point)) && room.getTerrain().get(point.x, point.y) !== TERRAIN_MASK_WALL) {
+    if (
+      inPlanningBounds(point) &&
+      !hardBlocked.has(pointKey(point)) &&
+      room.getTerrain().get(point.x, point.y) !== TERRAIN_MASK_WALL
+    ) {
       roadKeys.add(pointKey(point));
     }
   }
@@ -280,12 +298,12 @@ function buildRoadGraph(
             }
           }
           for (const key of hardBlocked) {
-            const [x, y] = key.split(":").map(Number);
-            matrix.set(x, y, 255);
+            const point = parsePointKey(key);
+            matrix.set(point.x, point.y, 255);
           }
           for (const key of roadKeys) {
-            const [x, y] = key.split(":").map(Number);
-            if (matrix.get(x, y) < 255) matrix.set(x, y, 1);
+            const point = parsePointKey(key);
+            if (matrix.get(point.x, point.y) < 255) matrix.set(point.x, point.y, 1);
           }
           return matrix;
         },
@@ -300,13 +318,12 @@ function buildRoadGraph(
     edges.push({ id: `${fromId}->${toId}`, from: fromId, to: toId, tiles });
   }
 
-  const roads = [...roadKeys]
+  const roads: RoomPlanRoad[] = [...roadKeys]
     .map((key) => {
-      const [x, y] = key.split(":").map(Number);
+      const point = parsePointKey(key);
       return {
-        id: `road-${x}-${y}`,
-        x,
-        y,
+        id: `road-${point.x}-${point.y}`,
+        ...point,
         minRcl: 2,
         activation: "demand" as const,
         phase: "strategic-roads" as const,
@@ -422,7 +439,10 @@ export function generateRoomPlan(room: Room, reason = "initial settlement plan")
 
   const hardBlocked = new Set(
     structures
-      .filter((structure) => structure.reservation === "hard" && structure.structureType !== STRUCTURE_RAMPART)
+      .filter(
+        (structure) =>
+          structure.reservation === "hard" && structure.structureType !== STRUCTURE_RAMPART,
+      )
       .map(pointKey),
   );
   hardBlocked.add(pointKey(hub));
