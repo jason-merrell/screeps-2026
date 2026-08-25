@@ -60,7 +60,7 @@ export const loop = (): void => {
   const arbitrationCpu = Game.cpu.getUsed() - phaseStart;
 
   phaseStart = Game.cpu.getUsed();
-  execute(arbitration.accepted);
+  const movement = execute(arbitration.accepted);
   const executionCpu = Game.cpu.getUsed() - phaseStart;
 
   publishTickTrace({
@@ -72,6 +72,7 @@ export const loop = (): void => {
     arbitrationCpu,
     executionCpu,
     spatial: world.spatial.metrics,
+    movement,
     accepted: arbitration.accepted,
     rejected: arbitration.rejected,
     plannerByIntent,

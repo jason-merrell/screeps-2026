@@ -1,14 +1,26 @@
+import {
+  resolveMovementRequests,
+  type MovementMetrics,
+  type MovementRequest,
+} from "../movement/traffic";
 import type { Intent } from "./types";
 
-const MOVEMENT_PATH_REUSE_TICKS = 50;
-
-function moveIfNeeded(creep: Creep, target: RoomObject, result: number): void {
-  if (result === ERR_NOT_IN_RANGE) {
-    creep.moveTo(target, { reusePath: MOVEMENT_PATH_REUSE_TICKS });
-  }
+function requestMovement(
+  requests: MovementRequest[],
+  creep: Creep,
+  target: RoomObject,
+  range: number,
+  result: number,
+  priority: number,
+  reason: string,
+): void {
+  if (result !== ERR_NOT_IN_RANGE) return;
+  requests.push({ creep, target, range, priority, reason });
 }
 
-export function execute(intents: Intent[]): void {
+export function execute(intents: Intent[]): MovementMetrics {
+  const movementRequests: MovementRequest[] = [];
+
   for (const intent of intents) {
     if (intent.type === "spawn") {
       const spawn = Game.spawns[intent.spawnName];
@@ -40,33 +52,75 @@ export function execute(intents: Intent[]): void {
       case "harvest": {
         const source = Game.getObjectById(intent.sourceId);
         if (!source) break;
-        moveIfNeeded(creep, source, creep.harvest(source));
+        requestMovement(
+          movementRequests,
+          creep,
+          source,
+          1,
+          creep.harvest(source),
+          intent.priority,
+          intent.reason,
+        );
         break;
       }
       case "transfer": {
         const target = Game.getObjectById(intent.targetId);
         if (!target) break;
-        moveIfNeeded(creep, target, creep.transfer(target, intent.resource));
+        requestMovement(
+          movementRequests,
+          creep,
+          target,
+          1,
+          creep.transfer(target, intent.resource),
+          intent.priority,
+          intent.reason,
+        );
         break;
       }
       case "build": {
         const target = Game.getObjectById(intent.targetId);
         if (!target) break;
-        moveIfNeeded(creep, target, creep.build(target));
+        requestMovement(
+          movementRequests,
+          creep,
+          target,
+          3,
+          creep.build(target),
+          intent.priority,
+          intent.reason,
+        );
         break;
       }
       case "repair": {
         const target = Game.getObjectById(intent.targetId);
         if (!target) break;
-        moveIfNeeded(creep, target, creep.repair(target));
+        requestMovement(
+          movementRequests,
+          creep,
+          target,
+          3,
+          creep.repair(target),
+          intent.priority,
+          intent.reason,
+        );
         break;
       }
       case "upgrade": {
         const controller = Game.getObjectById(intent.controllerId);
         if (!controller) break;
-        moveIfNeeded(creep, controller, creep.upgradeController(controller));
+        requestMovement(
+          movementRequests,
+          creep,
+          controller,
+          3,
+          creep.upgradeController(controller),
+          intent.priority,
+          intent.reason,
+        );
         break;
       }
     }
   }
+
+  return resolveMovementRequests(movementRequests);
 }
