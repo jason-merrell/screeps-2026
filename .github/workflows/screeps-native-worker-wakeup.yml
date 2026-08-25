@@ -20,4 +20,4 @@ jobs:
       - name: Dispatch native command worker
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run screeps-observability.yml --ref main
+        run: gh workflow run screeps-observability.yml --ref main --repo "$GITHUB_REPOSITORY"
