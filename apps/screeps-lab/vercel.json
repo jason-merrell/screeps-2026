@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "echo 'Skipping dependency install for static Screeps Lab'",
-  "buildCommand": "node scripts/build.mjs"
+  "framework": "nextjs",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build"
 }
