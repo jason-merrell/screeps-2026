@@ -1,8 +1,10 @@
 import type { Intent } from "./types";
 
+const MOVEMENT_PATH_REUSE_TICKS = 20;
+
 function moveIfNeeded(creep: Creep, target: RoomObject, result: number): void {
   if (result === ERR_NOT_IN_RANGE) {
-    creep.moveTo(target, { reusePath: 5 });
+    creep.moveTo(target, { reusePath: MOVEMENT_PATH_REUSE_TICKS });
   }
 }
 
