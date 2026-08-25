@@ -26,6 +26,7 @@ export type RoomPlan = {
 export type FspmStatus = "active" | "completed" | "cancelled";
 export type FspmQualityState = "healthy" | "watch" | "degraded";
 export type FspmTrend = "new" | "improving" | "stable" | "declining";
+export type FspmKpiRating = "exceptional" | "satisfactory" | "unsatisfactory" | "in_progress";
 export type FspmQuality = {
   score: number;
   state: FspmQualityState;
@@ -34,20 +35,69 @@ export type FspmQuality = {
 };
 export type FspmRecord = {
   id: string;
+  title?: string;
   status: FspmStatus;
   quality?: FspmQuality;
+};
+export type FspmRequirement = FspmRecord & {
+  contractId?: string;
+  domain?: string;
+};
+export type FspmDeliverable = FspmRecord & {
+  requirementId?: string;
+  domain?: string;
+};
+export type FspmTaskKpiMetric = {
+  metric: string;
+  exceptional: string;
+  satisfactory: string;
+  unsatisfactory: string;
+};
+export type FspmTaskQi = {
+  score: number;
+  measuredAt: number;
+  ratedActivities: number;
+  totalActivities: number;
+  exceptional: number;
+  satisfactory: number;
+  unsatisfactory: number;
+};
+export type FspmActivityKpi = {
+  tick: number;
+  activityId: string;
+  activityType: string;
+  actor: string;
+  rating: FspmKpiRating;
+  value: number | null;
+  evidence: string;
+};
+export type FspmTask = FspmRecord & {
+  deliverableId?: string;
+  domain?: string;
+  taskKey?: string;
+  kpiMetric?: FspmTaskKpiMetric;
+  qi?: FspmTaskQi;
+  recentActivities?: FspmActivityKpi[];
 };
 export type FspmHistorySample = {
   tick: number;
   score: number;
   state: FspmQualityState;
 };
+export type FspmProgram = {
+  id: string;
+  title: string;
+  type: "program";
+  subType: "service_program";
+  status: FspmStatus;
+};
 export type FspmColonySummary = {
   roomName: string;
+  program?: FspmProgram | null;
   contract: FspmRecord;
-  requirements: FspmRecord[];
-  deliverables: FspmRecord[];
-  tasks: FspmRecord[];
+  requirements: FspmRequirement[];
+  deliverables: FspmDeliverable[];
+  tasks: FspmTask[];
   contractHistory?: FspmHistorySample[];
 };
 export type RuntimeTrace = {
