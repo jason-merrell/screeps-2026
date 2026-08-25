@@ -128,7 +128,7 @@ for (let index = 0; index < sampleCount; index += 1) {
   }
 
   const traceSuffix = observability
-    ? ` cpu=${observability.cpu?.total ?? "?"} proposed=${observability.intents?.proposed ?? "?"} accepted=${observability.intents?.accepted ?? "?"}`
+    ? ` cpu=${observability.cpu?.total ?? "?"} proposed=${observability.intents?.proposed ?? "?"} accepted=${observability.intents?.accepted ?? "?"} distanceLookups=${observability.spatial?.distanceLookups ?? "?"}`
     : ` trace=unavailable status=${observabilityDiagnostic.status} data=${observabilityDiagnostic.hasData}`;
   console.log(
     `sample ${index + 1}/${sampleCount}: RCL${evaluation.summary.rcl} workforce=${evaluation.summary.workforce} spawnEnergy=${evaluation.summary.spawnEnergy} sites=${evaluation.summary.constructionSites}${traceSuffix}`,
@@ -162,6 +162,13 @@ const observabilitySummary = {
       ]),
     ),
     bucket: latestTrace?.cpu.bucket ?? null,
+  },
+  spatial: {
+    averageRoomsIndexed: average(traces.map((trace) => trace.spatial?.roomsIndexed ?? 0)),
+    averageDistanceLookups: average(traces.map((trace) => trace.spatial?.distanceLookups ?? 0)),
+    averageDistanceCacheHits: average(traces.map((trace) => trace.spatial?.distanceCacheHits ?? 0)),
+    averageDistanceCacheMisses: average(traces.map((trace) => trace.spatial?.distanceCacheMisses ?? 0)),
+    latest: latestTrace?.spatial ?? null,
   },
   intents: {
     averageProposed: average(traces.map((trace) => trace.intents.proposed)),
