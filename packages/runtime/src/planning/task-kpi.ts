@@ -78,6 +78,9 @@ export function reconcileTaskKpis(observations: ActivityExecutionObservation[]):
     history.push(sample);
     if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
     portfolio.activityKpiHistory[task.id] = history;
-    task.qi = computeTaskQi(history, Game.time);
+
+    const qi = computeTaskQi(history, Game.time);
+    if (qi) task.qi = qi;
+    else delete task.qi;
   }
 }
