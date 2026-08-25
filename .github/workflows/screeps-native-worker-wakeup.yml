@@ -1,0 +1,23 @@
+name: Wake Native Screeps Worker
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: screeps-native-worker-wakeup
+  cancel-in-progress: true
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch native command worker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run screeps-observability.yml --ref main
