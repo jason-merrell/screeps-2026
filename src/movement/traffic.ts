@@ -126,7 +126,7 @@ function moveWithNativeCache(
   stuckTicks: number,
   metrics: MovementMetrics,
 ): void {
-  const { creep, target } = request;
+  const { creep, target, range } = request;
   if (creep.fatigue > 0) {
     metrics.fatigueWaits += 1;
     return;
@@ -136,6 +136,7 @@ function moveWithNativeCache(
     metrics.congestionRepaths += 1;
     metrics.pathFinds += 1;
     creep.moveTo(target, {
+      range,
       reusePath: 0,
       ignoreCreeps: false,
     });
@@ -144,6 +145,7 @@ function moveWithNativeCache(
 
   metrics.cachedPathAttempts += 1;
   const cached = creep.moveTo(target, {
+    range,
     reusePath: PATH_REUSE_TICKS,
     ignoreCreeps: true,
     noPathFinding: true,
@@ -153,6 +155,7 @@ function moveWithNativeCache(
 
   metrics.pathFinds += 1;
   creep.moveTo(target, {
+    range,
     reusePath: PATH_REUSE_TICKS,
     ignoreCreeps: true,
   });
