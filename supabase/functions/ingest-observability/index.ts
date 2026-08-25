@@ -95,8 +95,19 @@ Deno.serve(async (req: Request) => {
     if (!/^shard\d+$/.test(snapshot.shard ?? "")) return json({ error: "invalid_shard" }, 400);
     if (!/^[WE]\d+[NS]\d+$/.test(snapshot.room ?? "")) return json({ error: "invalid_room" }, 400);
 
+    const commandKey = `github-comment:${requestId}`;
+    const { error: registerError } = await admin.rpc("register_command", {
+      p_command_key: commandKey,
+      p_command_type: "snapshot",
+      p_target: snapshot.target,
+      p_shard: snapshot.shard,
+      p_room_name: snapshot.room,
+      p_payload: { requestId, source: "snapshot-ingest" },
+    });
+    if (registerError) throw registerError;
+
     const { error: executingError } = await admin.rpc("transition_command", {
-      p_command_key: `github-comment:${requestId}`,
+      p_command_key: commandKey,
       p_status: "executing",
       p_event_type: "executing",
       p_detail: { source: "snapshot-publisher" },
@@ -132,7 +143,7 @@ Deno.serve(async (req: Request) => {
     if (snapshotError || !row) throw snapshotError ?? new Error("snapshot_upsert_failed");
 
     const { error: completedError } = await admin.rpc("transition_command", {
-      p_command_key: `github-comment:${requestId}`,
+      p_command_key: commandKey,
       p_status: "succeeded",
       p_event_type: "succeeded",
       p_detail: { snapshotId: row.id },
