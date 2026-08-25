@@ -4,6 +4,7 @@ export type Intent =
   | CreateConstructionSiteIntent
   | TowerAttackIntent;
 export type CreepIntent =
+  | MoveIntent
   | HarvestIntent
   | WithdrawIntent
   | TransferIntent
@@ -27,6 +28,12 @@ interface IntentBase {
 
 interface CreepIntentBase extends IntentBase {
   creepName: string;
+}
+
+export interface MoveIntent extends CreepIntentBase {
+  type: "move";
+  targetId: Id<StructureContainer>;
+  range: number;
 }
 
 export interface HarvestIntent extends CreepIntentBase {
