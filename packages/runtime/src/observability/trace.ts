@@ -2,6 +2,7 @@ import type { ArbitrationRejection } from "../intents/arbitrate";
 import type { Intent, IntentTrace } from "../intents/types";
 import { writeObservabilitySegment } from "../memory/segments";
 import type { MovementMetrics } from "../movement/traffic";
+import type { FspmStatus } from "../planning/fspm";
 import type { SpatialIndexMetrics } from "../world/spatial-index";
 
 export type PlannerName = "defense" | "spawning" | "construction" | "economy";
@@ -44,12 +45,17 @@ interface RoomPlanTraceSummary {
   invalidated: boolean;
 }
 
+interface CompactFspmRecord {
+  id: string;
+  status: FspmStatus;
+}
+
 interface FspmTraceSummary {
   roomName: string;
-  contractId: string;
-  requirementIds: string[];
-  deliverableIds: string[];
-  taskIds: string[];
+  contract: CompactFspmRecord;
+  requirements: CompactFspmRecord[];
+  deliverables: CompactFspmRecord[];
+  tasks: CompactFspmRecord[];
 }
 
 export interface TickObservabilityTrace {
@@ -171,6 +177,11 @@ function roomPlanSummaries(): RoomPlanTraceSummary[] {
     .sort((a, b) => a.roomName.localeCompare(b.roomName));
 }
 
+const compactRecord = (record: { id: string; status: FspmStatus }): CompactFspmRecord => ({
+  id: record.id,
+  status: record.status,
+});
+
 function fspmSummaries(): FspmTraceSummary[] {
   return Object.values(Memory.colonies)
     .flatMap((colony) => {
@@ -179,14 +190,16 @@ function fspmSummaries(): FspmTraceSummary[] {
       return [
         {
           roomName: colony.roomName,
-          contractId: portfolio.contract.id,
-          requirementIds: Object.values(portfolio.requirements)
-            .flatMap((record) => (record ? [record.id] : []))
-            .sort(),
-          deliverableIds: Object.values(portfolio.deliverables)
-            .flatMap((record) => (record ? [record.id] : []))
-            .sort(),
-          taskIds: Object.keys(portfolio.tasks).sort(),
+          contract: compactRecord(portfolio.contract),
+          requirements: Object.values(portfolio.requirements)
+            .flatMap((record) => (record ? [compactRecord(record)] : []))
+            .sort((a, b) => a.id.localeCompare(b.id)),
+          deliverables: Object.values(portfolio.deliverables)
+            .flatMap((record) => (record ? [compactRecord(record)] : []))
+            .sort((a, b) => a.id.localeCompare(b.id)),
+          tasks: Object.values(portfolio.tasks)
+            .map(compactRecord)
+            .sort((a, b) => a.id.localeCompare(b.id)),
         },
       ];
     })
