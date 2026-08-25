@@ -30,7 +30,8 @@ jobs:
         startsWith(github.event.comment.body, '/place-start') ||
         startsWith(github.event.comment.body, '/deploy-code') ||
         startsWith(github.event.comment.body, '/experiment') ||
-        startsWith(github.event.comment.body, '/scenario')) &&
+        startsWith(github.event.comment.body, '/scenario') ||
+        startsWith(github.event.comment.body, '/benchmark')) &&
        github.event.comment.user.login == github.repository_owner)
     runs-on: ubuntu-latest
 
@@ -85,7 +86,8 @@ jobs:
       - name: Validate Infisical configuration
         if: >-
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
-          steps.request.outputs.mode != 'scenario'
+          steps.request.outputs.mode != 'scenario' &&
+          steps.request.outputs.mode != 'benchmark'
         shell: bash
         env:
           INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
@@ -99,7 +101,8 @@ jobs:
       - name: Fetch Screeps token from Infisical
         if: >-
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
-          steps.request.outputs.mode != 'scenario'
+          steps.request.outputs.mode != 'scenario' &&
+          steps.request.outputs.mode != 'benchmark'
         uses: Infisical/secrets-action@v1.0.12
         with:
           method: oidc
@@ -116,7 +119,8 @@ jobs:
           steps.request.outputs.mode != 'place-start' &&
           steps.request.outputs.mode != 'deploy-code' &&
           steps.request.outputs.mode != 'experiment' &&
-          steps.request.outputs.mode != 'scenario'
+          steps.request.outputs.mode != 'scenario' &&
+          steps.request.outputs.mode != 'benchmark'
         run: node scripts/collect-insights.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
@@ -203,6 +207,21 @@ jobs:
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
           SCREEPS_SCENARIO: ${{ steps.request.outputs.scenario }}
+
+      - name: Run controlled headless benchmark
+        if: >-
+          (github.event_name == 'issue_comment' && steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode == 'benchmark'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
+          pnpm check
+          node scripts/run-headless-benchmark.mjs
+        env:
+          SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
+          SCREEPS_BENCHMARK_RUNS: ${{ steps.request.outputs.benchmark_runs }}
 
       - name: Upload Screeps insights
         if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
