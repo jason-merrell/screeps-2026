@@ -10,9 +10,18 @@ export type CreepIntent =
   | RepairIntent
   | UpgradeIntent;
 
+export interface IntentTrace {
+  contractId: string;
+  requirementId: string;
+  deliverableId: string;
+  taskId: string;
+  activityId: string;
+}
+
 interface IntentBase {
   priority: number;
   reason: string;
+  trace?: IntentTrace;
 }
 
 interface CreepIntentBase extends IntentBase {
