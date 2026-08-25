@@ -2,7 +2,11 @@ import type { ArbitrationRejection } from "../intents/arbitrate";
 import type { Intent, IntentTrace } from "../intents/types";
 import { writeObservabilitySegment } from "../memory/segments";
 import type { MovementMetrics } from "../movement/traffic";
-import type { FspmQuality, FspmStatus } from "../planning/fspm";
+import type {
+  FspmQuality,
+  FspmQualitySample,
+  FspmStatus,
+} from "../planning/fspm";
 import type { SpatialIndexMetrics } from "../world/spatial-index";
 
 export type PlannerName = "defense" | "spawning" | "construction" | "economy";
@@ -48,6 +52,7 @@ interface RoomPlanTraceSummary {
 interface CompactFspmQuality {
   score: number;
   state: FspmQuality["state"];
+  trend: FspmQuality["trend"];
   evidence: string[];
 }
 
@@ -60,6 +65,7 @@ interface CompactFspmRecord {
 interface FspmTraceSummary {
   roomName: string;
   contract: CompactFspmRecord;
+  contractHistory: FspmQualitySample[];
   requirements: CompactFspmRecord[];
   deliverables: CompactFspmRecord[];
   tasks: CompactFspmRecord[];
@@ -196,6 +202,7 @@ const compactRecord = (record: {
         quality: {
           score: record.quality.score,
           state: record.quality.state,
+          trend: record.quality.trend,
           evidence: [...record.quality.evidence],
         },
       }
@@ -211,6 +218,9 @@ function fspmSummaries(): FspmTraceSummary[] {
         {
           roomName: colony.roomName,
           contract: compactRecord(portfolio.contract),
+          contractHistory: (portfolio.qualityHistory?.[portfolio.contract.id] ?? [])
+            .slice(-12)
+            .map((sample) => ({ ...sample })),
           requirements: Object.values(portfolio.requirements)
             .flatMap((record) => (record ? [compactRecord(record)] : []))
             .sort((a, b) => a.id.localeCompare(b.id)),
