@@ -6,11 +6,6 @@ const LOWER_IS_BETTER = [
   "fatigueWaits",
 ];
 
-const metricValue = (trial, key) => {
-  if (key === "runningTicks") return trial?.finalState?.runningTicks ?? null;
-  return trial?.finalState?.metrics?.[key] ?? null;
-};
-
 export const trialSignature = (trial) =>
   JSON.stringify({
     name: trial?.name ?? null,
