@@ -2,6 +2,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { benchmarkFallback, loadControlPlane, type BenchmarkMetrics, type Point, type Snapshot } from "@/lib/control-plane";
 
+export const dynamic = "force-dynamic";
+
 const phases: Array<keyof BenchmarkMetrics> = ["perception", "economy", "arbitration", "execution", "observability"];
 
 function metricCard(label: string, value: string | number, detail: string) {
