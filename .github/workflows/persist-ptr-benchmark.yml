@@ -1,0 +1,69 @@
+name: Persist PTR Benchmark
+
+on:
+  workflow_run:
+    workflows: ["Screeps Insights"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+jobs:
+  persist:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: screeps-benchmark-${{ github.event.workflow_run.id }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Find insights artifact
+        id: artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          artifact_name="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
+            --jq '.artifacts | map(select(.name | startswith("screeps-insights-request-"))) | .[0].name // ""')"
+          if [ -z "$artifact_name" ]; then
+            echo "has_artifact=false" >> "$GITHUB_OUTPUT"
+            echo "No Screeps insights artifact exists for this run; benchmark persistence is a no-op."
+            exit 0
+          fi
+          echo "has_artifact=true" >> "$GITHUB_OUTPUT"
+          echo "name=$artifact_name" >> "$GITHUB_OUTPUT"
+
+      - name: Download insights artifact
+        if: steps.artifact.outputs.has_artifact == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          ARTIFACT_NAME: ${{ steps.artifact.outputs.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/raw
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$ARTIFACT_NAME" --dir artifacts/raw
+          insights="$(find artifacts/raw -type f -name screeps-insights.json -print -quit)"
+          test -n "$insights"
+          cp "$insights" artifacts/screeps-insights.json
+
+      - name: Persist benchmark sample
+        if: steps.artifact.outputs.has_artifact == 'true'
+        run: node scripts/publish-experiment-benchmark.mjs
+        env:
+          SUPABASE_BENCHMARK_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-benchmark
+          BENCHMARK_RUNTIME_SHA: ${{ github.event.workflow_run.head_sha }}
