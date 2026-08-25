@@ -12,7 +12,7 @@ create policy "operators can read own membership"
   on public.command_operators
   for select
   to authenticated
-  using (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id);
 
 revoke insert, update, delete on public.command_operators from anon, authenticated;
 grant select on public.command_operators to authenticated;
