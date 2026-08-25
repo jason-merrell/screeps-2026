@@ -9,6 +9,10 @@ export function migrateMemory(): void {
     return;
   }
 
+  if (memory.version === 1) {
+    memory.version = 2;
+  }
+
   if (memory.version !== MEMORY_VERSION) {
     throw new Error(`Unsupported Memory version ${memory.version}; expected ${MEMORY_VERSION}`);
   }
