@@ -2,7 +2,7 @@ import type { ArbitrationRejection } from "../intents/arbitrate";
 import type { Intent, IntentTrace } from "../intents/types";
 import { writeObservabilitySegment } from "../memory/segments";
 import type { MovementMetrics } from "../movement/traffic";
-import type { FspmStatus } from "../planning/fspm";
+import type { FspmQuality, FspmStatus } from "../planning/fspm";
 import type { SpatialIndexMetrics } from "../world/spatial-index";
 
 export type PlannerName = "defense" | "spawning" | "construction" | "economy";
@@ -45,9 +45,16 @@ interface RoomPlanTraceSummary {
   invalidated: boolean;
 }
 
+interface CompactFspmQuality {
+  score: number;
+  state: FspmQuality["state"];
+  evidence: string[];
+}
+
 interface CompactFspmRecord {
   id: string;
   status: FspmStatus;
+  quality?: CompactFspmQuality;
 }
 
 interface FspmTraceSummary {
@@ -177,9 +184,22 @@ function roomPlanSummaries(): RoomPlanTraceSummary[] {
     .sort((a, b) => a.roomName.localeCompare(b.roomName));
 }
 
-const compactRecord = (record: { id: string; status: FspmStatus }): CompactFspmRecord => ({
+const compactRecord = (record: {
+  id: string;
+  status: FspmStatus;
+  quality?: FspmQuality;
+}): CompactFspmRecord => ({
   id: record.id,
   status: record.status,
+  ...(record.quality
+    ? {
+        quality: {
+          score: record.quality.score,
+          state: record.quality.state,
+          evidence: [...record.quality.evidence],
+        },
+      }
+    : {}),
 });
 
 function fspmSummaries(): FspmTraceSummary[] {
