@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export default async function OperatorPage() {
         <CardContent className="grid gap-5">
           <div className="rounded-lg border bg-background/30 p-4 text-sm">
             <div className="text-muted-foreground">Authenticated identity</div>
-            <div className="mt-1 font-mono text-xs break-all">{claims.sub}</div>
+            <div className="mt-1 break-all font-mono text-xs">{claims.sub}</div>
           </div>
 
           {isOperator ? (
@@ -53,9 +54,7 @@ export default async function OperatorPage() {
           )}
 
           <div className="flex flex-wrap gap-3">
-            <Button asChild={false} variant="outline">
-              <a href="/">Observability</a>
-            </Button>
+            <a href="/" className={cn(buttonVariants({ variant: "outline" }))}>Observability</a>
             <form action="/auth/signout" method="post">
               <Button type="submit" variant="ghost">Sign out</Button>
             </form>
