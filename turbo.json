@@ -4,7 +4,8 @@
   "globalPassThroughEnv": [
     "GITHUB_*",
     "SCREEPS_*",
-    "SCENARIO_*"
+    "SCENARIO_*",
+    "SUPABASE_*"
   ],
   "tasks": {
     "build": {
