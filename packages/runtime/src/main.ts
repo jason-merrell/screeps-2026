@@ -14,6 +14,7 @@ import {
 import { reconcileFspmLifecycle } from "./planning/fspm";
 import { ensureRoomPlanOwnership } from "./planning/ownership";
 import { reconcileFspmQuality } from "./planning/quality";
+import { reconcileTaskKpis } from "./planning/task-kpi";
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
@@ -70,8 +71,9 @@ export const loop = (): void => {
   const arbitrationCpu = Game.cpu.getUsed() - phaseStart;
 
   phaseStart = Game.cpu.getUsed();
-  const movement = execute(arbitration.accepted);
+  const execution = execute(arbitration.accepted);
   const executionCpu = Game.cpu.getUsed() - phaseStart;
+  reconcileTaskKpis(execution.activities);
 
   publishTickTrace({
     tickStartCpu,
@@ -82,7 +84,7 @@ export const loop = (): void => {
     arbitrationCpu,
     executionCpu,
     spatial: world.spatial.metrics,
-    movement,
+    movement: execution.movement,
     accepted: arbitration.accepted,
     rejected: arbitration.rejected,
     plannerByIntent,
