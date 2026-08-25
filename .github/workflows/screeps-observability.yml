@@ -99,6 +99,17 @@ jobs:
           recursive: false
           include-imports: false
 
+      - name: Resolve owned observability room
+        id: room
+        if: steps.command.outputs.status != 'succeeded'
+        run: node scripts/resolve-observability-room.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+          SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
+          SCREEPS_TARGET: ${{ steps.request.outputs.target }}
+          SCREEPS_ROOM: ${{ steps.request.outputs.room }}
+          SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
+
       - name: Publish sanitized snapshot
         if: steps.command.outputs.status != 'succeeded'
         run: node scripts/publish-observability-snapshot.mjs
@@ -106,8 +117,8 @@ jobs:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
           SCREEPS_TARGET: ${{ steps.request.outputs.target }}
-          SCREEPS_ROOM: ${{ steps.request.outputs.room }}
-          SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
+          SCREEPS_ROOM: ${{ steps.room.outputs.room }}
+          SCREEPS_REQUESTED_SHARD: ${{ steps.room.outputs.shard }}
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
           SUPABASE_INGEST_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
@@ -232,6 +243,17 @@ jobs:
           recursive: false
           include-imports: false
 
+      - name: Resolve owned observability room
+        id: native-room
+        if: steps.claim.outputs.has_command == 'true'
+        run: node scripts/resolve-observability-room.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+          SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
+          SCREEPS_TARGET: ${{ steps.claim.outputs.target }}
+          SCREEPS_ROOM: ${{ steps.claim.outputs.room }}
+          SCREEPS_REQUESTED_SHARD: ${{ steps.claim.outputs.shard }}
+
       - name: Mark native command executing
         if: steps.claim.outputs.has_command == 'true'
         shell: bash
@@ -253,8 +275,8 @@ jobs:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
           SCREEPS_TARGET: ${{ steps.claim.outputs.target }}
-          SCREEPS_ROOM: ${{ steps.claim.outputs.room }}
-          SCREEPS_REQUESTED_SHARD: ${{ steps.claim.outputs.shard }}
+          SCREEPS_ROOM: ${{ steps.native-room.outputs.room }}
+          SCREEPS_REQUESTED_SHARD: ${{ steps.native-room.outputs.shard }}
           SCREEPS_REQUEST_ID: ${{ steps.claim.outputs.command_key }}
           SCREEPS_COMMAND_KEY: ${{ steps.claim.outputs.command_key }}
           SCREEPS_COMMAND: /snapshot
