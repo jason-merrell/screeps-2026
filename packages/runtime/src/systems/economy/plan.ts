@@ -2,6 +2,7 @@ import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import type { WorldSnapshot } from "../../runtime/context";
 import { capabilitiesOf } from "../../workforce/capabilities";
+import { assignRecoveryHarvesters } from "./source-allocation";
 
 const PEACETIME_TOWER_RESERVE = 400;
 
@@ -116,12 +117,78 @@ function producerAssignments(
   return assignments;
 }
 
+function recoveryAssignments(
+  world: WorldSnapshot,
+  bufferedByRoom: Map<string, BufferedSource[]>,
+  producers: Map<string, BufferedSource>,
+): Map<string, Source> {
+  const assignments = new Map<string, Source>();
+
+  for (const room of world.rooms) {
+    const buffered = bufferedByRoom.get(room.name) ?? [];
+    if (
+      buffered.length === 0 ||
+      buffered.some((node) => node.container.store.getUsedCapacity(RESOURCE_ENERGY) > 0)
+    ) {
+      continue;
+    }
+
+    const assignedProducerWork = new Map<string, number>();
+    for (const [creepName, node] of producers) {
+      if (node.source.room.name !== room.name) continue;
+      const creep = Game.creeps[creepName];
+      if (!creep) continue;
+      assignedProducerWork.set(
+        node.source.id,
+        (assignedProducerWork.get(node.source.id) ?? 0) + creep.getActiveBodyparts(WORK),
+      );
+    }
+
+    const candidates = world.creeps
+      .filter((creep) => {
+        if (creep.spawning || creep.room.name !== room.name || producers.has(creep.name)) return false;
+        const capabilities = capabilitiesOf(creep);
+        const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+        const capacity = creep.store.getCapacity(RESOURCE_ENERGY) ?? energy;
+        return (
+          capabilities.has("harvest") &&
+          capabilities.has("haul") &&
+          resolveEnergyMode(creep.memory.energyMode, energy, capacity) === "collect"
+        );
+      })
+      .map((creep) => ({
+        name: creep.name,
+        work: creep.getActiveBodyparts(WORK),
+        rangeBySource: Object.fromEntries(
+          buffered.map((node) => [node.source.id, creep.pos.getRangeTo(node.source)]),
+        ),
+      }));
+
+    const sourceById = new Map(buffered.map((node) => [node.source.id, node.source]));
+    const selected = assignRecoveryHarvesters(
+      buffered.map((node) => ({
+        id: node.source.id,
+        assignedWork: assignedProducerWork.get(node.source.id) ?? 0,
+      })),
+      candidates,
+    );
+
+    for (const [creepName, sourceId] of selected) {
+      const source = sourceById.get(sourceId);
+      if (source) assignments.set(creepName, source);
+    }
+  }
+
+  return assignments;
+}
+
 export function planEconomy(world: WorldSnapshot): Intent[] {
   const intents: Intent[] = [];
   const bufferedByRoom = new Map(
     world.rooms.map((room) => [room.name, bufferedSources(room)] as const),
   );
   const producers = producerAssignments(world, bufferedByRoom);
+  const recovery = recoveryAssignments(world, bufferedByRoom, producers);
 
   for (const creep of world.creeps) {
     if (creep.spawning) continue;
@@ -155,10 +222,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
         continue;
       }
 
-      if (
-        energy > 0 &&
-        producer.container.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-      ) {
+      if (energy > 0 && producer.container.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
         intents.push({
           type: "transfer",
           creepName: creep.name,
@@ -214,9 +278,15 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     }
 
     if (energyMode === "collect" && capabilities.has("harvest")) {
-      const activeSources = spatial.sources.filter((source) => source.energy > 0);
-      const source = world.spatial.nearest(creep.pos, activeSources);
-      if (source) {
+      const source =
+        roomBuffers.length > 0
+          ? recovery.get(creep.name)
+          : world.spatial.nearest(
+              creep.pos,
+              spatial.sources.filter((candidate) => candidate.energy > 0),
+            );
+
+      if (source?.energy && source.energy > 0) {
         intents.push({
           type: "harvest",
           creepName: creep.name,
@@ -224,7 +294,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           priority: 1000,
           reason:
             roomBuffers.length > 0
-              ? "buffer network is empty; use generalist recovery harvesting"
+              ? "supplement under-covered source without crowding the mining edge"
               : "complete collection cycle before delivery",
           trace: trace(roomName, creep.name, "maintain-energy-flow", `harvest:${source.id}`),
         });
