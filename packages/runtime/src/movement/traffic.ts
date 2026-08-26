@@ -35,7 +35,7 @@ declare global {
 
 const PATH_REUSE_TICKS = 50;
 const STUCK_SWAP_THRESHOLD = 2;
-const STUCK_REPATH_THRESHOLD = 3;
+const STUCK_REPATH_THRESHOLD = 2;
 
 const emptyMetrics = (): MovementMetrics => ({
   requests: 0,
