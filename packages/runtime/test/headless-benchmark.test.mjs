@@ -46,12 +46,28 @@ describe("headless benchmark comparison", () => {
     expect(trialSignature(left)).toBe(trialSignature(right));
   });
 
-  it("calls identical repeated trials equivalent", () => {
+  it("calls identical repeated passing trials equivalent", () => {
     const baseline = [trial("head-on"), trial("head-on")];
     const candidate = [trial("head-on"), trial("head-on")];
     const result = compare(baseline, candidate);
     expect(result.comparable).toBe(true);
     expect(result.verdict).toBe("equivalent");
+  });
+
+  it("rejects deterministic failures instead of calling them equivalent", () => {
+    const failed = trial("head-on", {
+      status: "failed",
+      ticksObserved: 320,
+      finalState: null,
+    });
+    const result = compare(
+      [failed, structuredClone(failed)],
+      [structuredClone(failed), structuredClone(failed)],
+    );
+    expect(result.baseline.deterministic).toBe(true);
+    expect(result.baseline.valid).toBe(false);
+    expect(result.comparable).toBe(false);
+    expect(result.verdict).toBe("invalid");
   });
 
   it("rejects non-deterministic trial sets instead of inventing a winner", () => {

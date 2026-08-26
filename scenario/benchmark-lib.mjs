@@ -22,16 +22,20 @@ export const trialSignature = (trial) =>
 export function summarizeRuntimeTrials(trials, scenarioNames) {
   const scenarios = {};
   let deterministic = true;
+  let valid = true;
 
   for (const name of scenarioNames) {
     const matches = trials.filter((trial) => trial.name === name);
     const signatures = [...new Set(matches.map(trialSignature))];
     const representative = matches[0] ?? null;
     const scenarioDeterministic = matches.length > 0 && signatures.length === 1;
+    const scenarioValid = scenarioDeterministic && representative?.status === "passed";
     deterministic &&= scenarioDeterministic;
+    valid &&= scenarioValid;
     scenarios[name] = {
       repetitions: matches.length,
       deterministic: scenarioDeterministic,
+      valid: scenarioValid,
       signatureCount: signatures.length,
       status: representative?.status ?? "missing",
       ticksObserved: representative?.ticksObserved ?? null,
@@ -41,7 +45,7 @@ export function summarizeRuntimeTrials(trials, scenarioNames) {
     };
   }
 
-  return { deterministic, scenarios };
+  return { deterministic, valid, scenarios };
 }
 
 export function compareRuntimeTrials({
@@ -59,6 +63,8 @@ export function compareRuntimeTrials({
   const comparable =
     baseline.deterministic &&
     candidate.deterministic &&
+    baseline.valid &&
+    candidate.valid &&
     scenarioNames.every(
       (name) =>
         baseline.scenarios[name].repetitions === repetitions &&
@@ -116,7 +122,7 @@ export function compareRuntimeTrials({
     verdict,
     policy: {
       lowerIsBetter: LOWER_IS_BETTER,
-      rule: "candidate regresses if any guarded metric worsens or a previously passing scenario fails; otherwise any guarded improvement wins",
+      rule: "comparison is valid only when all repeated scenarios are deterministic and passed; candidate regresses if any guarded metric worsens, otherwise any guarded improvement wins",
       excludes: ["localServerCpu"],
     },
     baseline,
