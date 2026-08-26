@@ -5,6 +5,7 @@ export interface RoomSpatialFacts {
   myStructures: AnyOwnedStructure[];
   constructionSites: ConstructionSite[];
   hostiles: Creep[];
+  salvage: Array<Ruin | Tombstone>;
 }
 
 export interface SpatialIndexMetrics {
@@ -41,6 +42,7 @@ export class TickSpatialIndex {
         myStructures: room.find(FIND_MY_STRUCTURES),
         constructionSites: room.find(FIND_MY_CONSTRUCTION_SITES),
         hostiles: room.find(FIND_HOSTILE_CREEPS),
+        salvage: [...room.find(FIND_RUINS), ...room.find(FIND_TOMBSTONES)],
       };
     }
   }

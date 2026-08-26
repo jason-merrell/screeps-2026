@@ -43,7 +43,7 @@ export interface HarvestIntent extends CreepIntentBase {
 
 export interface WithdrawIntent extends CreepIntentBase {
   type: "withdraw";
-  targetId: Id<StructureContainer>;
+  targetId: Id<StructureContainer | Tombstone | Ruin>;
   resource: ResourceConstant;
 }
 
