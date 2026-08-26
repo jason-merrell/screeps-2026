@@ -11,6 +11,7 @@ const resultPath = process.env.SCENARIO_RESULT_PATH;
 const ROOM_NAME = "W0N0";
 const MAX_ENGINE_TICKS = 320;
 const STARTUP_TICK_LIMIT = 20;
+const LOG_TAIL_LINES = 80;
 const supported = new Set(["head-on", "funnel", "crossing"]);
 
 if (!supported.has(scenario)) throw new Error(`Unsupported headless scenario '${scenario}'`);
@@ -131,6 +132,24 @@ function finalAssertions(state) {
   ];
 }
 
+async function readLogTail(fileName) {
+  try {
+    const raw = await readFile(path.join(logdir, fileName), "utf8");
+    return raw.split(/\r?\n/).filter(Boolean).slice(-LOG_TAIL_LINES);
+  } catch {
+    return [];
+  }
+}
+
+async function captureServerLogs() {
+  const [storage, engineRunner, engineProcessor] = await Promise.all([
+    readLogTail("storage.log"),
+    readLogTail("engine_runner.log"),
+    readLogTail("engine_processor.log"),
+  ]);
+  return { storage, engineRunner, engineProcessor };
+}
+
 async function writeResult(result) {
   await mkdir(path.dirname(resultPath), { recursive: true });
   await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
@@ -212,6 +231,7 @@ try {
   const analysis = analyzeTimeline(timeline);
   const assertions = finalAssertions(state);
   const passed = assertions.every((assertion) => assertion.passed);
+  const serverLogs = startupFailure ? await captureServerLogs() : undefined;
   const result = {
     name: scenario,
     status: startupFailure ? "infrastructure-failed" : passed ? "passed" : "failed",
@@ -231,18 +251,24 @@ try {
     analysis,
     assertions,
     consoleEvents,
+    ...(serverLogs ? { serverLogs } : {}),
     timeline,
   };
 
   await writeResult(result);
+  if (startupFailure && serverLogs) {
+    console.error(`[headless:${scenario}:engine-logs] ${JSON.stringify(serverLogs)}`);
+  }
   console.log(
     `[headless:${scenario}] ${result.status} after ${timeline.length} engine ticks; nativeExchanges=${analysis.nativeTileExchangeCount}`,
   );
 } catch (error) {
+  const serverLogs = await captureServerLogs();
   await writeResult({
     name: scenario,
     status: "infrastructure-failed",
     error: error instanceof Error ? error.stack ?? error.message : String(error),
+    serverLogs,
   });
   console.error(`[headless:${scenario}] infrastructure failure`, error);
 } finally {
