@@ -70,6 +70,44 @@ describe("headless benchmark comparison", () => {
     expect(result.verdict).toBe("invalid");
   });
 
+  it("does not treat a failed-to-passed status transition as a metric regression", () => {
+    const failed = trial("head-on", {
+      status: "failed",
+      ticksObserved: 320,
+      finalState: {
+        phase: "staging",
+        runningTicks: 0,
+        metrics: {
+          requests: 0,
+          cachedPathAttempts: 0,
+          pathFinds: 0,
+          congestionRepaths: 0,
+          fatigueWaits: 0,
+          stuckRequests: 0,
+          headOnSwapAttempts: 0,
+          headOnSwaps: 0,
+        },
+      },
+    });
+    const passed = trial("head-on");
+    const result = compare(
+      [failed, structuredClone(failed)],
+      [passed, structuredClone(passed)],
+    );
+
+    expect(result.comparable).toBe(false);
+    expect(result.verdict).toBe("invalid");
+    expect(result.comparisons["head-on"].regression).toBe(false);
+    expect(result.comparisons["head-on"].improvement).toBe(true);
+    expect(Object.values(result.comparisons["head-on"].deltas)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
   it("rejects non-deterministic trial sets instead of inventing a winner", () => {
     const baseline = [trial("head-on"), trial("head-on")];
     const candidate = [
