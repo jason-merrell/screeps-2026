@@ -78,11 +78,15 @@ export function compareRuntimeTrials({
   for (const name of scenarioNames) {
     const base = baseline.scenarios[name];
     const next = candidate.scenarios[name];
+    const metricsComparable = base.status === "passed" && next.status === "passed";
     const deltas = Object.fromEntries(
       LOWER_IS_BETTER.map((key) => {
         const before = key === "runningTicks" ? base.runningTicks : base.metrics?.[key] ?? null;
         const after = key === "runningTicks" ? next.runningTicks : next.metrics?.[key] ?? null;
-        return [key, before === null || after === null ? null : after - before];
+        return [
+          key,
+          !metricsComparable || before === null || after === null ? null : after - before,
+        ];
       }),
     );
 
