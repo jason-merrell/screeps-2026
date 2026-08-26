@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { decayTraffic, type TrafficMemory } from "../../src/movement/traffic-heatmap";
+import { describe, expect, it, vi } from "vitest";
+import {
+  decayTraffic,
+  recordTraffic,
+  type TrafficMemory,
+} from "../../src/movement/traffic-heatmap";
 
 describe("traffic heatmap", () => {
   it("decays old movement evidence in bounded intervals", () => {
@@ -28,5 +32,13 @@ describe("traffic heatmap", () => {
 
     expect(memory.tiles["10:10"]).toBe(20);
     expect(memory.lastDecay).toBe(100);
+  });
+
+  it("is a no-op before colony memory exists", () => {
+    vi.stubGlobal("Memory", {});
+
+    expect(() => recordTraffic("W0N0", 12, 24, 4)).not.toThrow();
+
+    vi.unstubAllGlobals();
   });
 });

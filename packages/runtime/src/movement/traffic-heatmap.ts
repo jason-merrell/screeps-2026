@@ -37,7 +37,7 @@ export function decayTraffic(memory: TrafficMemory, tick: number): void {
 }
 
 export function recordTraffic(roomName: string, x: number, y: number, tick: number): void {
-  const colony = Memory.colonies[roomName];
+  const colony = Memory.colonies?.[roomName];
   if (!colony) return;
 
   const traffic = colony.traffic ?? { lastDecay: tick, tiles: {} };
