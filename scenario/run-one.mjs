@@ -10,6 +10,7 @@ const scenario = process.argv[2];
 const resultPath = process.env.SCENARIO_RESULT_PATH;
 const ROOM_NAME = "W0N0";
 const MAX_ENGINE_TICKS = 320;
+const STARTUP_TICK_LIMIT = 20;
 const supported = new Set(["head-on", "funnel", "crossing"]);
 
 if (!supported.has(scenario)) throw new Error(`Unsupported headless scenario '${scenario}'`);
@@ -158,6 +159,14 @@ try {
     cpuAvailable: 10000,
     modules: { main: bundle },
   });
+  const consoleEvents = [];
+  bot.on("console", (log = [], results = []) => {
+    const event = { log, results };
+    consoleEvents.push(event);
+    if (log.length > 0 || results.length > 0) {
+      console.error(`[headless:${scenario}:console] ${JSON.stringify(event)}`);
+    }
+  });
 
   const { env } = await server.world.load();
   await env.set(
@@ -169,6 +178,7 @@ try {
 
   const timeline = [];
   let state = null;
+  let startupFailure = null;
   for (let index = 0; index < MAX_ENGINE_TICKS; index += 1) {
     await server.tick();
     const [rawMemory, roomObjects, localCpu, gameTime] = await Promise.all([
@@ -193,6 +203,10 @@ try {
     });
 
     if (state?.phase === "complete" || state?.phase === "failed") break;
+    if (state === null && index + 1 >= STARTUP_TICK_LIMIT) {
+      startupFailure = `scenario runtime did not initialize within ${STARTUP_TICK_LIMIT} engine ticks`;
+      break;
+    }
   }
 
   const analysis = analyzeTimeline(timeline);
@@ -200,7 +214,8 @@ try {
   const passed = assertions.every((assertion) => assertion.passed);
   const result = {
     name: scenario,
-    status: passed ? "passed" : "failed",
+    status: startupFailure ? "infrastructure-failed" : passed ? "passed" : "failed",
+    error: startupFailure,
     engine: {
       serverMockup: mockupPackage.version,
       node: process.version,
@@ -215,6 +230,7 @@ try {
     finalState: state,
     analysis,
     assertions,
+    consoleEvents,
     timeline,
   };
 
