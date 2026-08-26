@@ -22,6 +22,7 @@ const serverPath = path.join(runRoot, "server");
 const logdir = path.join(runRoot, "logs");
 const port = 22000 + (process.pid % 1000);
 let server;
+let preflight = null;
 
 function createTerrain() {
   const terrain = new TerrainMatrix();
@@ -187,11 +188,45 @@ try {
     }
   });
 
-  const { env } = await server.world.load();
+  const { env, db } = await server.world.load();
   await env.set(
     env.keys.MEMORY + bot.id,
     JSON.stringify({ headlessScenarioName: scenario }),
   );
+
+  const [databaseUsers, driverUsers, codeRows] = await Promise.all([
+    db.users.find(),
+    server.driver.getAllUsers(),
+    db["users.code"].find({ user: bot.id }),
+  ]);
+  preflight = {
+    botId: bot.id,
+    databaseUsers: databaseUsers.map((user) => ({
+      id: user._id?.toString?.() ?? String(user._id),
+      username: user.username ?? null,
+      active: user.active ?? null,
+      cpu: user.cpu ?? null,
+    })),
+    driverUsers: driverUsers.map((user) => ({
+      id: user._id?.toString?.() ?? String(user._id),
+      username: user.username ?? null,
+      active: user.active ?? null,
+      cpu: user.cpu ?? null,
+    })),
+    codeRows: codeRows.map((row) => ({
+      branch: row.branch ?? null,
+      activeWorld: row.activeWorld ?? null,
+      modules: Object.keys(row.modules ?? {}),
+    })),
+  };
+  console.error(`[headless:${scenario}:preflight] ${JSON.stringify(preflight)}`);
+
+  if (!driverUsers.some((user) => user._id?.toString?.() === bot.id)) {
+    throw new Error(`driver.getAllUsers() did not return headless bot ${bot.id}`);
+  }
+  if (!codeRows.some((row) => typeof row.modules?.main === "string" && row.modules.main.length > 0)) {
+    throw new Error(`headless bot ${bot.id} has no non-empty main module`);
+  }
 
   await server.start();
 
@@ -246,6 +281,7 @@ try {
       terrain: "one-tile cross with east-side funnel bays",
       spawn: { name: "ScenarioSpawn", x: 12, y: 25 },
     },
+    preflight,
     ticksObserved: timeline.length,
     finalState: state,
     analysis,
@@ -268,6 +304,7 @@ try {
     name: scenario,
     status: "infrastructure-failed",
     error: error instanceof Error ? error.stack ?? error.message : String(error),
+    preflight,
     serverLogs,
   });
   console.error(`[headless:${scenario}] infrastructure failure`, error);
