@@ -4,7 +4,6 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const { ScreepsServer, TerrainMatrix } = require("screeps-server-mockup");
-const screepsPackage = require("screeps/package.json");
 const mockupPackage = require("screeps-server-mockup/package.json");
 
 const scenario = process.argv[2];
@@ -203,8 +202,8 @@ try {
     name: scenario,
     status: passed ? "passed" : "failed",
     engine: {
-      screeps: screepsPackage.version,
       serverMockup: mockupPackage.version,
+      node: process.version,
       note: "Local/private-server CPU is diagnostic only and is not comparable to PTR/MMO CPU.",
     },
     world: {
