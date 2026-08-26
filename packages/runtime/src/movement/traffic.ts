@@ -75,6 +75,27 @@ function directStepToward(origin: RoomPosition, target: RoomPosition): { x: numb
   return { x: origin.x + dx, y: origin.y + dy };
 }
 
+function sameStepYielders(requests: MovementRequest[]): Set<string> {
+  const reserved = new Set<string>();
+  const yielders = new Set<string>();
+
+  for (const request of requests) {
+    if (request.creep.fatigue > 0) continue;
+
+    const step = directStepToward(request.creep.pos, request.target.pos);
+    if (!step) continue;
+
+    const key = `${request.creep.pos.roomName}:${step.x}:${step.y}`;
+    if (reserved.has(key)) {
+      yielders.add(request.creep.name);
+      continue;
+    }
+    reserved.add(key);
+  }
+
+  return yielders;
+}
+
 function directBlocker(request: MovementRequest): Creep | null {
   const step = directStepToward(request.creep.pos, request.target.pos);
   if (!step) return null;
@@ -173,6 +194,7 @@ export function resolveMovementRequests(requests: MovementRequest[]): MovementMe
   );
   const byCreep = new Map(ordered.map((request) => [request.creep.name, request]));
   const handled = new Set<string>();
+  const yielders = sameStepYielders(ordered);
 
   for (const request of ordered) {
     if (handled.has(request.creep.name)) continue;
@@ -183,6 +205,12 @@ export function resolveMovementRequests(requests: MovementRequest[]): MovementMe
       request.creep.pos.y,
       Game.time,
     );
+
+    if (yielders.has(request.creep.name)) {
+      delete request.creep.memory.movement;
+      handled.add(request.creep.name);
+      continue;
+    }
 
     const nextState = advanceMovementState(
       request.creep.memory.movement,
