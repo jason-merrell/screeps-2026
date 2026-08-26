@@ -46,11 +46,6 @@ function createTerrain() {
     for (let y = 24; y <= 26; y += 1) carve(x, y);
   }
 
-  // Isolated controller pocket. It exists only so addBot can claim the room.
-  for (let x = 10; x <= 13; x += 1) {
-    for (let y = 10; y <= 13; y += 1) carve(x, y);
-  }
-
   return terrain;
 }
 
@@ -164,10 +159,11 @@ try {
   server = new ScreepsServer({ path: serverPath, logdir, port });
   server.on("error", (message) => console.error(`[headless:${scenario}] ${message}`));
 
-  await server.world.reset();
-  await server.world.addRoom(ROOM_NAME);
+  // Start from the mock server's own known-good 3x3 world so engine/runtime
+  // metadata matches its canonical test fixture. Only W0N0 terrain is replaced
+  // with the deterministic traffic arena; the room's canonical controller is retained.
+  await server.world.stubWorld();
   await server.world.setTerrain(ROOM_NAME, createTerrain());
-  await server.world.addRoomObject(ROOM_NAME, "controller", 11, 11);
 
   const bot = await server.world.addBot({
     username: `scenario-${scenario}`,
@@ -278,6 +274,7 @@ try {
     },
     world: {
       room: ROOM_NAME,
+      fixture: "canonical-stub-world+traffic-v1-terrain",
       terrain: "one-tile cross with east-side funnel bays",
       spawn: { name: "ScenarioSpawn", x: 12, y: 25 },
     },
