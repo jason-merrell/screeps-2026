@@ -215,12 +215,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm install --filter . --filter @screeps/runtime --filter @screeps/scenario --frozen-lockfile=false
+          # Keep the native private-server tree outside pnpm's workspace links.
+          # screeps-server-mockup launches child processes that require the
+          # standalone npm topology used by the known-good scenario runner.
+          pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
           pnpm --filter @screeps/runtime lint
           pnpm --filter @screeps/runtime typecheck
           pnpm --filter @screeps/runtime test
           pnpm --filter @screeps/scenario lint
           (cd scenario && npm install --workspaces=false --no-audit --no-fund)
+          if [[ -L scenario/node_modules/screeps-server-mockup ]]; then
+            echo "scenario native runtime resolved through pnpm instead of standalone npm"
+            exit 1
+          fi
           node scripts/run-headless-benchmark.mjs
         env:
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
