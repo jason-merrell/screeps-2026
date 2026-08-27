@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -120,10 +120,12 @@ async function runParent() {
 }
 
 if (isChild) {
-  runChild(profile).catch((error) => {
-    console.error(`[headless-smoke:${profile}]`, error);
-    process.exit(1);
-  });
+  runChild(profile)
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(`[headless-smoke:${profile}]`, error);
+      process.exit(1);
+    });
 } else {
   await runParent();
 }
