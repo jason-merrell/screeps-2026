@@ -30,7 +30,7 @@ export function plannedConstructionPriority(
   plan: RoomPlan | undefined,
   candidate: Pick<ConstructionTargetCandidate, "x" | "y" | "structureType">,
 ): number {
-  if (!plan) return candidate.structureType === STRUCTURE_ROAD ? 200 : 0;
+  if (!plan) return candidate.structureType === "road" ? 200 : 0;
 
   const structure = plan.structures.find(
     (planned) =>
@@ -40,7 +40,7 @@ export function plannedConstructionPriority(
   );
   if (structure) return structure.priority;
 
-  if (candidate.structureType === STRUCTURE_ROAD) {
+  if (candidate.structureType === "road") {
     const road = plan.roads.find(
       (planned) => planned.x === candidate.x && planned.y === candidate.y,
     );
