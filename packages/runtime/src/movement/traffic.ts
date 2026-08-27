@@ -75,7 +75,7 @@ function directStepToward(origin: RoomPosition, target: RoomPosition): { x: numb
   return { x: origin.x + dx, y: origin.y + dy };
 }
 
-function sameStepYielders(requests: MovementRequest[]): Set<string> {
+export function selectSameStepYielders(requests: MovementRequest[]): Set<string> {
   const reserved = new Set<string>();
   const yielders = new Set<string>();
 
@@ -194,7 +194,7 @@ export function resolveMovementRequests(requests: MovementRequest[]): MovementMe
   );
   const byCreep = new Map(ordered.map((request) => [request.creep.name, request]));
   const handled = new Set<string>();
-  const yielders = sameStepYielders(ordered);
+  const yielders = selectSameStepYielders(ordered);
 
   for (const request of ordered) {
     if (handled.has(request.creep.name)) continue;
