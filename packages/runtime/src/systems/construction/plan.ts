@@ -1,6 +1,7 @@
 import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import { hotTrafficTiles } from "../../movement/traffic-heatmap";
+import { plannedRoadPriority } from "../../planning/construction-priority";
 import type { RoomPlan, RoomPlanRoad, RoomPlanStructure } from "../../planning/room-plan";
 import type { WorldSnapshot } from "../../runtime/context";
 import { shouldActivateSourceBuffers } from "../economy/logistics";
@@ -37,28 +38,13 @@ export function shouldActivateStrategicRoads(
   return controllerLevel >= 2 && workforceCount >= 3;
 }
 
-function roadPriority(plan: RoomPlan, road: RoomPlanRoad): number {
-  let priority = 300;
-
-  for (const edge of plan.roadGraph.edges) {
-    if (!edge.tiles.some((tile) => tile.x === road.x && tile.y === road.y)) continue;
-
-    if (edge.from === "spawn" && edge.to === "hub") {
-      priority = Math.max(priority, 360);
-    } else if (edge.to.startsWith("source-")) {
-      priority = Math.max(priority, 340);
-    } else if (edge.to === "controller") {
-      priority = Math.max(priority, 220);
-    }
-  }
-
-  return priority;
-}
-
 function eligiblePlannedRoads(plan: RoomPlan, controllerLevel: number): RoomPlanRoad[] {
   return plan.roads
     .filter((road) => road.minRcl <= controllerLevel)
-    .sort((a, b) => roadPriority(plan, b) - roadPriority(plan, a) || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) =>
+        plannedRoadPriority(plan, b) - plannedRoadPriority(plan, a) || a.id.localeCompare(b.id),
+    );
 }
 
 function hasPlannedStructure(room: Room, planned: RoomPlanStructure): boolean {
@@ -185,7 +171,7 @@ function planRoomConstruction(room: Room): Intent[] {
         x: road.x,
         y: road.y,
         structureType: STRUCTURE_ROAD,
-        priority: roadPriority(roomPlan, road),
+        priority: plannedRoadPriority(roomPlan, road),
         reason: `${road.phase}: logistics demand activated planned corridor`,
         trace: createIntentTrace({
           roomName: room.name,
