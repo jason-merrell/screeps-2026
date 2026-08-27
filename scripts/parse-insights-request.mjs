@@ -9,6 +9,7 @@ const outputPath = process.env.GITHUB_OUTPUT;
 const roomPattern = /^[WE]\d+[NS]\d+$/i;
 const shardPattern = /^shard\d+$/i;
 const scenarioNames = new Set(["head-on", "funnel", "crossing", "traffic-suite"]);
+const benchmarkNames = new Set(["traffic-suite", "bootstrap-suite"]);
 
 const fail = (message) => {
   throw new Error(`Invalid Screeps insights request: ${message}`);
@@ -160,8 +161,8 @@ if (eventName === "issue_comment") {
     command = `/scenario name=${scenario}`;
   } else if (mode === "benchmark") {
     scenario = (args.get("name") || "").toLowerCase();
-    if (scenario !== "traffic-suite") {
-      fail("/benchmark currently requires name=traffic-suite");
+    if (!benchmarkNames.has(scenario)) {
+      fail("/benchmark requires name=traffic-suite or name=bootstrap-suite");
     }
     const runs = args.get("runs") || "2";
     if (!/^[2-5]$/.test(runs)) {
@@ -169,7 +170,7 @@ if (eventName === "issue_comment") {
     }
     benchmarkRuns = runs;
     target = "headless";
-    command = `/benchmark name=traffic-suite runs=${benchmarkRuns}`;
+    command = `/benchmark name=${scenario} runs=${benchmarkRuns}`;
   } else if (mode === "snapshot") {
     room = normalizeRoom(args.get("room") || "");
     shard = normalizeShard(args.get("shard") || "");

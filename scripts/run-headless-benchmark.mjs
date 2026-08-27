@@ -8,6 +8,12 @@ import { compareRuntimeTrials } from "../scenario/benchmark-lib.mjs";
 const execFileAsync = promisify(execFile);
 const requestId = process.env.SCREEPS_REQUEST_ID || "manual";
 const command = process.env.SCREEPS_COMMAND || "/benchmark name=traffic-suite";
+
+if (/\bname=bootstrap-suite\b/.test(command)) {
+  await import("./run-headless-bootstrap-benchmark.mjs");
+  process.exit(0);
+}
+
 const repetitions = Math.max(
   2,
   Math.min(5, Number(process.env.SCREEPS_BENCHMARK_RUNS || 2)),
