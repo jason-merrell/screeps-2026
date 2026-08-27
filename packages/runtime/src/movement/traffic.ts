@@ -7,6 +7,7 @@ export interface MovementMetrics {
   congestionRepaths: number;
   fatigueWaits: number;
   stuckRequests: number;
+  contentionYields: number;
   headOnSwapAttempts: number;
   headOnSwaps: number;
 }
@@ -44,6 +45,7 @@ const emptyMetrics = (): MovementMetrics => ({
   congestionRepaths: 0,
   fatigueWaits: 0,
   stuckRequests: 0,
+  contentionYields: 0,
   headOnSwapAttempts: 0,
   headOnSwaps: 0,
 });
@@ -207,6 +209,7 @@ export function resolveMovementRequests(requests: MovementRequest[]): MovementMe
     );
 
     if (yielders.has(request.creep.name)) {
+      metrics.contentionYields += 1;
       delete request.creep.memory.movement;
       handled.add(request.creep.name);
       continue;
