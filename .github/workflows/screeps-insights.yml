@@ -228,6 +228,7 @@ jobs:
             echo "scenario native runtime resolved through pnpm instead of standalone npm"
             exit 1
           fi
+          node scenario/smoke-user-code.mjs
           node scripts/run-headless-benchmark.mjs
         env:
           SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
