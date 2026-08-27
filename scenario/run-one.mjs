@@ -8,6 +8,7 @@ const mockupPackage = require("screeps-server-mockup/package.json");
 
 const scenario = process.argv[2];
 const resultPath = process.env.SCENARIO_RESULT_PATH;
+const bundlePath = path.resolve(process.env.SCENARIO_BUNDLE_PATH || "scenario/dist/main.js");
 const ROOM_NAME = "W0N0";
 const MAX_ENGINE_TICKS = 320;
 const STARTUP_TICK_LIMIT = 20;
@@ -155,7 +156,7 @@ try {
   await rm(runRoot, { recursive: true, force: true });
   await mkdir(runRoot, { recursive: true });
 
-  const bundle = await readFile("scenario/dist/main.js", "utf8");
+  const bundle = await readFile(bundlePath, "utf8");
   server = new ScreepsServer({ path: serverPath, logdir, port });
   server.on("error", (message) => console.error(`[headless:${scenario}] ${message}`));
 
