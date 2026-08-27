@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { build } from "esbuild";
@@ -44,7 +44,6 @@ const runRoot = path.resolve("scenario", ".benchmark-runtime", requestId);
 const baselineWorktree = path.join(runRoot, "baseline-worktree");
 const bundleDir = path.join(runRoot, "bundles");
 const resultDir = path.join(runRoot, "results");
-const activeBundle = path.resolve("scenario", "dist", "main.js");
 const baselineBundle = path.join(bundleDir, "baseline.js");
 const candidateBundle = path.join(bundleDir, "candidate.js");
 let worktreeAdded = false;
@@ -64,10 +63,13 @@ const buildBundle = async (entryPoint, outfile) => {
 };
 
 const runTrial = async ({ runtime, runtimeSha, bundle, scenario, repetition }) => {
-  await copyFile(bundle, activeBundle);
   const resultPath = path.join(resultDir, `${runtime}-${scenario}-${repetition}.json`);
   await exec(process.execPath, ["scenario/run-one.mjs", scenario], {
-    env: { ...process.env, SCENARIO_RESULT_PATH: resultPath },
+    env: {
+      ...process.env,
+      SCENARIO_RESULT_PATH: resultPath,
+      SCENARIO_BUNDLE_PATH: bundle,
+    },
     timeout: 180_000,
   });
   const result = JSON.parse(await readFile(resultPath, "utf8"));
@@ -87,7 +89,6 @@ try {
   await rm(runRoot, { recursive: true, force: true });
   await mkdir(bundleDir, { recursive: true });
   await mkdir(resultDir, { recursive: true });
-  await mkdir(path.dirname(activeBundle), { recursive: true });
 
   console.log(`[benchmark] candidate=${candidateSha}`);
   console.log(`[benchmark] baseline=${baselineSha}`);
@@ -118,26 +119,27 @@ try {
   const candidateTrials = [];
   for (const scenario of scenarioNames) {
     for (let repetition = 1; repetition <= repetitions; repetition += 1) {
-      console.log(`[benchmark] baseline ${scenario} repetition=${repetition}`);
-      baselineTrials.push(
-        await runTrial({
+      console.log(
+        `[benchmark] paired ${scenario} repetition=${repetition}: baseline + candidate`,
+      );
+      const [baselineTrial, candidateTrial] = await Promise.all([
+        runTrial({
           runtime: "baseline",
           runtimeSha: baselineSha,
           bundle: baselineBundle,
           scenario,
           repetition,
         }),
-      );
-      console.log(`[benchmark] candidate ${scenario} repetition=${repetition}`);
-      candidateTrials.push(
-        await runTrial({
+        runTrial({
           runtime: "candidate",
           runtimeSha: candidateSha,
           bundle: candidateBundle,
           scenario,
           repetition,
         }),
-      );
+      ]);
+      baselineTrials.push(baselineTrial);
+      candidateTrials.push(candidateTrial);
     }
   }
 
