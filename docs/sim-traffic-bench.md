@@ -41,8 +41,11 @@ Four `[MOVE]` creeps stage at the four cardinal ends of the arena and travel to 
 - congestion-triggered repaths
 - stuck requests
 - fatigue waits
+- intentional contention yields
 - head-on swap attempts
 - successful head-on swaps
+
+`contentionYields` counts lower-priority movement requests that deliberately wait because a higher-priority request reserved the same direct next tile. It is an observability metric, not a guarded optimization target: some yielding is the desired behavior when it prevents false stuck debt and unnecessary repathing.
 
 The stress phase has bounded deadlines. A scenario ends in `complete` when every participant reaches its goal, or `failed` if it exceeds its deadline.
 

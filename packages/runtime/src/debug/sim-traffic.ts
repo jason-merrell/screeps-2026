@@ -61,6 +61,7 @@ const emptyMetrics = (): MovementMetrics => ({
   congestionRepaths: 0,
   fatigueWaits: 0,
   stuckRequests: 0,
+  contentionYields: 0,
   headOnSwapAttempts: 0,
   headOnSwaps: 0,
 });
@@ -197,7 +198,7 @@ function renderStatus(state = Memory.simTraffic): string {
     `simTraffic ${state.scenario} phase=${state.phase} tick=${Game.time}${arena}`,
     positions,
     `requests=${m.requests} cached=${m.cachedPathAttempts} pathFinds=${m.pathFinds} congestionRepaths=${m.congestionRepaths}`,
-    `stuck=${m.stuckRequests} fatigueWaits=${m.fatigueWaits} swapAttempts=${m.headOnSwapAttempts} swaps=${m.headOnSwaps}`,
+    `stuck=${m.stuckRequests} fatigueWaits=${m.fatigueWaits} contentionYields=${m.contentionYields} swapAttempts=${m.headOnSwapAttempts} swaps=${m.headOnSwaps}`,
     state.failure ? `failure=${state.failure}` : "",
   ]
     .filter(Boolean)

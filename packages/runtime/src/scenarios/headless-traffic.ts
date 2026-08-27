@@ -60,6 +60,7 @@ const emptyMetrics = (): MovementMetrics => ({
   congestionRepaths: 0,
   fatigueWaits: 0,
   stuckRequests: 0,
+  contentionYields: 0,
   headOnSwapAttempts: 0,
   headOnSwaps: 0,
 });
