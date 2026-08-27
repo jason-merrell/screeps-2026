@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import { buildBenchmarkSample } from "./lib/benchmark-sample.mjs";
+import { buildBootstrapComparisonBenchmark } from "./lib/bootstrap-benchmark-sample.mjs";
 
 const artifactPath = process.env.SCREEPS_INSIGHTS_PATH || "artifacts/screeps-insights.json";
 const benchmarkUrl = process.env.SUPABASE_BENCHMARK_URL || "";
@@ -14,7 +15,8 @@ if (!oidcRequestUrl || !oidcRequestToken) {
 }
 
 const raw = JSON.parse(await readFile(artifactPath, "utf8"));
-const benchmark = buildBenchmarkSample(raw, { runtimeSha });
+const benchmark =
+  buildBenchmarkSample(raw, { runtimeSha }) ?? buildBootstrapComparisonBenchmark(raw, { runtimeSha });
 if (!benchmark) {
   console.log("Artifact is not a supported benchmark source; benchmark persistence is a no-op.");
   process.exit(0);
