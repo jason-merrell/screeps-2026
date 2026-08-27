@@ -108,24 +108,29 @@ export function evaluateBootstrapState(state) {
   const level = state.controller?.level ?? 0;
   const extensionCapacity = state.structures.extensions + state.structures.extensionSites;
   const towerCapacity = state.structures.towers + state.structures.towerSites;
+  const spawnPresent = Boolean(state.spawn);
+  const energyLoopActive =
+    state.energy.harvestedTotal > 0 ||
+    (state.energy.sourceCapacity > 0 && state.energy.sourceEnergy < state.energy.sourceCapacity);
+  const workforceTargetMet = state.workforce.total >= state.workforce.target;
+  const towerOnline = state.structures.towers >= 1 && state.structures.towerEnergy > 0;
 
   const milestones = {
-    spawnPresent: Boolean(state.spawn),
-    energyLoopActive:
-      state.energy.harvestedTotal > 0 ||
-      (state.energy.sourceCapacity > 0 && state.energy.sourceEnergy < state.energy.sourceCapacity),
-    workforceTargetMet: state.workforce.total >= state.workforce.target,
+    spawnPresent,
+    energyLoopActive,
+    workforceTargetMet,
     rcl2: level >= 2,
     rcl2Infrastructure: level >= 2 && extensionCapacity >= 5,
     rcl3: level >= 3,
     rcl3Infrastructure: level >= 3 && extensionCapacity >= 10 && towerCapacity >= 1,
-    towerOnline: state.structures.towers >= 1,
+    towerOnline,
     stableRcl3:
       level >= 3 &&
-      state.workforce.total >= state.workforce.target &&
+      spawnPresent &&
+      energyLoopActive &&
+      workforceTargetMet &&
       state.structures.extensions >= 10 &&
-      state.structures.towers >= 1 &&
-      state.spawn !== null,
+      towerOnline,
   };
 
   const reached = Object.entries(milestones)
@@ -148,6 +153,7 @@ export function evaluateBootstrapState(state) {
       extensions: state.structures.extensions,
       constructionSites: state.structures.constructionSites,
       towers: state.structures.towers,
+      towerEnergy: state.structures.towerEnergy,
       hostiles: state.hostiles,
     },
   };
