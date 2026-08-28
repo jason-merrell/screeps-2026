@@ -111,8 +111,9 @@ jobs:
           SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
 
       - name: Publish sanitized snapshot
+        id: publish
         if: steps.command.outputs.status != 'succeeded'
-        run: node scripts/publish-observability-snapshot.mjs
+        run: node scripts/publish-observability-snapshot-v2.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
@@ -124,14 +125,17 @@ jobs:
           SUPABASE_INGEST_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
 
       - name: Upload snapshot fallback artifact
-        if: steps.command.outputs.status != 'succeeded'
+        if: >-
+          always() &&
+          steps.command.outputs.status != 'succeeded' &&
+          steps.publish.outputs.supabase_persisted != 'true'
         uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.request.outputs.artifact_name }}
           path: |
             artifacts/screeps-insights.json
             artifacts/screeps-public-snapshot.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
           overwrite: true
 
@@ -157,11 +161,11 @@ jobs:
           MARKER: ${{ steps.request.outputs.marker }}
           REQUEST_ID: ${{ steps.request.outputs.request_id }}
           COMMAND: ${{ steps.request.outputs.command }}
-          ARTIFACT: ${{ steps.request.outputs.artifact_name }}
+          SNAPSHOT_ID: ${{ steps.publish.outputs.snapshot_id }}
         run: |
           set -euo pipefail
-          printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\nartifact: `%s`\ncommand-ledger: `supabase`\nrun: %s/%s/actions/runs/%s' \
-            "$MARKER" "$COMMAND" "$REQUEST_ID" "$ARTIFACT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\ntelemetry: `supabase`\nsnapshot: `%s`\ncommand-ledger: `supabase`\nrun: %s/%s/actions/runs/%s' \
+            "$MARKER" "$COMMAND" "$REQUEST_ID" "$SNAPSHOT_ID" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/5/comments" -f body="$BODY" >/dev/null
 
   native-snapshot:
@@ -269,8 +273,9 @@ jobs:
             -d "$payload" >/dev/null
 
       - name: Publish native sanitized snapshot
+        id: native-publish
         if: steps.claim.outputs.has_command == 'true'
-        run: node scripts/publish-observability-snapshot.mjs
+        run: node scripts/publish-observability-snapshot-v2.mjs
         env:
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
           SCREEPS_SHARD: ${{ vars.SCREEPS_SHARD }}
@@ -283,14 +288,17 @@ jobs:
           SUPABASE_INGEST_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-observability
 
       - name: Upload native snapshot fallback artifact
-        if: steps.claim.outputs.has_command == 'true'
+        if: >-
+          always() &&
+          steps.claim.outputs.has_command == 'true' &&
+          steps.native-publish.outputs.supabase_persisted != 'true'
         uses: actions/upload-artifact@v5
         with:
           name: native-snapshot-${{ github.run_id }}
           path: |
             artifacts/screeps-insights.json
             artifacts/screeps-public-snapshot.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
           overwrite: true
 
