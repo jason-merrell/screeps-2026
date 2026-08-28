@@ -169,6 +169,7 @@ jobs:
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
 
       - name: Run PTR experiment
+        id: experiment
         if: >-
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
           steps.request.outputs.mode == 'experiment'
@@ -192,6 +193,7 @@ jobs:
           SCREEPS_EXPERIMENT: ${{ steps.request.outputs.experiment }}
           SCREEPS_EXPERIMENT_SAMPLES: 12
           SCREEPS_EXPERIMENT_INTERVAL_MS: 5000
+          SUPABASE_TELEMETRY_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-telemetry
 
       - name: Run headless scenario
         if: >-
@@ -236,7 +238,10 @@ jobs:
           SCREEPS_BENCHMARK_RUNS: ${{ steps.request.outputs.benchmark_runs }}
 
       - name: Upload Screeps insights
-        if: github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true'
+        if: >-
+          success() &&
+          (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode != 'experiment'
         uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.request.outputs.artifact_name }}
@@ -245,17 +250,42 @@ jobs:
           retention-days: 7
           overwrite: true
 
+      - name: Upload failed experiment fallback
+        if: >-
+          always() &&
+          steps.request.outputs.mode == 'experiment' &&
+          steps.experiment.outputs.telemetry_persisted != 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.request.outputs.artifact_name }}
+          path: artifacts/screeps-insights.json
+          if-no-files-found: warn
+          retention-days: 7
+          overwrite: true
+
       - name: Write completion receipt
-        if: github.event_name == 'issue_comment' && steps.dedupe.outputs.completed != 'true'
+        if: >-
+          success() &&
+          github.event_name == 'issue_comment' &&
+          steps.dedupe.outputs.completed != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           MARKER: ${{ steps.request.outputs.marker }}
           REQUEST_ID: ${{ steps.request.outputs.request_id }}
           COMMAND: ${{ steps.request.outputs.command }}
+          MODE: ${{ steps.request.outputs.mode }}
           ARTIFACT: ${{ steps.request.outputs.artifact_name }}
+          TELEMETRY_PERSISTED: ${{ steps.experiment.outputs.telemetry_persisted }}
+          COLLECTION_RUN_ID: ${{ steps.experiment.outputs.collection_run_id }}
+          EXPERIMENT_ID: ${{ steps.experiment.outputs.experiment_id }}
         run: |
           set -euo pipefail
-          printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\nartifact: `%s`\nrun: %s/%s/actions/runs/%s' \
-            "$MARKER" "$COMMAND" "$REQUEST_ID" "$ARTIFACT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          if [[ "$MODE" == "experiment" && "$TELEMETRY_PERSISTED" == "true" ]]; then
+            printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\ntelemetry: `supabase`\ncollection-run: `%s`\nexperiment: `%s`\nrun: %s/%s/actions/runs/%s' \
+              "$MARKER" "$COMMAND" "$REQUEST_ID" "$COLLECTION_RUN_ID" "$EXPERIMENT_ID" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          else
+            printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\nartifact: `%s`\nrun: %s/%s/actions/runs/%s' \
+              "$MARKER" "$COMMAND" "$REQUEST_ID" "$ARTIFACT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          fi
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/5/comments" -f body="$BODY" >/dev/null
