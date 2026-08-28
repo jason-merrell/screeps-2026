@@ -6,6 +6,8 @@ import {
   type ColonyFspmPortfolio,
 } from "../../src/planning/fspm";
 
+const WORKFORCE_TASK = "maintain-workforce-capacity";
+
 function installGlobals(time = 100): void {
   Object.assign(globalThis, {
     Game: { time },
@@ -40,7 +42,7 @@ function tracedIntent(taskId: string): Intent {
       requirementId: "requirement:W1N1:spawning",
       deliverableId: "deliverable:W1N1:spawning",
       taskId,
-      procedureId: `${taskId}:execute`,
+      procedureId: `procedure:W1N1:spawning:${WORKFORCE_TASK}:maintain-general-workforce`,
     },
   };
 }
@@ -49,7 +51,7 @@ describe("FSPM lifecycle reconciliation", () => {
   beforeEach(() => installGlobals());
 
   it("keeps Task definitions active when no Activity is demanded this tick", () => {
-    const task = ensureTask("W1N1", "spawning", "maintain-workforce");
+    const task = ensureTask("W1N1", "spawning", WORKFORCE_TASK);
 
     reconcileFspmLifecycle([]);
 
@@ -60,7 +62,7 @@ describe("FSPM lifecycle reconciliation", () => {
   });
 
   it("does not reinterpret planner demand as Task lifecycle state", () => {
-    const task = ensureTask("W1N1", "spawning", "maintain-workforce");
+    const task = ensureTask("W1N1", "spawning", WORKFORCE_TASK);
     const createdAt = task.createdAt;
 
     reconcileFspmLifecycle([]);
@@ -72,7 +74,7 @@ describe("FSPM lifecycle reconciliation", () => {
   });
 
   it("preserves explicit Task retirement against derived demand", () => {
-    const task = ensureTask("W1N1", "spawning", "maintain-workforce");
+    const task = ensureTask("W1N1", "spawning", WORKFORCE_TASK);
     task.status = "retired";
     task.retiredAt = 100;
     task.statusReason = "operator retired test task";
