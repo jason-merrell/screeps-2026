@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { migrateMemory } from "../src/memory/migrate";
+import { MEMORY_VERSION } from "../src/memory/schema";
 
 describe("FSPM Activity memory migration", () => {
   beforeEach(() => {
@@ -123,10 +124,11 @@ describe("FSPM Activity memory migration", () => {
     });
   });
 
-  it("clears pre-v4 Activity evidence while preserving Task definitions", () => {
+  it("migrates pre-v4 Activity evidence through the current schema while preserving Task definitions", () => {
     migrateMemory();
 
-    expect(Memory.version).toBe(4);
+    expect(Memory.version).toBe(MEMORY_VERSION);
+    expect(Memory.version).toBe(5);
     const portfolio = Memory.colonies.W1N1?.fspm;
     const task = portfolio?.tasks["task:W1N1:economy:test"];
     expect(task).toBeDefined();
