@@ -15,7 +15,7 @@ const json = (body: unknown, status = 200): Response =>
   });
 
 const validCommandKey = (value: string) =>
-  value.length > 0 && value.length <= 240 && /^[A-Za-z0-9:_-]+$/.test(value);
+  value.length > 0 && value.length <= 240 && /^[A-Za-z0-9:._-]+$/.test(value);
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -60,6 +60,12 @@ Deno.serve(async (req: Request) => {
       const supportedTypes = Array.isArray(body?.supportedTypes)
         ? body.supportedTypes.map((value: unknown) => String(value))
         : ["snapshot"];
+
+      const { error: enqueueError } = await admin.rpc("enqueue_due_collection_commands", {
+        p_limit: 4,
+      });
+      if (enqueueError) throw enqueueError;
+
       const { data, error } = await admin.rpc("claim_next_command", {
         p_worker_id: workerId,
         p_supported_types: supportedTypes,
