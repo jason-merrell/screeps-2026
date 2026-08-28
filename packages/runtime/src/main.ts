@@ -23,6 +23,7 @@ import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
 import { planScavenging } from "./systems/economy/scavenge";
+import { planSurplusLaborUtilization } from "./systems/economy/surplus-utilization";
 import { normalizeFreshRoomPlans } from "./systems/settlement/normalize";
 import { ensureSettlementPlans } from "./systems/settlement/plan";
 import { planSpawning } from "./systems/spawning/plan";
@@ -65,7 +66,10 @@ export const loop = (): void => {
     runPlanner("defense", () => planDefense(world)),
     runPlanner("spawning", () => planSpawning(world)),
     runPlanner("construction", () => planConstruction(world)),
-    runPlanner("economy", () => [...planScavenging(world), ...planEconomy(world)]),
+    runPlanner("economy", () => {
+      const primary = [...planScavenging(world), ...planEconomy(world)];
+      return [...primary, ...planSurplusLaborUtilization(world, primary)];
+    }),
   ];
   const proposed = plannerRuns.flatMap((run) => run.intents);
   ensureFspmWorkIdentities(proposed);
