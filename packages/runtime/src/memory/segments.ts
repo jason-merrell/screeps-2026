@@ -10,15 +10,17 @@ const requestedSegments = new Set<number>([OBSERVABILITY_SEGMENT]);
 
 type JsonObject = Record<string, unknown>;
 
+interface ActivityOmissions {
+  total: number;
+  inProgress: number;
+  onHold: number;
+  otherNonterminal: number;
+  completed: number;
+}
+
 interface ActivitySelection {
   retained: JsonObject[];
-  omitted: {
-    total: number;
-    inProgress: number;
-    onHold: number;
-    otherNonterminal: number;
-    completed: number;
-  };
+  omitted: ActivityOmissions;
 }
 
 function asObject(value: unknown): JsonObject | null {
@@ -107,31 +109,51 @@ function selectActivityRows(rows: unknown[], limit: number): ActivitySelection {
   return { retained, omitted };
 }
 
+function addActivityOmissions(transport: JsonObject, omitted: ActivityOmissions): void {
+  transport.omittedActivities = numericField(transport, "omittedActivities") + omitted.total;
+  transport.omittedInProgressActivities =
+    numericField(transport, "omittedInProgressActivities") + omitted.inProgress;
+  transport.omittedOnHoldActivities =
+    numericField(transport, "omittedOnHoldActivities") + omitted.onHold;
+  transport.omittedOtherNonterminalActivities =
+    numericField(transport, "omittedOtherNonterminalActivities") + omitted.otherNonterminal;
+  transport.omittedCompletedActivities =
+    numericField(transport, "omittedCompletedActivities") + omitted.completed;
+}
+
 function trimTransportRows(trace: JsonObject): void {
-  let omittedActivities = 0;
-  let omittedInProgressActivities = 0;
-  let omittedOnHoldActivities = 0;
-  let omittedOtherNonterminalActivities = 0;
-  let omittedCompletedActivities = 0;
-  let omittedEvents = 0;
+  const transport = asObject(trace.transport) ?? {};
+  Object.assign(transport, {
+    activityRetentionVersion: FSPM_RETENTION_VERSION,
+    activityMemoryLimit: FSPM_ACTIVITY_MEMORY_LIMIT,
+    activityTraceLimit: FSPM_ACTIVITY_TRACE_LIMIT,
+    eventTraceLimit: FSPM_EVENT_TRACE_LIMIT,
+    omittedActivities: 0,
+    omittedInProgressActivities: 0,
+    omittedOnHoldActivities: 0,
+    omittedOtherNonterminalActivities: 0,
+    omittedCompletedActivities: 0,
+    omittedEvents: 0,
+  });
+
   const fspm = asObject(trace.fspm);
   if (fspm) {
     for (const row of asArray(fspm.colonies)) {
       const colony = asObject(row);
       if (!colony) continue;
 
-      const activities = asArray(colony.activities);
-      const selection = selectActivityRows(activities, FSPM_ACTIVITY_TRACE_LIMIT);
-      omittedActivities += selection.omitted.total;
-      omittedInProgressActivities += selection.omitted.inProgress;
-      omittedOnHoldActivities += selection.omitted.onHold;
-      omittedOtherNonterminalActivities += selection.omitted.otherNonterminal;
-      omittedCompletedActivities += selection.omitted.completed;
+      const selection = selectActivityRows(
+        asArray(colony.activities),
+        FSPM_ACTIVITY_TRACE_LIMIT,
+      );
+      addActivityOmissions(transport, selection.omitted);
       colony.activities = selection.retained;
 
       const activityEvents = asArray(colony.activityEvents);
       const retainedEvents = activityEvents.slice(-FSPM_EVENT_TRACE_LIMIT);
-      omittedEvents += Math.max(0, activityEvents.length - retainedEvents.length);
+      transport.omittedEvents =
+        numericField(transport, "omittedEvents") +
+        Math.max(0, activityEvents.length - retainedEvents.length);
       colony.activityEvents = retainedEvents;
 
       for (const taskRow of asArray(colony.tasks)) {
@@ -148,19 +170,6 @@ function trimTransportRows(trace: JsonObject): void {
     intents.rejectedSample = asArray(intents.rejectedSample).slice(0, 12);
   }
 
-  const transport = asObject(trace.transport) ?? {};
-  Object.assign(transport, {
-    activityRetentionVersion: FSPM_RETENTION_VERSION,
-    activityMemoryLimit: FSPM_ACTIVITY_MEMORY_LIMIT,
-    activityTraceLimit: FSPM_ACTIVITY_TRACE_LIMIT,
-    eventTraceLimit: FSPM_EVENT_TRACE_LIMIT,
-    omittedActivities,
-    omittedInProgressActivities,
-    omittedOnHoldActivities,
-    omittedOtherNonterminalActivities,
-    omittedCompletedActivities,
-    omittedEvents,
-  });
   trace.transport = transport;
 }
 
@@ -180,13 +189,24 @@ function stripRepeatedTaskHistory(trace: JsonObject): void {
 }
 
 function compactTaskMetadata(trace: JsonObject): void {
+  const transport = asObject(trace.transport) ?? {};
   const fspm = asObject(trace.fspm);
   if (!fspm) return;
   for (const row of asArray(fspm.colonies)) {
     const colony = asObject(row);
     if (!colony) continue;
-    colony.activities = selectActivityRows(asArray(colony.activities), 24).retained;
-    colony.activityEvents = asArray(colony.activityEvents).slice(-8);
+
+    const selection = selectActivityRows(asArray(colony.activities), 24);
+    addActivityOmissions(transport, selection.omitted);
+    colony.activities = selection.retained;
+
+    const activityEvents = asArray(colony.activityEvents);
+    const retainedEvents = activityEvents.slice(-8);
+    transport.omittedEvents =
+      numericField(transport, "omittedEvents") +
+      Math.max(0, activityEvents.length - retainedEvents.length);
+    colony.activityEvents = retainedEvents;
+
     for (const taskRow of asArray(colony.tasks)) {
       const task = asObject(taskRow);
       if (!task) continue;
@@ -203,12 +223,13 @@ function compactTaskMetadata(trace: JsonObject): void {
     intents.rejectedSample = asArray(intents.rejectedSample).slice(0, 4);
   }
 
-  const transport = asObject(trace.transport);
-  if (transport) transport.compacted = true;
+  transport.compacted = true;
+  trace.transport = transport;
 }
 
 function minimalTransportTrace(trace: JsonObject, originalChars: number): string {
   const fspm = asObject(trace.fspm);
+  const transport = asObject(trace.transport) ?? {};
   return JSON.stringify({
     version: 1,
     tick: typeof trace.tick === "number" ? trace.tick : null,
@@ -231,6 +252,7 @@ function minimalTransportTrace(trace: JsonObject, originalChars: number): string
       rejectedSample: [],
     },
     transport: {
+      ...transport,
       activityRetentionVersion: FSPM_RETENTION_VERSION,
       activityMemoryLimit: FSPM_ACTIVITY_MEMORY_LIMIT,
       activityTraceLimit: FSPM_ACTIVITY_TRACE_LIMIT,
