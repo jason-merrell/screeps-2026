@@ -56,7 +56,7 @@ function portfolioForTask(taskId: string): ColonyFspmPortfolio | undefined {
 export function reconcileTaskKpis(observations: ActivityExecutionObservation[]): void {
   for (const observation of observations) {
     const trace = observation.intent.trace;
-    if (!trace) continue;
+    if (!trace?.activityId) continue;
 
     const portfolio = portfolioForTask(trace.taskId);
     const task = portfolio?.tasks[trace.taskId];
