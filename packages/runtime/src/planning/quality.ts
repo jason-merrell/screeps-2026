@@ -199,21 +199,23 @@ export function reconcileFspmQuality(world: WorldSnapshot): void {
       applyQuality(portfolio, deliverable, measurement);
     }
 
-    const requirements = Object.values(portfolio.requirements).flatMap((requirement) =>
-      requirement?.quality ? [requirement] : [],
+    const measuredRequirements = Object.values(portfolio.requirements).flatMap((requirement) =>
+      requirement?.quality ? [{ requirement, quality: requirement.quality }] : [],
     );
-    const p3Score = rollupContractScore(requirements.map((requirement) => requirement.quality!.score));
+    const p3Score = rollupContractScore(
+      measuredRequirements.map(({ quality }) => quality.score),
+    );
     if (p3Score === null) continue;
 
     applyQuality(portfolio, portfolio.p3, {
       score: p3Score,
       state: qualityState(p3Score),
       measuredAt: Game.time,
-      evidence: requirements
-        .sort((a, b) => a.domain.localeCompare(b.domain))
+      evidence: measuredRequirements
+        .sort((a, b) => a.requirement.domain.localeCompare(b.requirement.domain))
         .map(
-          (requirement) =>
-            `${requirement.domain} ${requirement.quality!.score} ${requirement.quality!.state}`,
+          ({ requirement, quality }) =>
+            `${requirement.domain} ${quality.score} ${quality.state}`,
         ),
     });
   }
