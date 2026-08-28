@@ -4,8 +4,12 @@ import { installSpawnAdvisor } from "./debug/spawn-advisor";
 import { arbitrateDetailed, conflictKey } from "./intents/arbitrate";
 import { execute } from "./intents/execute";
 import type { Intent } from "./intents/types";
+import {
+  FSPM_ACTIVITY_ARCHIVE_SEGMENT,
+  reconcileFspmActivityRetention,
+} from "./memory/activity-archive";
 import { migrateMemory } from "./memory/migrate";
-import { activateMemorySegments } from "./memory/segments";
+import { activateMemorySegments, requestMemorySegment } from "./memory/segments";
 import {
   publishTickTrace,
   type PlannerName,
@@ -31,6 +35,7 @@ import { perceive } from "./world/perceive";
 installSpawnAdvisor();
 installRoomPlanDebug();
 installSimTrafficDebug();
+requestMemorySegment(FSPM_ACTIVITY_ARCHIVE_SEGMENT);
 
 export const loop = (): void => {
   if (runSimTrafficHarness()) return;
@@ -87,6 +92,7 @@ export const loop = (): void => {
     rejected: arbitration.rejected,
     creeps: world.creeps,
   });
+  reconcileFspmActivityRetention();
 
   publishTickTrace({
     tickStartCpu,
