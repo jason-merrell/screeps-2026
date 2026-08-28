@@ -1,60 +1,25 @@
-export const RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD = 160_000;
+import type { Intent } from "../intents/types";
 
-export type ControllerSpendMode = "progress" | "maintenance" | "none";
-
-export interface ControllerMaintenanceCandidate {
-  name: string;
-  work: number;
-  energy: number;
-  range: number;
+/**
+ * Local room progression ends at RCL8. Any controller energy spent after that
+ * point is either downgrade maintenance or strategic GCL investment, both of
+ * which require explicit policy outside the routine delivery fallback.
+ */
+export function allowsRoutineControllerProgress(level: number | undefined): boolean {
+  return level !== undefined && level > 0 && level < 8;
 }
 
 /**
- * Separate room progression from capped-room ownership maintenance.
+ * Remove upgrade intents that cannot truthfully represent room progression.
  *
- * RCL8 upgrading still produces GCL, but GCL investment is an empire-level
- * strategic choice and must never be inferred merely because a local creep has
- * surplus energy. Capped rooms therefore fail closed to no controller spend
- * unless their downgrade buffer crosses the governed maintenance threshold.
+ * This is intentionally fail-closed: an unresolved controller or a capped
+ * controller cannot consume routine local surplus energy. Explicit RCL8
+ * maintenance and GCL investment are separate governed policies.
  */
-export function controllerSpendMode(
-  level: number | undefined,
-  ticksToDowngrade: number | undefined,
-): ControllerSpendMode {
-  if (level === undefined || level <= 0) return "none";
-  if (level < 8) return "progress";
-  if (
-    level === 8 &&
-    ticksToDowngrade !== undefined &&
-    ticksToDowngrade < RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD
-  ) {
-    return "maintenance";
-  }
-  return "none";
-}
-
-/**
- * Use one minimal-capacity performer for downgrade maintenance. The timer has
- * a very large safety runway, so minimizing WORK first avoids unnecessary
- * energy overshoot; range and name make the selection efficient and stable.
- */
-export function selectControllerMaintenanceAssignee(
-  candidates: ControllerMaintenanceCandidate[],
-): string | undefined {
-  return [...candidates]
-    .filter((candidate) => candidate.work > 0 && candidate.energy > 0)
-    .sort(
-      (left, right) =>
-        left.work - right.work ||
-        left.range - right.range ||
-        left.name.localeCompare(right.name),
-    )[0]?.name;
-}
-
-export function controllerMaintenanceSatisfied(controller: StructureController): boolean {
-  return (
-    controller.level !== 8 ||
-    (controller.ticksToDowngrade !== undefined &&
-      controller.ticksToDowngrade >= RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD)
-  );
+export function enforceRoutineControllerProgress(intents: Intent[]): Intent[] {
+  return intents.filter((intent) => {
+    if (intent.type !== "upgrade") return true;
+    const controller = Game.getObjectById(intent.controllerId);
+    return controller?.my === true && allowsRoutineControllerProgress(controller.level);
+  });
 }
