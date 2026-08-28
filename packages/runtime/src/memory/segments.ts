@@ -1,10 +1,15 @@
+import {
+  FSPM_ACTIVITY_MEMORY_LIMIT as GOVERNED_FSPM_ACTIVITY_MEMORY_LIMIT,
+  fspmActivityArchiveSummary,
+} from "./activity-archive";
+
 export const OBSERVABILITY_SEGMENT = 99;
 
 export const OBSERVABILITY_SEGMENT_TARGET_CHARS = 90_000;
-export const FSPM_ACTIVITY_MEMORY_LIMIT = 64;
+export const FSPM_ACTIVITY_MEMORY_LIMIT = GOVERNED_FSPM_ACTIVITY_MEMORY_LIMIT;
 export const FSPM_ACTIVITY_TRACE_LIMIT = 40;
 export const FSPM_EVENT_TRACE_LIMIT = 16;
-export const FSPM_RETENTION_VERSION = 2;
+export const FSPM_RETENTION_VERSION = 3;
 
 const requestedSegments = new Set<number>([OBSERVABILITY_SEGMENT]);
 
@@ -128,6 +133,7 @@ function trimTransportRows(trace: JsonObject): void {
     activityMemoryLimit: FSPM_ACTIVITY_MEMORY_LIMIT,
     activityTraceLimit: FSPM_ACTIVITY_TRACE_LIMIT,
     eventTraceLimit: FSPM_EVENT_TRACE_LIMIT,
+    activityArchive: fspmActivityArchiveSummary(),
     omittedActivities: 0,
     omittedInProgressActivities: 0,
     omittedOnHoldActivities: 0,
