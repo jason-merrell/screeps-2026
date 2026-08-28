@@ -60,12 +60,52 @@ export function shouldDeferRoutineBootstrapRepair(
   );
 }
 
-function trace(roomName: string, creepName: string, task: string, activity: string) {
+function energyTrace(
+  roomName: string,
+  procedure:
+    | "extract-source-energy"
+    | "buffer-source-energy"
+    | "withdraw-buffered-energy"
+    | "stage-source-transport"
+    | "park-surplus-transport"
+    | "fund-workforce-energy",
+) {
   return createIntentTrace({
     roomName,
     domain: "economy",
+    task: "maintain-colony-energy-service",
+    procedure,
+  });
+}
+
+function controllerTrace(roomName: string) {
+  return createIntentTrace({
+    roomName,
+    domain: "economy",
+    task: "advance-controller-capability",
+    procedure: "upgrade-controller",
+  });
+}
+
+function constructionTrace(
+  roomName: string,
+  task: "realize-planned-infrastructure" | "maintain-infrastructure-condition",
+  procedure: "build-planned-infrastructure" | "repair-infrastructure",
+) {
+  return createIntentTrace({
+    roomName,
+    domain: "construction",
     task,
-    activity: `${creepName}:${activity}`,
+    procedure,
+  });
+}
+
+function defenseTrace(roomName: string) {
+  return createIntentTrace({
+    roomName,
+    domain: "defense",
+    task: "maintain-defensive-readiness",
+    procedure: "fund-tower-reserve",
   });
 }
 
@@ -135,7 +175,7 @@ function preferredProducerSourceId(roomName: string, creepName: string): string 
   const portfolio = Memory.colonies[roomName]?.fspm;
   if (!portfolio?.activities) return undefined;
 
-  const taskId = `task:${roomName}:economy:produce-source-energy`;
+  const taskId = `task:${roomName}:economy:maintain-colony-energy-service`;
   const activity = Object.values(portfolio.activities)
     .filter(
       (candidate) =>
@@ -352,12 +392,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           sourceId: producer.source.id,
           priority: 1100,
           reason: "produce continuously into the assigned source buffer",
-          trace: trace(
-            roomName,
-            creep.name,
-            "produce-source-energy",
-            `harvest:${producer.source.id}`,
-          ),
+          trace: energyTrace(roomName, "extract-source-energy"),
         });
         continue;
       }
@@ -370,12 +405,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           resource: RESOURCE_ENERGY,
           priority: 1075,
           reason: "buffer completed producer load at the source edge",
-          trace: trace(
-            roomName,
-            creep.name,
-            "buffer-source-energy",
-            `transfer:${producer.container.id}`,
-          ),
+          trace: energyTrace(roomName, "buffer-source-energy"),
         });
         continue;
       }
@@ -396,12 +426,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           resource: RESOURCE_ENERGY,
           priority: 1050,
           reason: "collect from the assigned source buffer",
-          trace: trace(
-            roomName,
-            creep.name,
-            "move-buffered-energy",
-            `withdraw:${assigned.container.id}`,
-          ),
+          trace: energyTrace(roomName, "withdraw-buffered-energy"),
         });
         continue;
       }
@@ -419,7 +444,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
             range: 2,
             priority: 200,
             reason: "park surplus transport capacity away from the source edge",
-            trace: trace(roomName, creep.name, "hold-surplus-transport", `park:${spawn.id}`),
+            trace: energyTrace(roomName, "park-surplus-transport"),
           });
           continue;
         }
@@ -433,12 +458,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           range: 1,
           priority: 1025,
           reason: "stage at assigned source buffer while awaiting production",
-          trace: trace(
-            roomName,
-            creep.name,
-            "stage-source-transport",
-            `stage:${assigned.container.id}`,
-          ),
+          trace: energyTrace(roomName, "stage-source-transport"),
         });
         continue;
       }
@@ -468,7 +488,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
             roomBuffers.length > 0
               ? "supplement under-covered source without crowding the mining edge"
               : "complete collection cycle before delivery",
-          trace: trace(roomName, creep.name, "maintain-energy-flow", `harvest:${source.id}`),
+          trace: energyTrace(roomName, "extract-source-energy"),
         });
         continue;
       }
@@ -496,12 +516,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           resource: RESOURCE_ENERGY,
           priority: 950,
           reason: "continue delivery cycle until worker is empty",
-          trace: trace(
-            roomName,
-            creep.name,
-            "fund-reproduction",
-            `transfer:${reproductionTarget.id}`,
-          ),
+          trace: energyTrace(roomName, "fund-workforce-energy"),
         });
         continue;
       }
@@ -524,7 +539,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           reason: underAttack
             ? "fill defensive tower during active threat"
             : "maintain bounded peacetime tower reserve",
-          trace: trace(roomName, creep.name, "maintain-defense-reserve", `transfer:${tower.id}`),
+          trace: defenseTrace(roomName),
         });
         continue;
       }
@@ -552,7 +567,11 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           targetId: site.id,
           priority: 700,
           reason: "spend delivery-cycle surplus on the highest-value planned infrastructure",
-          trace: trace(roomName, creep.name, "build-infrastructure", `build:${site.id}`),
+          trace: constructionTrace(
+            roomName,
+            "realize-planned-infrastructure",
+            "build-planned-infrastructure",
+          ),
         });
         continue;
       }
@@ -571,7 +590,11 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           targetId: repairTarget.id,
           priority: 500,
           reason: "spend delivery-cycle surplus restoring bootstrap infrastructure",
-          trace: trace(roomName, creep.name, "restore-infrastructure", `repair:${repairTarget.id}`),
+          trace: constructionTrace(
+            roomName,
+            "maintain-infrastructure-condition",
+            "repair-infrastructure",
+          ),
         });
         continue;
       }
@@ -589,12 +612,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
         controllerId: creep.room.controller.id,
         priority: 100,
         reason: "finish delivery cycle by investing surplus energy in controller progression",
-        trace: trace(
-          roomName,
-          creep.name,
-          "advance-controller",
-          `upgrade:${creep.room.controller.id}`,
-        ),
+        trace: controllerTrace(roomName),
       });
       continue;
     }
@@ -611,7 +629,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           range: 2,
           priority: 200,
           reason: "park surplus transport capacity away from the source edge",
-          trace: trace(roomName, creep.name, "hold-surplus-transport", `park:${spawn.id}`),
+          trace: energyTrace(roomName, "park-surplus-transport"),
         });
       }
     }

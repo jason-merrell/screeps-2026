@@ -14,6 +14,16 @@ interface IntentTraceInput {
   task: string;
   procedure?: string;
   activity?: string;
+  workKey?: string;
+}
+
+export function infrastructureWorkKey(
+  roomName: string,
+  x: number,
+  y: number,
+  structureType: StructureConstant,
+): string {
+  return `infrastructure:${roomName}:${x}:${y}:${structureType}`;
 }
 
 function legacyProcedureKey(activity: string): string {
@@ -47,5 +57,6 @@ export function createIntentTrace(input: IntentTraceInput): IntentTrace {
     deliverableId: deliverable.id,
     taskId: task.id,
     procedureId: procedure.id,
+    ...(input.workKey ? { workKey: input.workKey } : {}),
   };
 }

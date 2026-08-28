@@ -37,8 +37,8 @@ export function planScavenging(world: WorldSnapshot): Intent[] {
       trace: createIntentTrace({
         roomName: creep.room.name,
         domain: "economy",
-        task: "recover-salvage-energy",
-        activity: `${creep.name}:withdraw:${target.id}`,
+        task: "maintain-colony-energy-service",
+        procedure: "recover-salvage-energy",
       }),
     });
   }

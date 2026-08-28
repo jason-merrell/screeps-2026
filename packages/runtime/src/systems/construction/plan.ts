@@ -1,4 +1,4 @@
-import { createIntentTrace } from "../../intents/trace";
+import { createIntentTrace, infrastructureWorkKey } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import { hotTrafficTiles } from "../../movement/traffic-heatmap";
 import { plannedRoadPriority } from "../../planning/construction-priority";
@@ -9,6 +9,22 @@ import { shouldActivateSourceBuffers } from "../economy/logistics";
 const MAX_NEW_SITES_PER_ROOM = 3;
 const MAX_ACTIVE_SITES_PER_ROOM = 6;
 const MAX_ACTIVE_ROAD_SITES_PER_ROOM = 3;
+
+function realizationTrace(
+  roomName: string,
+  procedure: "site-planned-structure" | "site-planned-road" | "site-adaptive-road",
+  x: number,
+  y: number,
+  structureType: BuildableStructureConstant,
+) {
+  return createIntentTrace({
+    roomName,
+    domain: "construction",
+    task: "realize-planned-infrastructure",
+    procedure,
+    workKey: infrastructureWorkKey(roomName, x, y, structureType),
+  });
+}
 
 export function eligiblePlannedStructures(
   plan: RoomPlan,
@@ -139,12 +155,13 @@ function planRoomConstruction(room: Room): Intent[] {
       structureType: planned.structureType,
       priority: planned.priority,
       reason: `${planned.phase}: ${planned.reason}`,
-      trace: createIntentTrace({
-        roomName: room.name,
-        domain: "construction",
-        task: `execute-room-plan-v${roomPlan.version}`,
-        activity: `site:${planned.id}`,
-      }),
+      trace: realizationTrace(
+        room.name,
+        "site-planned-structure",
+        planned.x,
+        planned.y,
+        planned.structureType,
+      ),
     });
     proposedByType.set(
       planned.structureType,
@@ -173,12 +190,13 @@ function planRoomConstruction(room: Room): Intent[] {
         structureType: STRUCTURE_ROAD,
         priority: plannedRoadPriority(roomPlan, road),
         reason: `${road.phase}: logistics demand activated planned corridor`,
-        trace: createIntentTrace({
-          roomName: room.name,
-          domain: "construction",
-          task: `execute-room-plan-v${roomPlan.version}`,
-          activity: `road:${road.id}`,
-        }),
+        trace: realizationTrace(
+          room.name,
+          "site-planned-road",
+          road.x,
+          road.y,
+          STRUCTURE_ROAD,
+        ),
       });
       proposedRoadSites += 1;
     }
@@ -196,12 +214,13 @@ function planRoomConstruction(room: Room): Intent[] {
         structureType: STRUCTURE_ROAD,
         priority: 200 + Math.min(120, Math.floor(tile.score)),
         reason: `adaptive traffic: sustained movement heat ${tile.score.toFixed(1)}`,
-        trace: createIntentTrace({
-          roomName: room.name,
-          domain: "construction",
-          task: `optimize-observed-traffic-v${roomPlan.version}`,
-          activity: `adaptive-road:${tile.x}:${tile.y}`,
-        }),
+        trace: realizationTrace(
+          room.name,
+          "site-adaptive-road",
+          tile.x,
+          tile.y,
+          STRUCTURE_ROAD,
+        ),
       });
       proposedRoadSites += 1;
     }

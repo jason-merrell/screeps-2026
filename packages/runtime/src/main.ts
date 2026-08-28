@@ -18,6 +18,7 @@ import {
 import { reconcileFspmLifecycle } from "./planning/fspm";
 import { ensureRoomPlanOwnership } from "./planning/ownership";
 import { reconcileFspmQuality } from "./planning/quality";
+import { ensureFspmWorkIdentities } from "./planning/work-identity";
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
@@ -67,6 +68,7 @@ export const loop = (): void => {
     runPlanner("economy", () => [...planScavenging(world), ...planEconomy(world)]),
   ];
   const proposed = plannerRuns.flatMap((run) => run.intents);
+  ensureFspmWorkIdentities(proposed);
   reconcileFspmLifecycle(proposed);
   reconcileFspmQuality(world);
 
