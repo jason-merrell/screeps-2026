@@ -23,7 +23,7 @@ export type RoomPlan = {
   roads?: Point[];
 };
 
-export type FspmStatus = "active" | "completed" | "cancelled";
+export type FspmStatus = "active" | "completed" | "cancelled" | "retired";
 export type FspmQualityState = "healthy" | "watch" | "degraded";
 export type FspmTrend = "new" | "improving" | "stable" | "declining";
 export type FspmKpiRating = "exceptional" | "satisfactory" | "unsatisfactory" | "in_progress";
@@ -39,7 +39,20 @@ export type FspmRecord = {
   status: FspmStatus;
   quality?: FspmQuality;
 };
+export type FspmPortfolioP3 = {
+  id: string;
+  type: "portfolio";
+  subType: "ou_portfolio";
+  name: string;
+  description?: string;
+  parentP3Id: string | null;
+  temporalBasis: "game_tick";
+  startTick: number;
+  status: FspmStatus;
+  quality?: FspmQuality;
+};
 export type FspmRequirement = FspmRecord & {
+  p3Id?: string;
   contractId?: string;
   domain?: string;
 };
@@ -94,16 +107,19 @@ export type FspmProgram = {
 };
 export type FspmColonySummary = {
   roomName: string;
+  p3: FspmPortfolioP3;
   program?: FspmProgram | null;
-  contract: FspmRecord;
+  contract?: FspmRecord | null;
   requirements: FspmRequirement[];
   deliverables: FspmDeliverable[];
   tasks: FspmTask[];
+  p3History?: FspmHistorySample[];
   contractHistory?: FspmHistorySample[];
 };
 export type RuntimeTrace = {
   tick?: number | null;
   fspm?: {
+    rootP3?: FspmPortfolioP3 | null;
     colonies?: FspmColonySummary[];
   } | null;
 };
