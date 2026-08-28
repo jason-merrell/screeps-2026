@@ -249,12 +249,14 @@ describe("FSPM Activity lifecycle", () => {
 
     Game.time = 102;
     bindFspmActivities([]);
+    const creep = Game.creeps["worker-1"];
+    if (!creep) throw new Error("expected worker-1 test creep");
     const assignments = reconcileFspmActivityEvidence({
       observations: [],
       proposed: [],
       accepted: [],
       rejected: [],
-      creeps: [Game.creeps["worker-1"]],
+      creeps: [creep],
     });
 
     const activity = activities().find((candidate) => candidate.id === activityId);
