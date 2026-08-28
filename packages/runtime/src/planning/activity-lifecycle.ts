@@ -648,6 +648,31 @@ function isLegacyWaitingTask(taskKey: string): boolean {
   return taskKey === "stage-source-transport" || taskKey === "hold-surplus-transport";
 }
 
+function energyServiceHandoffReason(
+  portfolio: EvidencePortfolio,
+  activity: EvidenceActivity,
+  creep: Creep,
+  nextTaskId: string,
+): string | null {
+  const task = portfolio.tasks[activity.taskId];
+  if (task?.taskKey !== "maintain-colony-energy-service") return null;
+  if (metric(activity.metrics.productiveTicks) <= 0) return null;
+
+  const currentProcedure = procedureKey(task, activity);
+  if (
+    currentProcedure !== "extract-source-energy" &&
+    currentProcedure !== "withdraw-buffered-energy" &&
+    currentProcedure !== "recover-salvage-energy"
+  ) {
+    return null;
+  }
+
+  const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+  if (energy <= 0) return null;
+
+  return `canonical energy-service collection handed usable energy (${energy}) to downstream governed Task ${nextTaskId} after ${currentProcedure}`;
+}
+
 function completionReason(
   portfolio: EvidencePortfolio,
   activity: EvidenceActivity,
@@ -1014,12 +1039,18 @@ function bindCreepIntent(intent: CreepIntent): void {
 
   if (current && current.taskId !== trace.taskId) {
     const currentTask = portfolio.tasks[current.taskId];
+    const creep = Game.creeps[intent.creepName];
+    const handoffReason = creep
+      ? energyServiceHandoffReason(portfolio, current, creep, trace.taskId)
+      : null;
     if (currentTask && isLegacyWaitingTask(currentTask.taskKey)) {
       completeActivity(
         portfolio,
         current,
         `legacy waiting assignment ended when planner selected ${trace.taskId}`,
       );
+    } else if (handoffReason) {
+      completeActivity(portfolio, current, handoffReason);
     } else {
       holdForTaskPreemption(portfolio, current, trace.taskId);
     }

@@ -139,4 +139,31 @@ describe("FSPM energy-service handoff", () => {
       energyEvents.find((event) => event.type === "activity_completed")?.reason,
     ).toContain("handed usable energy");
   });
+
+  it("keeps an unproductive collection Activity On Hold when another Task preempts it", () => {
+    const withdraw = withdrawIntent();
+    bindFspmActivities([withdraw]);
+    const energyActivityId = withdraw.trace?.activityId;
+    const energyTaskId = withdraw.trace?.taskId;
+    if (!energyActivityId || !energyTaskId) throw new Error("expected energy-service Activity");
+
+    creepEnergy = 50;
+    Game.time = 101;
+    const controller = controllerIntent();
+    bindFspmActivities([controller]);
+
+    const portfolio = ensureColonyPortfolio("W1N1");
+    expect(portfolio.activities?.[energyActivityId]).toMatchObject({
+      status: "on_hold",
+      metrics: { productiveTicks: 0, taskPreemptions: 1, holdCount: 1 },
+    });
+    expect(portfolio.activityKpiHistory?.[energyTaskId]).toBeUndefined();
+
+    const energyEvents = fspmActivityEvents(portfolio).filter(
+      (event) => event.activityId === energyActivityId,
+    );
+    expect(energyEvents.map((event) => event.type)).toContain("activity_held");
+    expect(energyEvents.map((event) => event.type)).not.toContain("activity_completed");
+    expect(energyEvents.map((event) => event.type)).not.toContain("kpi_scored");
+  });
 });
