@@ -11,6 +11,9 @@ vi.stubGlobal("ERR_NOT_IN_RANGE", -9);
 vi.stubGlobal("RESOURCE_ENERGY", "energy");
 vi.stubGlobal("STRUCTURE_RAMPART", "rampart");
 
+const TASK_KEY = "maintain-colony-energy-service";
+const PROCEDURE_KEY = "extract-source-energy";
+
 function testCreep(name: string): Creep {
   return {
     name,
@@ -50,8 +53,8 @@ function setCreep(name: string, creep: Creep | undefined): void {
 }
 
 function intent(creepName: string, sourceId = "source-1"): HarvestIntent {
-  const task = ensureTask("W1N1", "economy", "produce-source-energy");
-  const procedure = ensureProcedure("W1N1", "economy", "produce-source-energy", "harvest");
+  const task = ensureTask("W1N1", "economy", TASK_KEY);
+  const procedure = ensureProcedure("W1N1", "economy", TASK_KEY, PROCEDURE_KEY);
   const portfolio = ensureColonyPortfolio("W1N1");
   const requirement = portfolio.requirements.economy;
   const deliverable = portfolio.deliverables.economy;
@@ -62,7 +65,7 @@ function intent(creepName: string, sourceId = "source-1"): HarvestIntent {
     creepName,
     sourceId: sourceId as Id<Source>,
     priority: 100,
-    reason: "test governed producer work",
+    reason: "test governed energy-service work",
     trace: {
       contractId: portfolio.contract.id,
       requirementId: requirement.id,
