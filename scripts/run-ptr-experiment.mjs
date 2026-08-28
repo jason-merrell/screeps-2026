@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { evaluateBootstrapState, projectBootstrapState } from "./lib/bootstrap-state.mjs";
+import { projectBootstrapState } from "./lib/bootstrap-state.mjs";
+import { evaluateBootstrapWindow } from "./lib/bootstrap-window.mjs";
 import { decodeScreepsSegment, summarizeSegmentResponse } from "./lib/screeps-memory.mjs";
 
 const token = process.env.SCREEPS_TOKEN;
@@ -112,7 +113,8 @@ for (let index = 0; index < sampleCount; index += 1) {
   };
 
   const state = projectBootstrapState(rawSnapshot, ref.room);
-  const evaluation = evaluateBootstrapState(state);
+  const firstState = samples[0]?.state ?? state;
+  const evaluation = evaluateBootstrapWindow(firstState, state);
   const observability = observabilityResponse.ok
     ? decodeScreepsSegment(observabilityResponse.body)
     : null;
@@ -131,7 +133,7 @@ for (let index = 0; index < sampleCount; index += 1) {
     ? ` cpu=${observability.cpu?.total ?? "?"} proposed=${observability.intents?.proposed ?? "?"} accepted=${observability.intents?.accepted ?? "?"} distanceLookups=${observability.spatial?.distanceLookups ?? "?"}`
     : ` trace=unavailable status=${observabilityDiagnostic.status} data=${observabilityDiagnostic.hasData}`;
   console.log(
-    `sample ${index + 1}/${sampleCount}: RCL${evaluation.summary.rcl} workforce=${evaluation.summary.workforce} spawnEnergy=${evaluation.summary.spawnEnergy} sites=${evaluation.summary.constructionSites}${traceSuffix}`,
+    `sample ${index + 1}/${sampleCount}: RCL${evaluation.summary.rcl} workforce=${evaluation.summary.workforce} spawnEnergy=${evaluation.summary.spawnEnergy} sites=${evaluation.summary.constructionSites} energyActive=${evaluation.energyActivity.active}${traceSuffix}`,
   );
 
   if (evaluation.status === "passed") break;
