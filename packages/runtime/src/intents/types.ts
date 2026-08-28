@@ -17,7 +17,8 @@ export interface IntentTrace {
   requirementId: string;
   deliverableId: string;
   taskId: string;
-  activityId: string;
+  procedureId: string;
+  activityId?: string;
 }
 
 interface IntentBase {
