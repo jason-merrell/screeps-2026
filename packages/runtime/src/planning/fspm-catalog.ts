@@ -116,13 +116,15 @@ export const FSPM_TASK_CATALOG = [
     qualityDescription:
       "The colony maintains viable workforce capacity before incumbents expire, with source-production and transport capability meeting the room plan's measured demand and emergency recovery available when workforce reaches zero.",
     qualityMetric:
-      "Workforce demand is satisfied at or above the computed viable target, source buffers retain producer coverage, and available transport CARRY capacity meets the planned throughput requirement. Unsatisfied demand must trigger the appropriate staffing Procedure when spawn energy permits.",
+      "Each staffing Activity is a per-occurrence execution instance created from a measured workforce, producer, transport, or emergency-recovery deficit. It completes only when the specific creep requested by that staffing Procedure reaches a viable non-spawning state; additional remaining deficits generate additional Activities rather than being attributed to the completed instance. Aggregate workforce coverage remains a service-level signal and is not fabricated as the KPI result of one staffing occurrence.",
     kpiMetric: {
-      metric: "Workforce demand coverage after staffing Activity",
+      metric: "Viable workforce increment delivered by staffing Activity",
       exceptional:
-        "Staffing restores all measured workforce, producer, and transport demand with replacement lead time preserved",
-      satisfactory: "Staffing resolves the demand that triggered the Activity without creating a new measured deficit",
-      unsatisfactory: "Staffing fails to resolve the triggering workforce capability deficit",
+        "The requested viable workforce increment is delivered without blocked execution and there is independent evidence that it also closes the measured service deficit or preserves replacement lead time",
+      satisfactory:
+        "The requested staffing increment reaches a viable non-spawning state with productive spawn execution and no blocked execution",
+      unsatisfactory:
+        "The staffing occurrence concludes without producing its requested viable workforce increment or requires material rework",
     },
     procedures: [
       { key: "recover-emergency-workforce", title: "Recover Emergency Workforce" },
@@ -133,7 +135,7 @@ export const FSPM_TASK_CATALOG = [
     determination: determination(
       "a recurring workforce-capacity service with measured viable headcount and capability coverage",
       "compound",
-      "Emergency recovery, producer staffing, transport staffing, and routine replacement are procedures serving one independently measured recurring workforce service.",
+      "Emergency recovery, producer staffing, transport staffing, and routine replacement are procedures serving one independently measured recurring workforce service. Each Activity is one triggered staffing occurrence; the Task-level service may require multiple Activity instances to close a larger deficit.",
     ),
   },
   {
