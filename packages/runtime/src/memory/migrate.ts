@@ -25,6 +25,30 @@ export function migrateMemory(): void {
     memory.version = 3;
   }
 
+  if (memory.version === 3) {
+    for (const colony of Object.values(memory.colonies ?? {})) {
+      const portfolio = colony.fspm;
+      if (!portfolio) continue;
+
+      // v3 Procedure IDs embedded concrete targets and command-level evidence.
+      // Supabase retains the historical observations, but runtime authority must
+      // restart from governed Procedure identity before collecting new proof.
+      portfolio.activities = {};
+      portfolio.activityKpiHistory = {};
+      const evidencePortfolio = portfolio as typeof portfolio & {
+        activityEvents?: unknown[];
+        activityEventSequence?: number;
+      };
+      evidencePortfolio.activityEvents = [];
+      evidencePortfolio.activityEventSequence = 0;
+      for (const task of Object.values(portfolio.tasks)) {
+        task.procedures = [];
+        delete task.qi;
+      }
+    }
+    memory.version = 4;
+  }
+
   if (memory.version !== MEMORY_VERSION) {
     throw new Error(`Unsupported Memory version ${memory.version}; expected ${MEMORY_VERSION}`);
   }
