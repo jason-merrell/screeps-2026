@@ -2,6 +2,7 @@ import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import type { WorldSnapshot } from "../../runtime/context";
 import { capabilitiesOf } from "../../workforce/capabilities";
+import { shouldActivateSourceBuffers } from "./logistics";
 
 interface BufferedSource {
   source: Source;
@@ -27,6 +28,18 @@ function creepAssignee(intent: Intent): string | undefined {
 function bufferedSources(room: Room): BufferedSource[] {
   const plan = Memory.colonies[room.name]?.roomPlan;
   if (!plan) return [];
+
+  const controllerLevel = room.controller?.level ?? 0;
+  const workforceCount = room.find(FIND_MY_CREEPS).length;
+  if (
+    !shouldActivateSourceBuffers(
+      controllerLevel,
+      workforceCount,
+      plan.anchors.sources.length,
+    )
+  ) {
+    return [];
+  }
 
   const buffered: BufferedSource[] = [];
   for (const anchor of plan.anchors.sources) {
@@ -57,10 +70,11 @@ function compareByRangeThenId(
 /**
  * Last-resort economy policy for otherwise-unassigned hybrid WORK+CARRY labor.
  *
- * Primary producer/transport reservations remain authoritative. This planner only
- * acts when the ordinary economy planner produced no creep intent at all. It
- * turns usable buffered energy into governed work, or explicitly stages the
- * performer near a source buffer instead of allowing silent planner fallthrough.
+ * Primary producer/transport reservations and source-buffer activation remain
+ * authoritative. This planner only acts when the ordinary economy planner
+ * produced no creep intent at all. It turns usable buffered energy into governed
+ * work, or explicitly stages the performer near a source buffer instead of
+ * allowing silent planner fallthrough.
  */
 export function planSurplusLaborUtilization(
   world: WorldSnapshot,
