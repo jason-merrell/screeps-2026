@@ -4,6 +4,7 @@ export const OBSERVABILITY_SEGMENT_TARGET_CHARS = 90_000;
 export const FSPM_ACTIVITY_MEMORY_LIMIT = 64;
 export const FSPM_ACTIVITY_TRACE_LIMIT = 40;
 export const FSPM_EVENT_TRACE_LIMIT = 16;
+export const FSPM_RETENTION_VERSION = 1;
 
 const requestedSegments = new Set<number>([OBSERVABILITY_SEGMENT]);
 
@@ -49,16 +50,23 @@ function recentActivityRows(rows: unknown[], limit: number): unknown[] {
 }
 
 function trimTransportRows(trace: JsonObject): void {
+  let omittedActivities = 0;
+  let omittedEvents = 0;
   const fspm = asObject(trace.fspm);
   if (fspm) {
     for (const row of asArray(fspm.colonies)) {
       const colony = asObject(row);
       if (!colony) continue;
-      colony.activities = recentActivityRows(
-        asArray(colony.activities),
-        FSPM_ACTIVITY_TRACE_LIMIT,
-      );
-      colony.activityEvents = asArray(colony.activityEvents).slice(-FSPM_EVENT_TRACE_LIMIT);
+
+      const activities = asArray(colony.activities);
+      const retainedActivities = recentActivityRows(activities, FSPM_ACTIVITY_TRACE_LIMIT);
+      omittedActivities += Math.max(0, activities.length - retainedActivities.length);
+      colony.activities = retainedActivities;
+
+      const activityEvents = asArray(colony.activityEvents);
+      const retainedEvents = activityEvents.slice(-FSPM_EVENT_TRACE_LIMIT);
+      omittedEvents += Math.max(0, activityEvents.length - retainedEvents.length);
+      colony.activityEvents = retainedEvents;
 
       for (const taskRow of asArray(colony.tasks)) {
         const task = asObject(taskRow);
@@ -73,6 +81,17 @@ function trimTransportRows(trace: JsonObject): void {
     intents.acceptedSample = asArray(intents.acceptedSample).slice(0, 12);
     intents.rejectedSample = asArray(intents.rejectedSample).slice(0, 12);
   }
+
+  const transport = asObject(trace.transport) ?? {};
+  Object.assign(transport, {
+    activityRetentionVersion: FSPM_RETENTION_VERSION,
+    activityMemoryLimit: FSPM_ACTIVITY_MEMORY_LIMIT,
+    activityTraceLimit: FSPM_ACTIVITY_TRACE_LIMIT,
+    eventTraceLimit: FSPM_EVENT_TRACE_LIMIT,
+    omittedActivities,
+    omittedEvents,
+  });
+  trace.transport = transport;
 }
 
 function stripRepeatedTaskHistory(trace: JsonObject): void {
@@ -113,6 +132,9 @@ function compactTaskMetadata(trace: JsonObject): void {
     intents.acceptedSample = asArray(intents.acceptedSample).slice(0, 4);
     intents.rejectedSample = asArray(intents.rejectedSample).slice(0, 4);
   }
+
+  const transport = asObject(trace.transport);
+  if (transport) transport.compacted = true;
 }
 
 function minimalTransportTrace(trace: JsonObject, originalChars: number): string {
@@ -139,9 +161,30 @@ function minimalTransportTrace(trace: JsonObject, originalChars: number): string
       rejectedSample: [],
     },
     transport: {
+      activityRetentionVersion: FSPM_RETENTION_VERSION,
+      activityMemoryLimit: FSPM_ACTIVITY_MEMORY_LIMIT,
+      activityTraceLimit: FSPM_ACTIVITY_TRACE_LIMIT,
+      eventTraceLimit: FSPM_EVENT_TRACE_LIMIT,
       truncated: true,
       originalChars,
       reason: "observability payload exceeded segment safety budget",
+    },
+  });
+}
+
+function invalidTransportPayload(originalChars: number, reason: string): string {
+  return JSON.stringify({
+    version: 1,
+    tick: null,
+    fspm: { colonies: [], assignments: [] },
+    transport: {
+      activityRetentionVersion: FSPM_RETENTION_VERSION,
+      activityMemoryLimit: FSPM_ACTIVITY_MEMORY_LIMIT,
+      activityTraceLimit: FSPM_ACTIVITY_TRACE_LIMIT,
+      eventTraceLimit: FSPM_EVENT_TRACE_LIMIT,
+      truncated: true,
+      originalChars,
+      reason,
     },
   });
 }
@@ -151,18 +194,12 @@ export function fitObservabilityPayload(payload: string): string {
   try {
     const parsed = JSON.parse(payload) as unknown;
     const object = asObject(parsed);
-    if (!object) return payload.slice(0, OBSERVABILITY_SEGMENT_TARGET_CHARS);
+    if (!object) {
+      return invalidTransportPayload(payload.length, "observability payload root was not an object");
+    }
     trace = object;
   } catch {
-    return JSON.stringify({
-      version: 1,
-      tick: null,
-      transport: {
-        truncated: true,
-        originalChars: payload.length,
-        reason: "observability payload was not valid JSON",
-      },
-    });
+    return invalidTransportPayload(payload.length, "observability payload was not valid JSON");
   }
 
   trimTransportRows(trace);
