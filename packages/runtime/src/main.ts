@@ -78,7 +78,13 @@ export const loop = (): void => {
   phaseStart = Game.cpu.getUsed();
   const execution = execute(arbitration.accepted);
   const executionCpu = Game.cpu.getUsed() - phaseStart;
-  reconcileFspmActivityEvidence(execution.activities);
+  const assignments = reconcileFspmActivityEvidence({
+    observations: execution.activities,
+    proposed,
+    accepted: arbitration.accepted,
+    rejected: arbitration.rejected,
+    creeps: world.creeps,
+  });
 
   publishTickTrace({
     tickStartCpu,
@@ -92,6 +98,7 @@ export const loop = (): void => {
     movement: execution.movement,
     accepted: arbitration.accepted,
     rejected: arbitration.rejected,
+    assignments,
     plannerByIntent,
     conflictKey,
   });

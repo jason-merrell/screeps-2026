@@ -40,7 +40,14 @@ describe("FSPM Activity memory migration", () => {
                     satisfactory: "test",
                     unsatisfactory: "test",
                   },
-                  procedures: [],
+                  procedures: [
+                    {
+                      id: "procedure:W1N1:economy:test:worker-1:transfer:target-1",
+                      taskId: "task:W1N1:economy:test",
+                      procedureKey: "worker-1:transfer:target-1",
+                      title: "Legacy Target-shaped Procedure",
+                    },
+                  ],
                   qi: {
                     score: 1,
                     measuredAt: 10,
@@ -97,6 +104,18 @@ describe("FSPM Activity memory migration", () => {
                   },
                 ],
               },
+              activityEvents: [
+                {
+                  id: "legacy-event",
+                  sequence: 1,
+                  tick: 10,
+                  type: "target_changed",
+                  activityId: "legacy",
+                  taskId: "task:W1N1:economy:test",
+                  actor: "worker-1",
+                },
+              ],
+              activityEventSequence: 1,
             },
           },
         },
@@ -104,14 +123,20 @@ describe("FSPM Activity memory migration", () => {
     });
   });
 
-  it("clears command-level quality evidence while preserving Task definitions", () => {
+  it("clears pre-v4 Activity evidence while preserving Task definitions", () => {
     migrateMemory();
 
-    expect(Memory.version).toBe(3);
+    expect(Memory.version).toBe(4);
     const portfolio = Memory.colonies.W1N1?.fspm;
-    expect(portfolio?.tasks["task:W1N1:economy:test"]).toBeDefined();
-    expect(portfolio?.tasks["task:W1N1:economy:test"]?.qi).toBeUndefined();
+    const task = portfolio?.tasks["task:W1N1:economy:test"];
+    expect(task).toBeDefined();
+    expect(task?.qi).toBeUndefined();
+    expect(task?.procedures).toEqual([]);
     expect(portfolio?.activities).toEqual({});
     expect(portfolio?.activityKpiHistory).toEqual({});
+    expect((portfolio as typeof portfolio & { activityEvents?: unknown[] })?.activityEvents).toEqual([]);
+    expect(
+      (portfolio as typeof portfolio & { activityEventSequence?: number })?.activityEventSequence,
+    ).toBe(0);
   });
 });

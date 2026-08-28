@@ -2,7 +2,17 @@ import type { ArbitrationRejection } from "../intents/arbitrate";
 import type { Intent, IntentTrace } from "../intents/types";
 import { writeObservabilitySegment } from "../memory/segments";
 import type { MovementMetrics } from "../movement/traffic";
-import { activityContinuityRatio } from "../planning/activity-lifecycle";
+import {
+  activityContinuityRatio,
+  activityTimeToFirstProductiveWork,
+  activityWorkConversionRatio,
+  fspmActivityEvents,
+  type FspmActivityEvent,
+  type FspmActivityOutcome,
+  type FspmAssignmentEvidence,
+  type FspmAssignmentState,
+  type FspmProcedureHistoryEntry,
+} from "../planning/activity-lifecycle";
 import type {
   ColonyDeliverable,
   ColonyRequirement,
@@ -91,19 +101,35 @@ interface CompactTask extends CompactFspmRecord {
   recentActivities: FspmActivityKpiSample[];
 }
 
+interface ActivityWithEvidence extends FspmActivityRecord {
+  currentTargetKey?: string;
+  currentDisposition?: FspmAssignmentState;
+  procedureHistory?: FspmProcedureHistoryEntry[];
+  outcome?: FspmActivityOutcome;
+  kpiEvidence?: string;
+}
+
 interface CompactActivity {
   id: string;
   taskId: string;
   assignee: string;
   status: FspmActivityRecord["status"];
   currentProcedureId: string;
+  currentTargetKey: string | null;
+  currentDisposition: FspmAssignmentState | null;
   createdAt: number;
   startedAt: number | null;
   updatedAt: number;
   completedAt: number | null;
+  timeToCompletion: number | null;
+  timeToFirstProductiveWork: number | null;
   kpiScore: FspmActivityRecord["kpiScore"] | null;
+  kpiEvidence: string | null;
   continuityRatio: number | null;
-  metrics: FspmActivityRecord["metrics"];
+  workConversionRatio: number | null;
+  outcome: FspmActivityOutcome | null;
+  procedureHistory: FspmProcedureHistoryEntry[];
+  metrics: Record<string, number | undefined>;
   holdReason: string | null;
 }
 
@@ -122,6 +148,7 @@ interface FspmTraceSummary {
   deliverables: CompactDeliverable[];
   tasks: CompactTask[];
   activities: CompactActivity[];
+  activityEvents: FspmActivityEvent[];
 }
 
 export interface TickObservabilityTrace {
@@ -140,7 +167,10 @@ export interface TickObservabilityTrace {
     total: number;
   };
   settlement: { plans: RoomPlanTraceSummary[] };
-  fspm: { colonies: FspmTraceSummary[] };
+  fspm: {
+    colonies: FspmTraceSummary[];
+    assignments: FspmAssignmentEvidence[];
+  };
   spatial: SpatialIndexMetrics;
   movement: MovementMetrics;
   intents: {
@@ -167,11 +197,13 @@ export interface PublishTickTraceInput {
   movement: MovementMetrics;
   accepted: Intent[];
   rejected: ArbitrationRejection[];
+  assignments: FspmAssignmentEvidence[];
   plannerByIntent: Map<Intent, PlannerName>;
   conflictKey: (intent: Intent) => string;
 }
 
 const SAMPLE_LIMIT = 24;
+const EVENT_LIMIT = 96;
 const roundCpu = (value: number): number => Math.round(value * 1000) / 1000;
 
 function actorOf(intent: Intent): string {
@@ -245,21 +277,35 @@ const compactRecord = (record: { id: string; title: string; status: FspmStatus; 
   } } : {}),
 });
 
-const compactActivity = (activity: FspmActivityRecord): CompactActivity => ({
-  id: activity.id,
-  taskId: activity.taskId,
-  assignee: activity.assignee,
-  status: activity.status,
-  currentProcedureId: activity.currentProcedureId,
-  createdAt: activity.createdAt,
-  startedAt: activity.startedAt ?? null,
-  updatedAt: activity.updatedAt,
-  completedAt: activity.completedAt ?? null,
-  kpiScore: activity.kpiScore ?? null,
-  continuityRatio: activityContinuityRatio(activity),
-  metrics: { ...activity.metrics },
-  holdReason: activity.holdReason ?? null,
-});
+const compactActivity = (activity: FspmActivityRecord): CompactActivity => {
+  const evidence = activity as ActivityWithEvidence;
+  return {
+    id: activity.id,
+    taskId: activity.taskId,
+    assignee: activity.assignee,
+    status: activity.status,
+    currentProcedureId: activity.currentProcedureId,
+    currentTargetKey: evidence.currentTargetKey ?? null,
+    currentDisposition: evidence.currentDisposition ?? null,
+    createdAt: activity.createdAt,
+    startedAt: activity.startedAt ?? null,
+    updatedAt: activity.updatedAt,
+    completedAt: activity.completedAt ?? null,
+    timeToCompletion:
+      activity.startedAt !== undefined && activity.completedAt !== undefined
+        ? Math.max(0, activity.completedAt - activity.startedAt)
+        : null,
+    timeToFirstProductiveWork: activityTimeToFirstProductiveWork(activity),
+    kpiScore: activity.kpiScore ?? null,
+    kpiEvidence: evidence.kpiEvidence ?? null,
+    continuityRatio: activityContinuityRatio(activity),
+    workConversionRatio: activityWorkConversionRatio(activity),
+    outcome: evidence.outcome ? { ...evidence.outcome } : null,
+    procedureHistory: (evidence.procedureHistory ?? []).map((entry) => ({ ...entry })),
+    metrics: { ...activity.metrics },
+    holdReason: activity.holdReason ?? null,
+  };
+};
 
 function fspmSummaries(): FspmTraceSummary[] {
   return Object.values(Memory.colonies)
@@ -304,6 +350,7 @@ function fspmSummaries(): FspmTraceSummary[] {
         activities: Object.values(portfolio.activities ?? {})
           .map(compactActivity)
           .sort((a, b) => a.assignee.localeCompare(b.assignee) || a.createdAt - b.createdAt || a.id.localeCompare(b.id)),
+        activityEvents: fspmActivityEvents(portfolio).slice(-EVENT_LIMIT).map((event) => ({ ...event })),
       }];
     })
     .sort((a, b) => a.roomName.localeCompare(b.roomName));
@@ -336,7 +383,10 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
       total: 0,
     },
     settlement: { plans: roomPlanSummaries() },
-    fspm: { colonies: fspmSummaries() },
+    fspm: {
+      colonies: fspmSummaries(),
+      assignments: input.assignments.map((assignment) => ({ ...assignment })),
+    },
     spatial: { ...input.spatial },
     movement: { ...input.movement },
     intents: {
