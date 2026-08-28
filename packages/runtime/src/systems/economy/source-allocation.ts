@@ -3,11 +3,11 @@ export interface SourceCoverage<TSourceId extends string = string> {
   assignedWork: number;
 }
 
-export interface ProducerCandidate<TSourceId extends string = string> {
+export interface ProducerCandidate {
   name: string;
   work: number;
   rangeBySource: Record<string, number>;
-  preferredSourceId?: TSourceId;
+  preferredSourceId?: string | undefined;
 }
 
 export interface RecoveryHarvesterCandidate {
@@ -16,10 +16,10 @@ export interface RecoveryHarvesterCandidate {
   rangeBySource: Record<string, number>;
 }
 
-function compareForSource<TSourceId extends string>(
-  sourceId: TSourceId,
-  left: ProducerCandidate<TSourceId>,
-  right: ProducerCandidate<TSourceId>,
+function compareForSource(
+  sourceId: string,
+  left: ProducerCandidate,
+  right: ProducerCandidate,
 ): number {
   const workDifference = right.work - left.work;
   if (workDifference !== 0) return workDifference;
@@ -32,21 +32,19 @@ function compareForSource<TSourceId extends string>(
 
 export function assignSourceProducers<TSourceId extends string>(
   sourceIds: TSourceId[],
-  candidates: ProducerCandidate<TSourceId>[],
+  candidates: ProducerCandidate[],
 ): Map<string, TSourceId> {
   const assignments = new Map<string, TSourceId>();
   const claimedSources = new Set<TSourceId>();
-  const validSources = new Set(sourceIds);
 
   // Preserve the concrete target of the current governed Activity when it is still valid.
-  // Activity continuity is authority; distance is only the fallback for unassigned capacity.
+  // The returned identity always comes from sourceIds, so stale Activity targets cannot escape
+  // this boundary as an unchecked Screeps object ID.
   for (const sourceId of sourceIds) {
     const incumbent = candidates
       .filter(
         (candidate) =>
-          !assignments.has(candidate.name) &&
-          candidate.preferredSourceId === sourceId &&
-          validSources.has(sourceId),
+          !assignments.has(candidate.name) && candidate.preferredSourceId === sourceId,
       )
       .sort((left, right) => compareForSource(sourceId, left, right))[0];
 
