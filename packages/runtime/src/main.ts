@@ -15,6 +15,7 @@ import {
   bindFspmActivities,
   reconcileFspmActivityEvidence,
 } from "./planning/activity-lifecycle";
+import { enforceRoutineControllerProgress } from "./planning/controller-policy";
 import { reconcileFspmLifecycle } from "./planning/fspm";
 import { ensureRoomPlanOwnership } from "./planning/ownership";
 import { reconcileFspmQuality } from "./planning/quality";
@@ -67,7 +68,10 @@ export const loop = (): void => {
     runPlanner("spawning", () => planSpawning(world)),
     runPlanner("construction", () => planConstruction(world)),
     runPlanner("economy", () => {
-      const primary = [...planScavenging(world), ...planEconomy(world)];
+      const primary = enforceRoutineControllerProgress([
+        ...planScavenging(world),
+        ...planEconomy(world),
+      ]);
       return [...primary, ...planSurplusLaborUtilization(world, primary)];
     }),
   ];
