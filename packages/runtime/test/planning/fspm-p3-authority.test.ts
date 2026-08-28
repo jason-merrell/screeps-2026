@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createIntentTrace } from "../../src/intents/trace";
+import { migrateMemory } from "../../src/memory/migrate";
 import {
-  ensureColonyPortfolio,
   ensureDomainHierarchy,
   type ColonyFspmPortfolio,
 } from "../../src/planning/fspm";
@@ -111,13 +111,25 @@ function installLegacyColony(): void {
 describe("FSPM colony P3 authority", () => {
   beforeEach(() => installFreshColony());
 
-  it("initializes new colony work under Portfolio authority without a synthetic contract", () => {
+  it("initializes new colony work under subordinate Portfolio authority without a synthetic contract", () => {
+    migrateMemory();
     const { portfolio, requirement } = ensureDomainHierarchy("W1N1", "spawning");
 
+    expect(Memory.empireFspm?.p3).toMatchObject({
+      id: "portfolio:empire:operations",
+      type: "portfolio",
+      subType: "ou_portfolio",
+      parentP3Id: null,
+      temporalBasis: "game_tick",
+      startTick: 100,
+    });
     expect(portfolio.p3).toMatchObject({
       id: "portfolio:colony:W1N1",
       type: "portfolio",
       subType: "ou_portfolio",
+      parentP3Id: "portfolio:empire:operations",
+      temporalBasis: "game_tick",
+      startTick: 100,
       status: "active",
     });
     expect(portfolio.program).toBeUndefined();
@@ -135,16 +147,22 @@ describe("FSPM colony P3 authority", () => {
     expect(trace.contractId).toBeUndefined();
   });
 
-  it("retires legacy Service Program authority without rewriting Activity identity", () => {
+  it("migrates and retires legacy Service Program authority without rewriting Activity identity", () => {
     installLegacyColony();
     const before = structuredClone(Memory.colonies.W1N1?.fspm?.activities?.["activity:legacy"]);
 
-    const portfolio = ensureColonyPortfolio("W1N1");
+    migrateMemory();
+    const portfolio = Memory.colonies.W1N1?.fspm;
+    if (!portfolio) throw new Error("expected migrated colony portfolio");
 
+    expect(Memory.version).toBe(6);
     expect(portfolio.p3).toMatchObject({
       id: "portfolio:colony:W1N1",
       type: "portfolio",
       subType: "ou_portfolio",
+      parentP3Id: "portfolio:empire:operations",
+      temporalBasis: "game_tick",
+      startTick: 100,
       status: "active",
     });
     expect(portfolio.program).toMatchObject({ status: "retired", retiredAt: 500 });
