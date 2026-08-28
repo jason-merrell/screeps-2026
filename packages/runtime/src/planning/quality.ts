@@ -174,6 +174,10 @@ function measureDomain(
   }
 }
 
+/**
+ * Transitional name retained for callers/tests while the former contract rollup
+ * becomes a P3 rollup. The calculation itself is authority-agnostic.
+ */
 export function rollupContractScore(scores: number[]): number | null {
   if (scores.length === 0) return null;
   return clampScore(scores.reduce((sum, score) => sum + score, 0) / scores.length);
@@ -198,12 +202,12 @@ export function reconcileFspmQuality(world: WorldSnapshot): void {
     const requirements = Object.values(portfolio.requirements).flatMap((requirement) =>
       requirement?.quality ? [requirement] : [],
     );
-    const contractScore = rollupContractScore(requirements.map((requirement) => requirement.quality!.score));
-    if (contractScore === null) continue;
+    const p3Score = rollupContractScore(requirements.map((requirement) => requirement.quality!.score));
+    if (p3Score === null) continue;
 
-    applyQuality(portfolio, portfolio.contract, {
-      score: contractScore,
-      state: qualityState(contractScore),
+    applyQuality(portfolio, portfolio.p3, {
+      score: p3Score,
+      state: qualityState(p3Score),
       measuredAt: Game.time,
       evidence: requirements
         .sort((a, b) => a.domain.localeCompare(b.domain))
