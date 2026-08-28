@@ -1,4 +1,4 @@
-import { createIntentTrace } from "../../intents/trace";
+import { createIntentTrace, infrastructureWorkKey } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import { hotTrafficTiles } from "../../movement/traffic-heatmap";
 import { plannedRoadPriority } from "../../planning/construction-priority";
@@ -13,12 +13,16 @@ const MAX_ACTIVE_ROAD_SITES_PER_ROOM = 3;
 function realizationTrace(
   roomName: string,
   procedure: "site-planned-structure" | "site-planned-road" | "site-adaptive-road",
+  x: number,
+  y: number,
+  structureType: BuildableStructureConstant,
 ) {
   return createIntentTrace({
     roomName,
     domain: "construction",
     task: "realize-planned-infrastructure",
     procedure,
+    workKey: infrastructureWorkKey(roomName, x, y, structureType),
   });
 }
 
@@ -151,7 +155,13 @@ function planRoomConstruction(room: Room): Intent[] {
       structureType: planned.structureType,
       priority: planned.priority,
       reason: `${planned.phase}: ${planned.reason}`,
-      trace: realizationTrace(room.name, "site-planned-structure"),
+      trace: realizationTrace(
+        room.name,
+        "site-planned-structure",
+        planned.x,
+        planned.y,
+        planned.structureType,
+      ),
     });
     proposedByType.set(
       planned.structureType,
@@ -180,7 +190,13 @@ function planRoomConstruction(room: Room): Intent[] {
         structureType: STRUCTURE_ROAD,
         priority: plannedRoadPriority(roomPlan, road),
         reason: `${road.phase}: logistics demand activated planned corridor`,
-        trace: realizationTrace(room.name, "site-planned-road"),
+        trace: realizationTrace(
+          room.name,
+          "site-planned-road",
+          road.x,
+          road.y,
+          STRUCTURE_ROAD,
+        ),
       });
       proposedRoadSites += 1;
     }
@@ -198,7 +214,13 @@ function planRoomConstruction(room: Room): Intent[] {
         structureType: STRUCTURE_ROAD,
         priority: 200 + Math.min(120, Math.floor(tile.score)),
         reason: `adaptive traffic: sustained movement heat ${tile.score.toFixed(1)}`,
-        trace: realizationTrace(room.name, "site-adaptive-road"),
+        trace: realizationTrace(
+          room.name,
+          "site-adaptive-road",
+          tile.x,
+          tile.y,
+          STRUCTURE_ROAD,
+        ),
       });
       proposedRoadSites += 1;
     }
