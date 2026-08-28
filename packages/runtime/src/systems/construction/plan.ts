@@ -10,6 +10,18 @@ const MAX_NEW_SITES_PER_ROOM = 3;
 const MAX_ACTIVE_SITES_PER_ROOM = 6;
 const MAX_ACTIVE_ROAD_SITES_PER_ROOM = 3;
 
+function realizationTrace(
+  roomName: string,
+  procedure: "site-planned-structure" | "site-planned-road" | "site-adaptive-road",
+) {
+  return createIntentTrace({
+    roomName,
+    domain: "construction",
+    task: "realize-planned-infrastructure",
+    procedure,
+  });
+}
+
 export function eligiblePlannedStructures(
   plan: RoomPlan,
   controllerLevel: number,
@@ -139,12 +151,7 @@ function planRoomConstruction(room: Room): Intent[] {
       structureType: planned.structureType,
       priority: planned.priority,
       reason: `${planned.phase}: ${planned.reason}`,
-      trace: createIntentTrace({
-        roomName: room.name,
-        domain: "construction",
-        task: `execute-room-plan-v${roomPlan.version}`,
-        activity: `site:${planned.id}`,
-      }),
+      trace: realizationTrace(room.name, "site-planned-structure"),
     });
     proposedByType.set(
       planned.structureType,
@@ -173,12 +180,7 @@ function planRoomConstruction(room: Room): Intent[] {
         structureType: STRUCTURE_ROAD,
         priority: plannedRoadPriority(roomPlan, road),
         reason: `${road.phase}: logistics demand activated planned corridor`,
-        trace: createIntentTrace({
-          roomName: room.name,
-          domain: "construction",
-          task: `execute-room-plan-v${roomPlan.version}`,
-          activity: `road:${road.id}`,
-        }),
+        trace: realizationTrace(room.name, "site-planned-road"),
       });
       proposedRoadSites += 1;
     }
@@ -196,12 +198,7 @@ function planRoomConstruction(room: Room): Intent[] {
         structureType: STRUCTURE_ROAD,
         priority: 200 + Math.min(120, Math.floor(tile.score)),
         reason: `adaptive traffic: sustained movement heat ${tile.score.toFixed(1)}`,
-        trace: createIntentTrace({
-          roomName: room.name,
-          domain: "construction",
-          task: `optimize-observed-traffic-v${roomPlan.version}`,
-          activity: `adaptive-road:${tile.x}:${tile.y}`,
-        }),
+        trace: realizationTrace(room.name, "site-adaptive-road"),
       });
       proposedRoadSites += 1;
     }
