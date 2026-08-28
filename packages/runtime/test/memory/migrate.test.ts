@@ -3,6 +3,9 @@ import { migrateMemory } from "../../src/memory/migrate";
 import { MEMORY_VERSION } from "../../src/memory/schema";
 import { ensureColonyPortfolio, ensureProcedure, ensureTask } from "../../src/planning/fspm";
 
+const TASK_KEY = "maintain-colony-energy-service";
+const PROCEDURE_KEY = "extract-source-energy";
+
 function installGlobals(): void {
   Object.assign(globalThis, {
     Game: { time: 100 },
@@ -22,8 +25,8 @@ describe("Memory migration", () => {
   beforeEach(() => installGlobals());
 
   it("resets contaminated v4 Activity evidence while preserving Tasks and Procedures", () => {
-    const task = ensureTask("W1N1", "economy", "produce-source-energy");
-    const procedure = ensureProcedure("W1N1", "economy", "produce-source-energy", "harvest");
+    const task = ensureTask("W1N1", "economy", TASK_KEY);
+    const procedure = ensureProcedure("W1N1", "economy", TASK_KEY, PROCEDURE_KEY);
     const portfolio = ensureColonyPortfolio("W1N1");
 
     portfolio.activities = {
