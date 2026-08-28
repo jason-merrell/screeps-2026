@@ -95,6 +95,7 @@ export function planSurplusLaborUtilization(
       .map(reservedBufferTarget)
       .filter((target): target is string => target !== undefined),
   );
+  const stagedTargets = new Set<string>();
   const buffersByRoom = new Map(
     world.rooms.map((room) => [room.name, bufferedSources(room)] as const),
   );
@@ -132,10 +133,10 @@ export function planSurplusLaborUtilization(
       continue;
     }
 
-    const unreservedBuffers = buffers.filter(
-      (node) => !reservedTargets.has(String(node.container.id)),
+    const unstagedBuffers = buffers.filter(
+      (node) => !stagedTargets.has(String(node.container.id)),
     );
-    const stagingPool = unreservedBuffers.length > 0 ? unreservedBuffers : buffers;
+    const stagingPool = unstagedBuffers.length > 0 ? unstagedBuffers : buffers;
     const stagingTarget =
       stagingPool.find((node) => node.source.energy > 0) ?? stagingPool[0];
     if (!stagingTarget) continue;
@@ -149,6 +150,7 @@ export function planSurplusLaborUtilization(
         "stage otherwise-surplus hybrid labor near a source buffer while awaiting unclaimed usable energy",
       trace: energyTrace(creep.room.name, "stage-source-transport"),
     });
+    stagedTargets.add(String(stagingTarget.container.id));
   }
 
   return intents;
