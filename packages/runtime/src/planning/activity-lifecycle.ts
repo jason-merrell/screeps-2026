@@ -28,6 +28,7 @@ export type FspmActivityEventType =
   | "procedure_entered"
   | "target_changed"
   | "activity_held"
+  | "activity_reassigned"
   | "activity_resumed"
   | "activity_completed"
   | "kpi_scored";
@@ -43,6 +44,7 @@ export interface FspmActivityEvent {
   procedureId?: string;
   targetKey?: string;
   previousTargetKey?: string;
+  previousAssignee?: string;
   reason?: string;
   kpiScore?: Exclude<FspmKpiRating, "in_progress">;
 }
@@ -309,6 +311,27 @@ function latestHeldActivityForAssignee(
   return latest;
 }
 
+function latestOrphanedHeldActivityForTaskTarget(
+  portfolio: EvidencePortfolio,
+  taskId: string,
+  targetKey: string,
+): EvidenceActivity | undefined {
+  return Object.values(portfolio.activities ?? {})
+    .filter(
+      (activity) =>
+        activity.status === "on_hold" &&
+        activity.taskId === taskId &&
+        activity.currentTargetKey === targetKey &&
+        !Game.creeps[activity.assignee],
+    )
+    .sort(
+      (a, b) =>
+        b.updatedAt - a.updatedAt ||
+        b.createdAt - a.createdAt ||
+        b.id.localeCompare(a.id),
+    )[0];
+}
+
 function resumeActivity(
   portfolio: EvidencePortfolio,
   activity: EvidenceActivity,
@@ -366,6 +389,57 @@ function holdForTaskPreemption(
     ...(activity.currentTargetKey ? { targetKey: activity.currentTargetKey } : {}),
     reason: activity.holdReason,
   });
+}
+
+function holdForMissingAssignee(
+  portfolio: EvidencePortfolio,
+  activity: EvidenceActivity,
+): void {
+  if (activity.status !== "in_progress") return;
+  activity.status = "on_hold";
+  activity.updatedAt = Game.time;
+  activity.holdReason = `assignee ${activity.assignee} is unavailable; governed work awaits reassignment`;
+  activity.currentDisposition = "on_hold";
+  activity.metrics.holdCount += 1;
+  activity.metrics.currentTravelStreak = 0;
+  appendEvent(portfolio, activity, "activity_held", {
+    procedureId: activity.currentProcedureId,
+    ...(activity.currentTargetKey ? { targetKey: activity.currentTargetKey } : {}),
+    reason: activity.holdReason,
+  });
+}
+
+function reassignActivity(
+  portfolio: EvidencePortfolio,
+  activity: EvidenceActivity,
+  intent: CreepIntent,
+  targetKey: string,
+): void {
+  const trace = intent.trace;
+  if (!trace) return;
+  const previousAssignee = activity.assignee;
+  activity.assignee = intent.creepName;
+  activity.updatedAt = Game.time;
+  appendEvent(portfolio, activity, "activity_reassigned", {
+    procedureId: trace.procedureId,
+    targetKey,
+    previousAssignee,
+    reason: `governed work reassigned from ${previousAssignee} after performer became unavailable`,
+  });
+  resumeActivity(portfolio, activity, trace.procedureId, targetKey);
+}
+
+function sweepMissingAssignees(): void {
+  for (const colony of Object.values(Memory.colonies)) {
+    const rawPortfolio = colony.fspm;
+    if (!rawPortfolio) continue;
+    const portfolio = evidencePortfolio(rawPortfolio);
+    for (const activity of Object.values(portfolio.activities ?? {})) {
+      if (activity.status !== "in_progress") continue;
+      const creep = Game.creeps[activity.assignee];
+      if (!creep || creep.spawning) holdForMissingAssignee(portfolio, activity);
+    }
+  }
 }
 
 function activityObject(activity: EvidenceActivity): RoomObject | null {
@@ -609,14 +683,28 @@ function bindCreepIntent(intent: CreepIntent): void {
     activity = assigneeActivities.find(
       (candidate) => candidate.taskId === trace.taskId && candidate.status === "on_hold",
     );
-    if (activity) resumeActivity(portfolio, activity, trace.procedureId, targetKey);
-    else activity = openActivity(portfolio, intent);
+    if (activity) {
+      resumeActivity(portfolio, activity, trace.procedureId, targetKey);
+    } else {
+      const orphaned = latestOrphanedHeldActivityForTaskTarget(
+        portfolio,
+        trace.taskId,
+        targetKey,
+      );
+      if (orphaned) {
+        activity = orphaned;
+        reassignActivity(portfolio, activity, intent, targetKey);
+      } else {
+        activity = openActivity(portfolio, intent);
+      }
+    }
   }
 
   if (activity) trace.activityId = activity.id;
 }
 
 export function bindFspmActivities(intents: Intent[]): void {
+  sweepMissingAssignees();
   sweepSatisfiedActivities();
   for (const intent of intents) {
     if (!("creepName" in intent)) continue;
@@ -739,6 +827,7 @@ export function reconcileFspmActivityEvidence(
     ? { observations: input, proposed: [], accepted: [], rejected: [] }
     : input;
 
+  sweepMissingAssignees();
   for (const colony of Object.values(Memory.colonies)) {
     const rawPortfolio = colony.fspm;
     if (!rawPortfolio) continue;
