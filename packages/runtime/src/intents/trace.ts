@@ -17,6 +17,15 @@ interface IntentTraceInput {
   workKey?: string;
 }
 
+export function infrastructureWorkKey(
+  roomName: string,
+  x: number,
+  y: number,
+  structureType: StructureConstant,
+): string {
+  return `infrastructure:${roomName}:${x}:${y}:${structureType}`;
+}
+
 function legacyProcedureKey(activity: string): string {
   const parts = activity.split(":");
   // Legacy callers encoded `<actor>:<procedure>:<target>` into `activity`.
