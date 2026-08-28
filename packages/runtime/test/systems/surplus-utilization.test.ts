@@ -15,26 +15,34 @@ vi.stubGlobal("LOOK_STRUCTURES", "structure");
 vi.stubGlobal("STRUCTURE_CONTAINER", "container");
 
 let containerEnergy = 0;
+let secondContainerEnergy = 0;
 
 function installWorld(): WorldSnapshot {
   containerEnergy = 0;
-  const source = {
-    id: "source-1",
-    energy: 3000,
-  } as unknown as Source;
-  const container = {
-    id: "container-1",
-    structureType: STRUCTURE_CONTAINER,
-    store: {
-      getUsedCapacity: () => containerEnergy,
+  secondContainerEnergy = 0;
+  const sources = [
+    { id: "source-1", energy: 3000 },
+    { id: "source-2", energy: 3000 },
+  ] as unknown as Source[];
+  const containers = [
+    {
+      id: "container-1",
+      structureType: STRUCTURE_CONTAINER,
+      store: { getUsedCapacity: () => containerEnergy },
     },
-  } as unknown as StructureContainer;
+    {
+      id: "container-2",
+      structureType: STRUCTURE_CONTAINER,
+      store: { getUsedCapacity: () => secondContainerEnergy },
+    },
+  ] as unknown as StructureContainer[];
   const room = {
     name: "W1N1",
     controller: { level: 6 },
     find: (type: FindConstant) =>
       type === FIND_MY_CREEPS ? Array.from({ length: 6 }, () => ({})) : [],
-    lookForAt: () => [container],
+    lookForAt: (_look: LookConstant, x: number) =>
+      x === 10 ? [containers[0]] : x === 20 ? [containers[1]] : [],
   } as unknown as Room;
   const creep = {
     name: "worker-1",
@@ -53,7 +61,7 @@ function installWorld(): WorldSnapshot {
   Object.assign(globalThis, {
     Game: {
       time: 100,
-      getObjectById: (id: string) => (id === "source-1" ? source : null),
+      getObjectById: (id: string) => sources.find((source) => source.id === id) ?? null,
     },
     Memory: {
       version: 5,
@@ -67,6 +75,10 @@ function installWorld(): WorldSnapshot {
                 {
                   sourceId: "source-1",
                   container: { x: 10, y: 11 },
+                },
+                {
+                  sourceId: "source-2",
+                  container: { x: 20, y: 21 },
                 },
               ],
             },
@@ -166,6 +178,19 @@ describe("surplus hybrid labor utilization", () => {
         range: 2,
         priority: 150,
       },
+    ]);
+  });
+
+  it("distributes multiple surplus performers across available staging buffers", () => {
+    const first = world.creeps[0]!;
+    world.creeps.push({ ...first, name: "worker-2" } as Creep);
+
+    const intents = planSurplusLaborUtilization(world, []);
+
+    expect(intents).toHaveLength(2);
+    expect(intents.map((intent) => ("targetId" in intent ? String(intent.targetId) : null))).toEqual([
+      "container-1",
+      "container-2",
     ]);
   });
 
