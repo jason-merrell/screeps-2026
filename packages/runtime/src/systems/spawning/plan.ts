@@ -16,10 +16,19 @@ import {
 
 interface LogisticsSpawnNeed {
   body: BodyPartConstant[];
-  task: string;
+  procedure: "staff-source-production" | "staff-transport-capacity";
   namePrefix: string;
   priority: number;
   reason: string;
+}
+
+function workforceTrace(roomName: string, procedure: string) {
+  return createIntentTrace({
+    roomName,
+    domain: "spawning",
+    task: "maintain-workforce-capacity",
+    procedure,
+  });
 }
 
 function liveSourceBufferIndices(room: Room): number[] {
@@ -65,7 +74,7 @@ function logisticsSpawnNeed(room: Room, roomCreeps: Creep[]): LogisticsSpawnNeed
   if (producerCandidates.length < bufferIndices.length) {
     return {
       body: producerBody,
-      task: "staff-source-production",
+      procedure: "staff-source-production",
       namePrefix: "producer",
       priority: 1500,
       reason: `source production coverage ${producerCandidates.length}/${bufferIndices.length}`,
@@ -94,7 +103,7 @@ function logisticsSpawnNeed(room: Room, roomCreeps: Creep[]): LogisticsSpawnNeed
   if (availableCarry < requiredCarry) {
     return {
       body: transporterBody,
-      task: "close-transport-throughput-gap",
+      procedure: "staff-transport-capacity",
       namePrefix: "transport",
       priority: 1400,
       reason: `transport throughput ${availableCarry}/${requiredCarry} CARRY parts`,
@@ -143,12 +152,7 @@ export function planSpawning(world: WorldSnapshot): Intent[] {
           name: `worker-${room.name}-${world.tick}`,
           priority: 2000,
           reason: "emergency bootstrap workforce recovery",
-          trace: createIntentTrace({
-            roomName: room.name,
-            domain: "spawning",
-            task: "recover-workforce",
-            activity: `${spawn.name}:spawn-worker`,
-          }),
+          trace: workforceTrace(room.name, "recover-emergency-workforce"),
         });
         continue;
       }
@@ -163,12 +167,7 @@ export function planSpawning(world: WorldSnapshot): Intent[] {
           name: `${logisticsNeed.namePrefix}-${room.name}-${world.tick}`,
           priority: logisticsNeed.priority,
           reason: logisticsNeed.reason,
-          trace: createIntentTrace({
-            roomName: room.name,
-            domain: "spawning",
-            task: logisticsNeed.task,
-            activity: `${spawn.name}:spawn-${logisticsNeed.namePrefix}`,
-          }),
+          trace: workforceTrace(room.name, logisticsNeed.procedure),
         });
         continue;
       }
@@ -192,12 +191,7 @@ export function planSpawning(world: WorldSnapshot): Intent[] {
         name: `worker-${room.name}-${world.tick}`,
         priority: 1200,
         reason: `workforce demand ${viable}/${desired}`,
-        trace: createIntentTrace({
-          roomName: room.name,
-          domain: "spawning",
-          task: "maintain-workforce",
-          activity: `${spawn.name}:spawn-worker`,
-        }),
+        trace: workforceTrace(room.name, "maintain-general-workforce"),
       });
     }
   }
