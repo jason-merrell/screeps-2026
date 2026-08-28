@@ -1,7 +1,7 @@
 import type { Intent } from "../intents/types";
 
 export type FspmDomain = "economy" | "spawning" | "construction" | "defense";
-export type FspmStatus = "active" | "completed" | "cancelled";
+export type FspmStatus = "active" | "completed" | "cancelled" | "retired";
 export type FspmTaskStatus = "active" | "retired";
 export type FspmActivityStatus = "not_started" | "in_progress" | "on_hold" | "completed";
 export type FspmQualityState = "healthy" | "watch" | "degraded";
@@ -181,7 +181,7 @@ const defaultKpiMetric = (taskKey: string): FspmTaskKpiRubric => ({
 
 function transitionStatus(
   record: FspmRecordBase,
-  next: Exclude<FspmStatus, "cancelled">,
+  next: "active" | "completed",
   reason: string,
 ): void {
   if (record.status === "cancelled") return;
