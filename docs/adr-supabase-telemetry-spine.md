@@ -63,15 +63,50 @@ start collection run
 
 If the collector fails after sample 8, samples 0 through 8 remain durable and queryable. The run is marked failed rather than losing the observation window.
 
-Experiment summaries are derived from persisted telemetry samples during finalization. The final experiment row is derived data, not the only durable evidence.
+Experiment summaries are derived from persisted telemetry samples during finalization. The final experiment row is derived data, not the only durable evidence. PTR benchmark history is likewise derived from the finalized experiment record inside Supabase rather than from a downloaded workflow artifact.
+
+## Supabase-owned recurring collection policy
+
+Recurring observation policy is also authoritative in Supabase.
+
+A `collection_profiles` row declares:
+
+- colony
+- collector type
+- enabled state
+- cadence
+- next due time
+- collector configuration
+
+The external worker does not decide what should be observed. On wake-up it asks the Supabase control plane for work. Supabase atomically enqueues any due collection profiles into the existing command ledger, advances each profile's next due time, and returns a claimable command.
+
+The recurring path is therefore:
+
+```text
+GitHub schedule / wake signal
+  -> ask Supabase for work
+  -> Supabase evaluates collection_profiles
+  -> Supabase enqueues due command
+  -> worker claims command
+  -> worker reads Screeps
+  -> worker publishes snapshot to Supabase
+```
+
+The GitHub cron is only a wake-up clock. Collection scope, colony, cadence, and due time live in Supabase.
 
 ## Artifact policy
 
 GitHub artifacts are fallback evidence, not the primary telemetry transport.
 
-Successful Supabase-backed experiments do not upload the full longitudinal artifact. A fallback artifact may be uploaded when persistence or execution fails so a broken telemetry pipeline remains diagnosable.
+Successful Supabase-backed experiments and observability snapshots do not upload their full telemetry payload as artifacts. A fallback artifact may be uploaded when persistence or execution fails so a broken telemetry pipeline remains diagnosable.
 
 Other legacy commands may continue using artifacts until migrated independently.
+
+## Exporter evolution
+
+Collectors must not encode a brittle allowlist of today's FSPM ontology. The versioned runtime trace is structurally bounded before publication using limits on depth, collection cardinality, object keys, string length, and finite numeric values. This preserves governed Task, Procedure, Activity, intent lineage, and future additive metrics without silently dropping them when the runtime schema evolves.
+
+The outer telemetry schema remains explicitly versioned; incompatible changes require a schema-version change rather than implicit reinterpretation.
 
 ## FSPM implications
 
@@ -97,6 +132,7 @@ Positive:
 
 - partial experiments retain evidence
 - longitudinal behavior is directly queryable
+- recurring collection policy is centralized in Supabase
 - runtime comparisons no longer require artifact downloads
 - Screeps remains outbound-isolated
 - credentials remain outside the game
@@ -104,10 +140,11 @@ Positive:
 
 Tradeoffs:
 
-- the Edge Function and schema become part of the operational control plane
+- the Edge Functions and schema are part of the operational control plane
 - payload schemas require explicit versioning and validation
+- GitHub currently remains the wake-up/execution substrate
 - retention and aggregation policy must eventually control longitudinal storage growth
 
 ## Follow-on
 
-The next step after proving experiment streaming is to make recurring collection policy Supabase-driven as well: Supabase records what collection is due, an external worker claims the work, reads Screeps, and commits samples back to the same telemetry spine.
+With the telemetry spine and recurring collection policy established, behavioral work should query Supabase directly for FSPM Activity continuity, Procedure transitions, preemptions, travel/productive ratios, and workforce assignment coverage before changing creep scheduling behavior.
