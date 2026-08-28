@@ -166,7 +166,12 @@ function appendEvent(
   portfolio: EvidencePortfolio,
   activity: EvidenceActivity,
   type: FspmActivityEventType,
-  detail: Partial<Omit<FspmActivityEvent, "id" | "sequence" | "tick" | "type" | "activityId" | "taskId" | "actor">> = {},
+  detail: Partial<
+    Omit<
+      FspmActivityEvent,
+      "id" | "sequence" | "tick" | "type" | "activityId" | "taskId" | "actor"
+    >
+  > = {},
 ): void {
   portfolio.activityEvents ??= [];
   const sequence = (portfolio.activityEventSequence ?? 0) + 1;
@@ -296,7 +301,9 @@ function latestHeldActivityForAssignee(
     const portfolio = evidencePortfolio(rawPortfolio);
     for (const activity of Object.values(portfolio.activities ?? {})) {
       if (activity.assignee !== assignee || activity.status !== "on_hold") continue;
-      if (!latest || activity.updatedAt > latest.activity.updatedAt) latest = { portfolio, activity };
+      if (!latest || activity.updatedAt > latest.activity.updatedAt) {
+        latest = { portfolio, activity };
+      }
     }
   }
   return latest;
@@ -336,7 +343,7 @@ function resumeActivity(
     appendEvent(portfolio, activity, "target_changed", {
       procedureId,
       targetKey,
-      previousTargetKey,
+      ...(previousTargetKey ? { previousTargetKey } : {}),
       reason: "resumed Task selected a different concrete target",
     });
   }
@@ -356,7 +363,7 @@ function holdForTaskPreemption(
   activity.metrics.currentTravelStreak = 0;
   appendEvent(portfolio, activity, "activity_held", {
     procedureId: activity.currentProcedureId,
-    targetKey: activity.currentTargetKey,
+    ...(activity.currentTargetKey ? { targetKey: activity.currentTargetKey } : {}),
     reason: activity.holdReason,
   });
 }
@@ -370,12 +377,19 @@ function activityObject(activity: EvidenceActivity): RoomObject | null {
 
 function sourceDepleted(activity: EvidenceActivity): boolean {
   const object = activityObject(activity);
-  return object !== null && "energy" in object && typeof object.energy === "number" && object.energy <= 0;
+  return (
+    object !== null &&
+    "energy" in object &&
+    typeof object.energy === "number" &&
+    object.energy <= 0
+  );
 }
 
 function storeDepleted(activity: EvidenceActivity): boolean {
   const object = activityObject(activity);
-  return object !== null && "store" in object && object.store.getUsedCapacity(RESOURCE_ENERGY) <= 0;
+  if (!object || !("store" in object)) return false;
+  const storeObject = object as StructureContainer | Tombstone | Ruin;
+  return storeObject.store.getUsedCapacity(RESOURCE_ENERGY) <= 0;
 }
 
 function repairedEnough(activity: EvidenceActivity): boolean {
@@ -430,7 +444,9 @@ function completionReason(
       if (activity.currentTargetKey && activityObject(activity) === null) {
         return "assigned repair target is no longer present";
       }
-      return repairedEnough(activity) ? "assigned repair target reached governed health threshold" : null;
+      return repairedEnough(activity)
+        ? "assigned repair target reached governed health threshold"
+        : null;
     default:
       return null;
   }
@@ -453,7 +469,10 @@ function scoreActivity(activity: EvidenceActivity): Exclude<FspmKpiRating, "in_p
     if (activity.outcome.actual > 0) return "satisfactory";
     return "unsatisfactory";
   }
-  if (metric(activity.metrics.productiveTicks) > 0 || metric(activity.metrics.waitTicks) > 0) {
+  if (
+    metric(activity.metrics.productiveTicks) > 0 ||
+    metric(activity.metrics.waitTicks) > 0
+  ) {
     return "satisfactory";
   }
   return "unsatisfactory";
@@ -508,13 +527,13 @@ function completeActivity(
 
   appendEvent(portfolio, activity, "activity_completed", {
     procedureId: activity.currentProcedureId,
-    targetKey: activity.currentTargetKey,
+    ...(activity.currentTargetKey ? { targetKey: activity.currentTargetKey } : {}),
     reason,
   });
   recordCompletedKpi(portfolio, activity, rating, evidence);
   appendEvent(portfolio, activity, "kpi_scored", {
     procedureId: activity.currentProcedureId,
-    targetKey: activity.currentTargetKey,
+    ...(activity.currentTargetKey ? { targetKey: activity.currentTargetKey } : {}),
     reason: evidence,
     kpiScore: rating,
   });
@@ -581,7 +600,7 @@ function bindCreepIntent(intent: CreepIntent): void {
       appendEvent(portfolio, activity, "target_changed", {
         procedureId: trace.procedureId,
         targetKey,
-        previousTargetKey,
+        ...(previousTargetKey ? { previousTargetKey } : {}),
         reason: "planner selected a different concrete target within the current Task",
       });
     }
@@ -661,7 +680,6 @@ function recordAssignmentTick(activity: EvidenceActivity, state: FspmAssignmentS
       activity.metrics.idleTicks += 1;
       break;
     case "on_hold":
-    case "traveling":
       break;
   }
 }
@@ -703,7 +721,10 @@ function classifyAssignment(
     };
   }
   if (!current && held) {
-    return { state: "on_hold", reason: held.holdReason ?? "Activity is intentionally On Hold" };
+    return {
+      state: "on_hold",
+      reason: held.holdReason ?? "Activity is intentionally On Hold",
+    };
   }
   return {
     state: "planner_unassigned",
@@ -740,7 +761,9 @@ export function reconcileFspmActivityEvidence(
   }
   const rejectedByCreep = new Map<string, ArbitrationRejection>();
   for (const rejection of context.rejected) {
-    if ("creepName" in rejection.loser) rejectedByCreep.set(rejection.loser.creepName, rejection);
+    if ("creepName" in rejection.loser) {
+      rejectedByCreep.set(rejection.loser.creepName, rejection);
+    }
   }
 
   const creeps = context.creeps ?? Object.values(Game.creeps);
@@ -790,13 +813,15 @@ export function activityContinuityRatio(activity: FspmActivityRecord): number | 
   const evidence = activity as EvidenceActivity;
   const elapsed = evidence.metrics.inProgressTicks + evidence.metrics.onHoldTicks;
   if (elapsed <= 0) return null;
-  return Math.round(
-    ((evidence.metrics.productiveTicks +
-      evidence.metrics.travelTicks +
-      metric(evidence.metrics.waitTicks)) /
-      elapsed) *
-      1000,
-  ) / 1000;
+  return (
+    Math.round(
+      ((evidence.metrics.productiveTicks +
+        evidence.metrics.travelTicks +
+        metric(evidence.metrics.waitTicks)) /
+        elapsed) *
+        1000,
+    ) / 1000
+  );
 }
 
 export function activityWorkConversionRatio(activity: FspmActivityRecord): number | null {
