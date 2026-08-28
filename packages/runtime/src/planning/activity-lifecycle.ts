@@ -458,7 +458,7 @@ function recordTargetTransition(
     appendEvent(portfolio, activity, "target_advanced", {
       procedureId: activity.currentProcedureId,
       targetKey,
-      previousTargetKey,
+      previousTargetKey: previousTargetKey ?? targetKey,
       reason: `previous target satisfied before same-Procedure progression; ${reason}`,
     });
     return;
