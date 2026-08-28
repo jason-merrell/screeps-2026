@@ -24,7 +24,7 @@ function installGlobals(): void {
 describe("Memory migration", () => {
   beforeEach(() => installGlobals());
 
-  it("resets contaminated v4 Activity evidence while preserving Tasks and Procedures", () => {
+  it("resets contaminated v4 Activity evidence while preserving canonical Tasks and Procedures", () => {
     const task = ensureTask("W1N1", "economy", TASK_KEY);
     const procedure = ensureProcedure("W1N1", "economy", TASK_KEY, PROCEDURE_KEY);
     const portfolio = ensureColonyPortfolio("W1N1");
@@ -95,6 +95,15 @@ describe("Memory migration", () => {
     expect(evidencePortfolio.activityEvents).toEqual([]);
     expect(evidencePortfolio.activityEventSequence).toBe(0);
     expect(portfolio.tasks[task.id]?.qi).toBeUndefined();
-    expect(portfolio.tasks[task.id]?.procedures).toEqual([procedure]);
+    expect(portfolio.tasks[task.id]?.procedures).toContainEqual(procedure);
+    expect(portfolio.tasks[task.id]?.procedures.map((entry) => entry.procedureKey)).toEqual([
+      "extract-source-energy",
+      "buffer-source-energy",
+      "withdraw-buffered-energy",
+      "recover-salvage-energy",
+      "stage-source-transport",
+      "park-surplus-transport",
+      "fund-workforce-energy",
+    ]);
   });
 });
