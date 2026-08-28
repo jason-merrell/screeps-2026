@@ -236,7 +236,7 @@ describe("RawMemory observability retention", () => {
     });
   });
 
-  it("fits an oversized trace into a valid bounded transport payload", () => {
+  it("fits an oversized trace into a valid bounded transport payload with cumulative loss accounting", () => {
     const source = oversizedTrace();
     expect(source.length).toBeGreaterThan(OBSERVABILITY_SEGMENT_TARGET_CHARS);
 
@@ -245,9 +245,19 @@ describe("RawMemory observability retention", () => {
     const colony = parsed.fspm.colonies[0];
 
     expect(fitted.length).toBeLessThanOrEqual(OBSERVABILITY_SEGMENT_TARGET_CHARS);
+    expect(parsed.transport.omittedActivities).toBeGreaterThanOrEqual(60);
+    expect(parsed.transport.omittedCompletedActivities).toBe(parsed.transport.omittedActivities);
+    expect(parsed.transport.omittedEvents).toBeGreaterThanOrEqual(184);
+
     if (colony) {
       expect(colony.activities.length).toBeLessThanOrEqual(FSPM_ACTIVITY_TRACE_LIMIT);
       expect(colony.activityEvents.length).toBeLessThanOrEqual(FSPM_EVENT_TRACE_LIMIT);
+      if (parsed.transport.compacted) {
+        expect(colony.activities.length).toBeLessThanOrEqual(24);
+        expect(colony.activityEvents.length).toBeLessThanOrEqual(8);
+        expect(parsed.transport.omittedActivities).toBe(76);
+        expect(parsed.transport.omittedEvents).toBe(192);
+      }
     } else {
       expect(parsed.transport?.truncated).toBe(true);
     }
