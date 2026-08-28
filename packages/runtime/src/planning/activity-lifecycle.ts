@@ -545,7 +545,7 @@ function sweepSatisfiedActivities(): void {
     if (!rawPortfolio) continue;
     const portfolio = evidencePortfolio(rawPortfolio);
     for (const activity of Object.values(portfolio.activities ?? {})) {
-      if (activity.status === "completed") continue;
+      if (activity.status !== "in_progress") continue;
       const creep = Game.creeps[activity.assignee];
       if (!creep || creep.spawning) continue;
       const reason = completionReason(portfolio, activity, creep);
