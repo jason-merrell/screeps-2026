@@ -49,6 +49,27 @@ export function migrateMemory(): void {
     memory.version = 4;
   }
 
+  if (memory.version === 4) {
+    for (const colony of Object.values(memory.colonies ?? {})) {
+      const portfolio = colony.fspm;
+      if (!portfolio) continue;
+
+      // v4 could close an On Hold Activity from unrelated assignee state, which
+      // contaminated Activity outcomes, KPI closeouts, and Task QI. Preserve the
+      // governed hierarchy and Procedure definitions, but restart causal evidence.
+      portfolio.activities = {};
+      portfolio.activityKpiHistory = {};
+      const evidencePortfolio = portfolio as typeof portfolio & {
+        activityEvents?: unknown[];
+        activityEventSequence?: number;
+      };
+      evidencePortfolio.activityEvents = [];
+      evidencePortfolio.activityEventSequence = 0;
+      for (const task of Object.values(portfolio.tasks)) delete task.qi;
+    }
+    memory.version = 5;
+  }
+
   if (memory.version !== MEMORY_VERSION) {
     throw new Error(`Unsupported Memory version ${memory.version}; expected ${MEMORY_VERSION}`);
   }

@@ -44,7 +44,7 @@ function installGlobals(time = 100): void {
       getObjectById: (id: string) => objectById.get(id) ?? null,
     },
     Memory: {
-      version: 4,
+      version: 5,
       colonies: {
         W1N1: {
           roomName: "W1N1",
@@ -163,6 +163,39 @@ describe("FSPM Activity lifecycle", () => {
       metrics: { holdCount: 1, taskPreemptions: 1 },
     });
     expect(current?.status).toBe("in_progress");
+  });
+
+  it("does not close held collection work when another Activity fills the assignee", () => {
+    const heldWork = intent("produce-source-energy", "harvest", "source-1");
+    objectById.set("source-1", { energy: 300 } as unknown as RoomObject);
+    bindFspmActivities([heldWork]);
+    const heldActivityId = heldWork.trace?.activityId;
+    const heldTaskId = heldWork.trace?.taskId;
+
+    Game.time = 101;
+    const currentWork = intent("maintain-energy-flow", "harvest", "source-2");
+    objectById.set("source-2", { energy: 300 } as unknown as RoomObject);
+    bindFspmActivities([currentWork]);
+    const currentActivityId = currentWork.trace?.activityId;
+
+    creepEnergy = creepCapacity;
+    Game.time = 102;
+    bindFspmActivities([]);
+
+    const portfolio = ensureColonyPortfolio("W1N1");
+    const held = activities().find((activity) => activity.id === heldActivityId);
+    const current = activities().find((activity) => activity.id === currentActivityId);
+
+    expect(held).toMatchObject({ status: "on_hold" });
+    expect(held?.completedAt).toBeUndefined();
+    expect(held?.kpiScore).toBeUndefined();
+    expect(current).toMatchObject({ status: "completed", completedAt: 102 });
+    expect(portfolio.activityKpiHistory?.[heldTaskId ?? ""]).toBeUndefined();
+    expect(
+      fspmActivityEvents(portfolio).filter(
+        (event) => event.activityId === heldActivityId && event.type === "activity_completed",
+      ),
+    ).toHaveLength(0);
   });
 
   it("resumes the same held Activity when its Task becomes current again", () => {
