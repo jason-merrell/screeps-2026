@@ -10,22 +10,29 @@ import {
   writeObservabilitySegment,
 } from "../../src/memory/segments";
 
-const activity = (index: number, status: "completed" | "in_progress" = "completed") => ({
+type TestActivityStatus = "completed" | "in_progress" | "on_hold";
+
+const activity = (
+  index: number,
+  status: TestActivityStatus = "completed",
+  updatedAt = index,
+) => ({
   id: `activity-${index}`,
   taskId: "task:test",
   assignee: `worker-${index % 4}`,
   status,
   currentProcedureId: "procedure:test",
   createdAt: index,
-  updatedAt: index,
-  ...(status === "completed" ? { completedAt: index } : {}),
+  updatedAt,
+  ...(status === "completed" ? { completedAt: updatedAt } : {}),
+  ...(status === "on_hold" ? { holdReason: "test held work" } : {}),
   metrics: {
     inProgressTicks: index,
-    onHoldTicks: 0,
+    onHoldTicks: status === "on_hold" ? index : 0,
     productiveTicks: 1,
     travelTicks: index,
     idleTicks: 0,
-    holdCount: 0,
+    holdCount: status === "on_hold" ? 1 : 0,
     resumeCount: 0,
     taskPreemptions: 0,
     procedureTransitions: 0,
@@ -130,6 +137,58 @@ function oversizedTrace(): string {
   });
 }
 
+function heldBacklogTrace(): string {
+  const inProgress = Array.from({ length: 3 }, (_, index) =>
+    activity(1_000 + index, "in_progress", 20_000 + index),
+  );
+  const onHold = Array.from({ length: 50 }, (_, index) =>
+    activity(2_000 + index, "on_hold", 10_000 + index),
+  );
+  const completed = Array.from({ length: 10 }, (_, index) =>
+    activity(3_000 + index, "completed", 15_000 + index),
+  );
+
+  return JSON.stringify({
+    version: 1,
+    tick: 25_000,
+    cpu: { limit: 20, bucket: 10_000 },
+    settlement: { plans: [] },
+    fspm: {
+      colonies: [
+        {
+          roomName: "W1N1",
+          contractHistory: [],
+          tasks: [],
+          activities: [...completed, ...onHold, ...inProgress],
+          activityEvents: [],
+        },
+      ],
+      assignments: inProgress.map((row) => ({
+        tick: 25_000,
+        assignee: row.assignee,
+        state: "executing",
+        activityId: row.id,
+        taskId: row.taskId,
+        procedureId: row.currentProcedureId,
+        targetKey: null,
+        reason: "test live work",
+      })),
+    },
+    spatial: {},
+    movement: {},
+    intents: {
+      proposed: 3,
+      accepted: 3,
+      rejected: 0,
+      proposedByPlanner: {},
+      proposedByType: {},
+      acceptedByType: {},
+      acceptedSample: [],
+      rejectedSample: [],
+    },
+  });
+}
+
 describe("RawMemory observability retention", () => {
   beforeEach(() => installGlobals());
 
@@ -143,6 +202,38 @@ describe("RawMemory observability retention", () => {
     expect(activities["activity-71"]?.status).toBe("in_progress");
     expect(activities["activity-0"]).toBeUndefined();
     expect(activities["activity-8"]).toBeDefined();
+  });
+
+  it("bounds held backlog while preserving all current work and freshest resumable evidence", () => {
+    const fitted = fitObservabilityPayload(heldBacklogTrace());
+    const parsed = JSON.parse(fitted);
+    const retained = parsed.fspm.colonies[0].activities;
+    const retainedIds = new Set(retained.map((row: { id: string }) => row.id));
+
+    expect(retained).toHaveLength(FSPM_ACTIVITY_TRACE_LIMIT);
+    expect(retained.filter((row: { status: string }) => row.status === "in_progress")).toHaveLength(3);
+    expect(retained.filter((row: { status: string }) => row.status === "on_hold")).toHaveLength(37);
+    expect(retained.filter((row: { status: string }) => row.status === "completed")).toHaveLength(0);
+
+    for (let index = 0; index < 3; index += 1) {
+      expect(retainedIds.has(`activity-${1_000 + index}`)).toBe(true);
+    }
+    for (let index = 13; index < 50; index += 1) {
+      expect(retainedIds.has(`activity-${2_000 + index}`)).toBe(true);
+    }
+    for (let index = 0; index < 13; index += 1) {
+      expect(retainedIds.has(`activity-${2_000 + index}`)).toBe(false);
+    }
+
+    expect(parsed.transport).toMatchObject({
+      activityRetentionVersion: 2,
+      activityTraceLimit: FSPM_ACTIVITY_TRACE_LIMIT,
+      omittedActivities: 23,
+      omittedInProgressActivities: 0,
+      omittedOnHoldActivities: 13,
+      omittedOtherNonterminalActivities: 0,
+      omittedCompletedActivities: 10,
+    });
   });
 
   it("fits an oversized trace into a valid bounded transport payload", () => {
