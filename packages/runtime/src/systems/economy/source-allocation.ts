@@ -3,10 +3,73 @@ export interface SourceCoverage<TSourceId extends string = string> {
   assignedWork: number;
 }
 
+export interface ProducerCandidate<TSourceId extends string = string> {
+  name: string;
+  work: number;
+  rangeBySource: Record<string, number>;
+  preferredSourceId?: TSourceId;
+}
+
 export interface RecoveryHarvesterCandidate {
   name: string;
   work: number;
   rangeBySource: Record<string, number>;
+}
+
+function compareForSource<TSourceId extends string>(
+  sourceId: TSourceId,
+  left: ProducerCandidate<TSourceId>,
+  right: ProducerCandidate<TSourceId>,
+): number {
+  const workDifference = right.work - left.work;
+  if (workDifference !== 0) return workDifference;
+
+  const rangeDifference =
+    (left.rangeBySource[sourceId] ?? Number.MAX_SAFE_INTEGER) -
+    (right.rangeBySource[sourceId] ?? Number.MAX_SAFE_INTEGER);
+  return rangeDifference || left.name.localeCompare(right.name);
+}
+
+export function assignSourceProducers<TSourceId extends string>(
+  sourceIds: TSourceId[],
+  candidates: ProducerCandidate<TSourceId>[],
+): Map<string, TSourceId> {
+  const assignments = new Map<string, TSourceId>();
+  const claimedSources = new Set<TSourceId>();
+  const validSources = new Set(sourceIds);
+
+  // Preserve the concrete target of the current governed Activity when it is still valid.
+  // Activity continuity is authority; distance is only the fallback for unassigned capacity.
+  for (const sourceId of sourceIds) {
+    const incumbent = candidates
+      .filter(
+        (candidate) =>
+          !assignments.has(candidate.name) &&
+          candidate.preferredSourceId === sourceId &&
+          validSources.has(sourceId),
+      )
+      .sort((left, right) => compareForSource(sourceId, left, right))[0];
+
+    if (!incumbent) continue;
+    assignments.set(incumbent.name, sourceId);
+    claimedSources.add(sourceId);
+  }
+
+  // Fill uncovered sources using the pre-existing deterministic work/range/name policy.
+  for (const sourceId of sourceIds) {
+    if (claimedSources.has(sourceId)) continue;
+
+    const available = candidates
+      .filter((candidate) => !assignments.has(candidate.name))
+      .sort((left, right) => compareForSource(sourceId, left, right));
+    const producer = available[0];
+    if (!producer) continue;
+
+    assignments.set(producer.name, sourceId);
+    claimedSources.add(sourceId);
+  }
+
+  return assignments;
 }
 
 export function assignRecoveryHarvesters<TSourceId extends string>(
