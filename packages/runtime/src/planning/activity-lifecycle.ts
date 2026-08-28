@@ -247,6 +247,30 @@ function enterProcedure(
   });
 }
 
+function startActivity(
+  portfolio: EvidencePortfolio,
+  activity: EvidenceActivity,
+  procedureId: string,
+  targetKey: string,
+): void {
+  if (activity.status !== "not_started") return;
+  activity.status = "in_progress";
+  activity.startedAt = Game.time;
+  activity.updatedAt = Game.time;
+  appendEvent(portfolio, activity, "activity_started", {
+    procedureId,
+    targetKey,
+    reason: "Activity transitioned from Not Started to In Progress when the Assignee commenced governed work",
+  });
+  enterProcedure(
+    portfolio,
+    activity,
+    procedureId,
+    targetKey,
+    "initial Task Procedure",
+  );
+}
+
 function openActivity(
   portfolio: EvidencePortfolio,
   intent: Intent,
@@ -264,7 +288,7 @@ function openActivity(
     id,
     taskId: task.id,
     assignee,
-    status: "in_progress",
+    status: "not_started",
     currentProcedureId: trace.procedureId,
     currentTargetKey: targetKey,
     ...(trace.workKey ? { workKey: trace.workKey } : {}),
@@ -273,7 +297,6 @@ function openActivity(
     kpiMetric: { ...task.kpiMetric },
     createdAt: Game.time,
     updatedAt: Game.time,
-    startedAt: Game.time,
     procedureHistory: [],
     metrics: newMetrics(),
   };
@@ -281,20 +304,9 @@ function openActivity(
   appendEvent(portfolio, activity, "activity_opened", {
     procedureId: trace.procedureId,
     targetKey,
-    reason: intent.reason,
+    reason: `${intent.reason}; Activity created in governed Not Started state`,
   });
-  appendEvent(portfolio, activity, "activity_started", {
-    procedureId: trace.procedureId,
-    targetKey,
-    reason: "assignee began governed Task execution",
-  });
-  enterProcedure(
-    portfolio,
-    activity,
-    trace.procedureId,
-    targetKey,
-    "initial Task Procedure",
-  );
+  startActivity(portfolio, activity, trace.procedureId, targetKey);
   return activity;
 }
 
