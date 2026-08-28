@@ -26,8 +26,8 @@ export function planDefense(world: WorldSnapshot): Intent[] {
         trace: createIntentTrace({
           roomName: room.name,
           domain: "defense",
-          task: "repel-hostiles",
-          activity: `${tower.id}:attack:${target.id}`,
+          task: "maintain-defensive-readiness",
+          procedure: "repel-hostile",
         }),
       });
     }
