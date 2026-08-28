@@ -89,7 +89,17 @@ describe("Memory migration", () => {
     migrateMemory();
 
     expect(Memory.version).toBe(MEMORY_VERSION);
-    expect(Memory.version).toBe(5);
+    expect(Memory.version).toBe(6);
+    expect(Memory.empireFspm?.p3).toMatchObject({
+      id: "portfolio:empire:operations",
+      parentP3Id: null,
+      startTick: 1,
+    });
+    expect(portfolio.p3).toMatchObject({
+      id: "portfolio:colony:W1N1",
+      parentP3Id: "portfolio:empire:operations",
+      startTick: 1,
+    });
     expect(portfolio.activities).toEqual({});
     expect(portfolio.activityKpiHistory).toEqual({});
     expect(evidencePortfolio.activityEvents).toEqual([]);
