@@ -80,7 +80,8 @@ interface CompactFspmRecord {
 }
 
 interface CompactRequirement extends CompactFspmRecord {
-  contractId: string;
+  p3Id: string;
+  contractId?: string;
   domain: ColonyRequirement["domain"];
 }
 
@@ -135,6 +136,15 @@ interface CompactActivity {
 
 interface FspmTraceSummary {
   roomName: string;
+  p3: {
+    id: string;
+    type: "portfolio";
+    subType: "ou_portfolio";
+    title: string;
+    status: FspmStatus;
+    quality?: CompactFspmQuality;
+  };
+  /** Legacy pre-migration Service Program evidence. */
   program: {
     id: string;
     type: "program";
@@ -142,7 +152,9 @@ interface FspmTraceSummary {
     title: string;
     status: FspmStatus;
   } | null;
-  contract: CompactFspmRecord;
+  /** Legacy synthetic contract evidence. */
+  contract: CompactFspmRecord | null;
+  p3History: FspmQualitySample[];
   contractHistory: FspmQualitySample[];
   requirements: CompactRequirement[];
   deliverables: CompactDeliverable[];
@@ -321,6 +333,11 @@ function fspmSummaries(): FspmTraceSummary[] {
       if (!portfolio) return [];
       return [{
         roomName: colony.roomName,
+        p3: {
+          ...compactRecord(portfolio.p3),
+          type: portfolio.p3.type,
+          subType: portfolio.p3.subType,
+        },
         program: portfolio.program ? {
           id: portfolio.program.id,
           type: portfolio.program.type,
@@ -328,10 +345,18 @@ function fspmSummaries(): FspmTraceSummary[] {
           title: portfolio.program.title,
           status: portfolio.program.status,
         } : null,
-        contract: compactRecord(portfolio.contract),
-        contractHistory: (portfolio.qualityHistory?.[portfolio.contract.id] ?? []).slice(-12).map((sample) => ({ ...sample })),
+        contract: portfolio.contract ? compactRecord(portfolio.contract) : null,
+        p3History: (portfolio.qualityHistory?.[portfolio.p3.id] ?? []).slice(-12).map((sample) => ({ ...sample })),
+        contractHistory: portfolio.contract
+          ? (portfolio.qualityHistory?.[portfolio.contract.id] ?? []).slice(-12).map((sample) => ({ ...sample }))
+          : [],
         requirements: Object.values(portfolio.requirements)
-          .flatMap((record) => record ? [{ ...compactRecord(record), contractId: record.contractId, domain: record.domain }] : [])
+          .flatMap((record) => record ? [{
+            ...compactRecord(record),
+            p3Id: record.p3Id,
+            ...(record.contractId ? { contractId: record.contractId } : {}),
+            domain: record.domain,
+          }] : [])
           .sort((a, b) => a.id.localeCompare(b.id)),
         deliverables: Object.values(portfolio.deliverables)
           .flatMap((record) => record ? [{ ...compactRecord(record), requirementId: record.requirementId, domain: record.domain }] : [])
