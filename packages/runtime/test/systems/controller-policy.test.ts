@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD,
+  controllerMaintenanceSatisfied,
   controllerSpendMode,
   selectControllerMaintenanceAssignee,
-} from "../../src/systems/economy/controller-policy";
+} from "../../src/planning/controller-policy";
 
 describe("controller spend policy", () => {
   it("keeps normal room progression active below RCL8", () => {
@@ -36,5 +37,16 @@ describe("controller spend policy", () => {
         { name: "empty", work: 1, energy: 0, range: 1 },
       ]),
     ).toBe("worker-a");
+  });
+
+  it("completes maintenance from the controller safety outcome, not creep carry state", () => {
+    const controller = {
+      level: 8,
+      ticksToDowngrade: RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD - 1,
+    } as StructureController;
+
+    expect(controllerMaintenanceSatisfied(controller)).toBe(false);
+    controller.ticksToDowngrade = RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD;
+    expect(controllerMaintenanceSatisfied(controller)).toBe(true);
   });
 });
