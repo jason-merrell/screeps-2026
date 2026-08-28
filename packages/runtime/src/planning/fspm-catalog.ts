@@ -56,15 +56,15 @@ export const FSPM_TASK_CATALOG = [
     qualityDescription:
       "The colony has a continuous usable energy service from owned sources and recoverable stores to operational consumers, with source edges kept productive and transport capacity used without avoidable contention.",
     qualityMetric:
-      "Each completed energy-service Activity must contain productive energy work, complete its governed collection-to-delivery or producer-to-buffer cycle without a non-transit execution error, and avoid target changes within the same Procedure. Exceptional performance additionally converts at least 75% of productive/travel/blocked/arbitration/assignment-gap execution ticks into productive work across a multi-step cycle.",
+      "Each completed energy-service Activity must contain productive energy work, complete its governed collection-to-delivery or producer-to-buffer cycle without a non-transit execution error, and avoid unjustified target changes within a Procedure. Same-Procedure progression to another concrete target is allowed only when the previous target is already satisfied, such as a depleted source/store or a funded consumer. Exceptional performance additionally converts at least 75% of productive/travel/blocked/arbitration/assignment-gap execution ticks into productive work across a multi-step cycle.",
     kpiMetric: {
       metric: "Energy service cycle continuity and useful-work conversion",
       exceptional:
-        "Completed cycle has productive work, zero blocked ticks, zero same-Procedure retargets, at least one governed Procedure transition, and work-conversion ratio >= 0.75",
+        "Completed cycle has productive work, zero blocked ticks, zero unsatisfied-target retargets, at least one governed Procedure transition, and work-conversion ratio >= 0.75",
       satisfactory:
-        "Completed cycle has productive work, zero blocked ticks, and no same-Procedure target retargeting",
+        "Completed cycle has productive work, zero blocked ticks, and no retarget away from an unsatisfied target; satisfied-target progression is permitted",
       unsatisfactory:
-        "Cycle completes without productive work, experiences blocked execution, or retargets within a Procedure",
+        "Cycle completes without productive work, experiences blocked execution, or abandons an unsatisfied target within a Procedure",
     },
     procedures: [
       { key: "extract-source-energy", title: "Extract Source Energy" },
@@ -181,7 +181,7 @@ export const FSPM_TASK_CATALOG = [
       metric: "Infrastructure health restoration quality",
       exceptional:
         "Target reaches the governed health threshold with productive repair work, zero blocked ticks, and work-conversion ratio >= 0.60",
-      satisfactory: "Target reaches the governed health threshold with productive repair work and zero blocked ticks",
+      satisfactory: "Target reaches the governed health threshold with productive repair work and zero blocked execution",
       unsatisfactory: "Target is not restored to the governed threshold or execution is materially blocked",
     },
     procedures: [{ key: "repair-infrastructure", title: "Repair Infrastructure" }],
