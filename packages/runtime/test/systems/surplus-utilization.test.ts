@@ -10,6 +10,7 @@ vi.stubGlobal("RANGED_ATTACK", "ranged_attack");
 vi.stubGlobal("HEAL", "heal");
 vi.stubGlobal("CLAIM", "claim");
 vi.stubGlobal("RESOURCE_ENERGY", "energy");
+vi.stubGlobal("FIND_MY_CREEPS", "my_creeps");
 vi.stubGlobal("LOOK_STRUCTURES", "structure");
 vi.stubGlobal("STRUCTURE_CONTAINER", "container");
 
@@ -30,6 +31,9 @@ function installWorld(): WorldSnapshot {
   } as unknown as StructureContainer;
   const room = {
     name: "W1N1",
+    controller: { level: 6 },
+    find: (type: FindConstant) =>
+      type === FIND_MY_CREEPS ? Array.from({ length: 6 }, () => ({})) : [],
     lookForAt: () => [container],
   } as unknown as Room;
   const creep = {
@@ -139,5 +143,11 @@ describe("surplus hybrid labor utilization", () => {
     ];
 
     expect(planSurplusLaborUtilization(world, primary)).toEqual([]);
+  });
+
+  it("inherits the primary source-buffer activation gate", () => {
+    (world.rooms[0]!.controller as StructureController).level = 1;
+
+    expect(planSurplusLaborUtilization(world, [])).toEqual([]);
   });
 });
