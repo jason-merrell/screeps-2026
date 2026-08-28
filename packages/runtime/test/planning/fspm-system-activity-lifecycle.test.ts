@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityExecutionObservation } from "../../src/intents/execute";
 import { createIntentTrace, infrastructureWorkKey } from "../../src/intents/trace";
-import type { BuildIntent, CreateConstructionSiteIntent } from "../../src/intents/types";
+import type {
+  BuildIntent,
+  CreateConstructionSiteIntent,
+  SpawnIntent,
+} from "../../src/intents/types";
 import {
   bindFspmActivities,
   fspmActivityEvents,
@@ -83,6 +87,23 @@ function buildIntent(): BuildIntent {
   };
 }
 
+function spawnIntent(): SpawnIntent {
+  return {
+    type: "spawn",
+    spawnName: "Spawn1",
+    body: [] as BodyPartConstant[],
+    name: "worker-W1N1-100",
+    priority: 1200,
+    reason: "workforce demand 1/2",
+    trace: createIntentTrace({
+      roomName: ROOM,
+      domain: "spawning",
+      task: "maintain-workforce-capacity",
+      procedure: "maintain-general-workforce",
+    }),
+  };
+}
+
 describe("FSPM system Activity lifecycle", () => {
   beforeEach(() => installGlobals());
 
@@ -140,5 +161,63 @@ describe("FSPM system Activity lifecycle", () => {
     expect(events.map((event) => event.type)).toContain("activity_reassigned");
     expect(events.map((event) => event.type)).toContain("activity_resumed");
     expect(events.map((event) => event.type)).not.toContain("activity_completed");
+  });
+
+  it("keeps staffing In Progress until the spawned creep becomes viable", () => {
+    const spawn = spawnIntent();
+    bindFspmActivities([spawn]);
+    const activityId = spawn.trace?.activityId;
+    if (!activityId) throw new Error("expected staffing Activity");
+
+    const spawned = {
+      name: spawn.name,
+      spawning: true,
+      memory: {},
+    } as unknown as Creep;
+    Game.creeps[spawn.name] = spawned;
+
+    reconcileFspmActivityEvidence([
+      {
+        intent: spawn,
+        result: OK,
+        movementRequired: false,
+        evidence: "spawn accepted staffing prescription",
+      } satisfies ActivityExecutionObservation,
+    ]);
+
+    const portfolio = ensureColonyPortfolio(ROOM);
+    expect(portfolio.activities?.[activityId]).toMatchObject({
+      status: "in_progress",
+      currentTargetKey: `creep:${spawn.name}`,
+      metrics: { productiveTicks: 1 },
+    });
+    expect(portfolio.activities?.[activityId]?.completedAt).toBeUndefined();
+    expect(portfolio.activities?.[activityId]?.kpiScore).toBeUndefined();
+    expect(portfolio.activityKpiHistory?.[spawn.trace?.taskId ?? ""]).toBeUndefined();
+
+    Game.time = 101;
+    reconcileFspmActivityEvidence([]);
+    expect(portfolio.activities?.[activityId]).toMatchObject({
+      status: "in_progress",
+      metrics: { waitTicks: 1 },
+    });
+
+    Game.time = 102;
+    spawned.spawning = false;
+    reconcileFspmActivityEvidence([]);
+
+    expect(portfolio.activities?.[activityId]).toMatchObject({
+      status: "completed",
+      completedAt: 102,
+      kpiScore: "satisfactory",
+    });
+    expect(portfolio.activityKpiHistory?.[spawn.trace?.taskId ?? ""]).toHaveLength(1);
+    expect(
+      fspmActivityEvents(portfolio)
+        .filter((event) => event.activityId === activityId)
+        .map((event) => event.type),
+    ).toEqual(
+      expect.arrayContaining(["activity_opened", "activity_started", "activity_completed", "kpi_scored"]),
+    );
   });
 });
