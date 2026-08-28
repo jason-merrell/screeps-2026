@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveEnergyMode } from "../../src/systems/economy/plan";
+import {
+  resolveEnergyMode,
+  sourceBufferLogisticsActive,
+} from "../../src/systems/economy/plan";
 
 describe("economy energy mode", () => {
   it("collects from empty until capacity is reached", () => {
@@ -18,5 +21,11 @@ describe("economy energy mode", () => {
 
   it("defaults partially loaded legacy creeps to collection", () => {
     expect(resolveEnergyMode(undefined, 25, 50)).toBe("collect");
+  });
+
+  it("ignores stale source buffers until the colony is ready for specialization", () => {
+    expect(sourceBufferLogisticsActive(1, 6, 2)).toBe(false);
+    expect(sourceBufferLogisticsActive(2, 3, 2)).toBe(false);
+    expect(sourceBufferLogisticsActive(2, 4, 2)).toBe(true);
   });
 });

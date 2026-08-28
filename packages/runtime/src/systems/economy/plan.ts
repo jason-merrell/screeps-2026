@@ -7,6 +7,7 @@ import {
   plannedSourceRouteLength,
   requiredCarryParts,
   reserveTransportCapacity,
+  shouldActivateSourceBuffers,
 } from "./logistics";
 import { assignRecoveryHarvesters } from "./source-allocation";
 
@@ -34,6 +35,14 @@ export function resolveEnergyMode(
   if (energy <= 0) return "collect";
   if (capacity > 0 && energy >= capacity) return "deliver";
   return previous ?? "collect";
+}
+
+export function sourceBufferLogisticsActive(
+  controllerLevel: number,
+  workforceCount: number,
+  sourceCount: number,
+): boolean {
+  return shouldActivateSourceBuffers(controllerLevel, workforceCount, sourceCount);
 }
 
 export function shouldDeferRoutineBootstrapRepair(
@@ -88,6 +97,18 @@ function towerNeedsReserve(tower: StructureTower, underAttack: boolean): boolean
 function bufferedSources(room: Room): BufferedSource[] {
   const plan = Memory.colonies[room.name]?.roomPlan;
   if (!plan) return [];
+
+  const controllerLevel = room.controller?.level ?? 0;
+  const workforceCount = room.find(FIND_MY_CREEPS).length;
+  if (
+    !sourceBufferLogisticsActive(
+      controllerLevel,
+      workforceCount,
+      plan.anchors.sources.length,
+    )
+  ) {
+    return [];
+  }
 
   const buffered: BufferedSource[] = [];
   for (const [sourceIndex, anchor] of plan.anchors.sources.entries()) {
