@@ -25,6 +25,11 @@ function creepAssignee(intent: Intent): string | undefined {
   return "creepName" in intent ? intent.creepName : undefined;
 }
 
+function reservedBufferTarget(intent: Intent): string | undefined {
+  if (intent.type !== "withdraw" && intent.type !== "move") return undefined;
+  return String(intent.targetId);
+}
+
 function bufferedSources(room: Room): BufferedSource[] {
   const plan = Memory.colonies[room.name]?.roomPlan;
   if (!plan) return [];
@@ -72,9 +77,9 @@ function compareByRangeThenId(
  *
  * Primary producer/transport reservations and source-buffer activation remain
  * authoritative. This planner only acts when the ordinary economy planner
- * produced no creep intent at all. It turns usable buffered energy into governed
- * work, or explicitly stages the performer near a source buffer instead of
- * allowing silent planner fallthrough.
+ * produced no creep intent at all. It turns unclaimed usable buffered energy
+ * into governed work, or explicitly stages the performer near a source buffer
+ * instead of allowing silent planner fallthrough.
  */
 export function planSurplusLaborUtilization(
   world: WorldSnapshot,
@@ -84,6 +89,11 @@ export function planSurplusLaborUtilization(
     primaryEconomyIntents
       .map(creepAssignee)
       .filter((name): name is string => name !== undefined),
+  );
+  const reservedTargets = new Set(
+    primaryEconomyIntents
+      .map(reservedBufferTarget)
+      .filter((target): target is string => target !== undefined),
   );
   const buffersByRoom = new Map(
     world.rooms.map((room) => [room.name, bufferedSources(room)] as const),
@@ -103,7 +113,9 @@ export function planSurplusLaborUtilization(
     if (buffers.length === 0) continue;
 
     const available = buffers.find(
-      (node) => node.container.store.getUsedCapacity(RESOURCE_ENERGY) > 0,
+      (node) =>
+        node.container.store.getUsedCapacity(RESOURCE_ENERGY) > 0 &&
+        !reservedTargets.has(String(node.container.id)),
     );
     if (available) {
       intents.push({
@@ -113,14 +125,19 @@ export function planSurplusLaborUtilization(
         resource: RESOURCE_ENERGY,
         priority: 300,
         reason:
-          "use otherwise-surplus hybrid labor to recover available buffered energy for governed downstream work",
+          "use otherwise-surplus hybrid labor to recover unclaimed buffered energy for governed downstream work",
         trace: energyTrace(creep.room.name, "withdraw-buffered-energy"),
       });
+      reservedTargets.add(String(available.container.id));
       continue;
     }
 
+    const unreservedBuffers = buffers.filter(
+      (node) => !reservedTargets.has(String(node.container.id)),
+    );
+    const stagingPool = unreservedBuffers.length > 0 ? unreservedBuffers : buffers;
     const stagingTarget =
-      buffers.find((node) => node.source.energy > 0) ?? buffers[0];
+      stagingPool.find((node) => node.source.energy > 0) ?? stagingPool[0];
     if (!stagingTarget) continue;
     intents.push({
       type: "move",
@@ -129,7 +146,7 @@ export function planSurplusLaborUtilization(
       range: 2,
       priority: 150,
       reason:
-        "stage otherwise-surplus hybrid labor near a source buffer while awaiting usable energy",
+        "stage otherwise-surplus hybrid labor near a source buffer while awaiting unclaimed usable energy",
       trace: energyTrace(creep.room.name, "stage-source-transport"),
     });
   }
