@@ -5,6 +5,7 @@ import { arbitrateDetailed, conflictKey } from "./intents/arbitrate";
 import { execute } from "./intents/execute";
 import type { Intent } from "./intents/types";
 import {
+  admitFspmIntentsWithinActivityCapacity,
   FSPM_ACTIVITY_ARCHIVE_SEGMENT,
   reconcileFspmActivityRetention,
 } from "./memory/activity-archive";
@@ -45,6 +46,7 @@ export const loop = (): void => {
 
   let phaseStart = Game.cpu.getUsed();
   migrateMemory();
+  reconcileFspmActivityRetention();
   const memoryCpu = Game.cpu.getUsed() - phaseStart;
 
   phaseStart = Game.cpu.getUsed();
@@ -79,16 +81,17 @@ export const loop = (): void => {
 
   phaseStart = Game.cpu.getUsed();
   const arbitration = arbitrateDetailed(proposed);
-  bindFspmActivities(arbitration.accepted);
+  const capacity = admitFspmIntentsWithinActivityCapacity(arbitration.accepted);
+  bindFspmActivities(capacity.admitted);
   const arbitrationCpu = Game.cpu.getUsed() - phaseStart;
 
   phaseStart = Game.cpu.getUsed();
-  const execution = execute(arbitration.accepted);
+  const execution = execute(capacity.admitted);
   const executionCpu = Game.cpu.getUsed() - phaseStart;
   const assignments = reconcileFspmActivityEvidence({
     observations: execution.activities,
     proposed,
-    accepted: arbitration.accepted,
+    accepted: capacity.admitted,
     rejected: arbitration.rejected,
     creeps: world.creeps,
   });
@@ -104,7 +107,7 @@ export const loop = (): void => {
     executionCpu,
     spatial: world.spatial.metrics,
     movement: execution.movement,
-    accepted: arbitration.accepted,
+    accepted: capacity.admitted,
     rejected: arbitration.rejected,
     assignments,
     plannerByIntent,
