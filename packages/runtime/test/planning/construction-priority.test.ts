@@ -106,10 +106,16 @@ describe("construction priority", () => {
       structures: [
         ...plan.structures,
         {
-          ...plan.structures[1],
           id: "extension-2",
           x: 23,
           y: 23,
+          structureType: "extension",
+          minRcl: 2,
+          priority: 1000,
+          activation: "automatic",
+          reservation: "hard",
+          phase: "bootstrap-capacity",
+          reason: "test",
         },
       ],
     };
