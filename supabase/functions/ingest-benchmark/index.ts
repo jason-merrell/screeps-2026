@@ -5,8 +5,10 @@ const jwks = createRemoteJWKSet(
   new URL("https://token.actions.githubusercontent.com/.well-known/jwks"),
 );
 const expectedRepository = "jason-merrell/screeps-2026";
-const expectedWorkflow =
-  `${expectedRepository}/.github/workflows/persist-ptr-benchmark.yml@refs/heads/main`;
+const allowedWorkflows = new Set([
+  `${expectedRepository}/.github/workflows/persist-ptr-benchmark.yml@refs/heads/main`,
+  `${expectedRepository}/.github/workflows/screeps-insights.yml@refs/heads/main`,
+]);
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -46,7 +48,7 @@ Deno.serve(async (req: Request) => {
     if (payload.repository !== expectedRepository) {
       return json({ error: "repository_not_allowed" }, 403);
     }
-    if (payload.workflow_ref !== expectedWorkflow) {
+    if (!allowedWorkflows.has(String(payload.workflow_ref ?? ""))) {
       return json({ error: "workflow_not_allowed" }, 403);
     }
 
