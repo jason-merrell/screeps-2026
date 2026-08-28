@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityExecutionObservation } from "../../src/intents/execute";
 import { createIntentTrace } from "../../src/intents/trace";
-import type { HarvestIntent } from "../../src/intents/types";
+import type { HarvestIntent, TransferIntent, UpgradeIntent } from "../../src/intents/types";
 import {
   activityContinuityRatio,
   activityWorkConversionRatio,
@@ -15,6 +15,9 @@ vi.stubGlobal("OK", 0);
 vi.stubGlobal("ERR_NOT_IN_RANGE", -9);
 vi.stubGlobal("RESOURCE_ENERGY", "energy");
 vi.stubGlobal("STRUCTURE_RAMPART", "rampart");
+
+const ENERGY_TASK = "maintain-colony-energy-service";
+const CONTROLLER_TASK = "advance-controller-capability";
 
 let creepEnergy = 0;
 let creepCapacity = 50;
@@ -55,31 +58,59 @@ function installGlobals(time = 100): void {
   });
 }
 
-function intent(
-  taskKey: string,
-  procedureKey: string,
-  sourceId = "source-1",
-): HarvestIntent {
+function traceFor(taskKey: string, procedureKey: string) {
   const task = ensureTask("W1N1", "economy", taskKey);
   const procedure = ensureProcedure("W1N1", "economy", taskKey, procedureKey);
   const portfolio = ensureColonyPortfolio("W1N1");
   const requirement = portfolio.requirements.economy;
   const deliverable = portfolio.deliverables.economy;
   if (!requirement || !deliverable) throw new Error("expected economy hierarchy");
+  return {
+    contractId: portfolio.contract.id,
+    requirementId: requirement.id,
+    deliverableId: deliverable.id,
+    taskId: task.id,
+    procedureId: procedure.id,
+  };
+}
 
+function harvestIntent(
+  procedureKey = "extract-source-energy",
+  sourceId = "source-1",
+): HarvestIntent {
   return {
     type: "harvest",
     creepName: "worker-1",
     sourceId: sourceId as Id<Source>,
     priority: 100,
-    reason: "test work",
-    trace: {
-      contractId: portfolio.contract.id,
-      requirementId: requirement.id,
-      deliverableId: deliverable.id,
-      taskId: task.id,
-      procedureId: procedure.id,
-    },
+    reason: "test energy-service extraction",
+    trace: traceFor(ENERGY_TASK, procedureKey),
+  };
+}
+
+function transferIntent(
+  procedureKey = "buffer-source-energy",
+  targetId = "container-1",
+): TransferIntent {
+  return {
+    type: "transfer",
+    creepName: "worker-1",
+    targetId: targetId as Id<StructureContainer>,
+    resource: RESOURCE_ENERGY,
+    priority: 100,
+    reason: "test energy-service delivery",
+    trace: traceFor(ENERGY_TASK, procedureKey),
+  };
+}
+
+function controllerIntent(): UpgradeIntent {
+  return {
+    type: "upgrade",
+    creepName: "worker-1",
+    controllerId: "controller-1" as Id<StructureController>,
+    priority: 100,
+    reason: "test controller advancement",
+    trace: traceFor(CONTROLLER_TASK, "upgrade-controller"),
   };
 }
 
@@ -94,27 +125,31 @@ describe("FSPM Activity lifecycle", () => {
     const first = createIntentTrace({
       roomName: "W1N1",
       domain: "economy",
-      task: "produce-source-energy",
-      activity: "worker-1:harvest:source-a",
+      task: ENERGY_TASK,
+      activity: "worker-1:extract-source-energy:source-a",
     });
     const second = createIntentTrace({
       roomName: "W1N1",
       domain: "economy",
-      task: "produce-source-energy",
-      activity: "worker-1:harvest:source-b",
+      task: ENERGY_TASK,
+      activity: "worker-1:extract-source-energy:source-b",
     });
 
     expect(second.procedureId).toBe(first.procedureId);
-    expect(ensureTask("W1N1", "economy", "produce-source-energy").procedures).toHaveLength(1);
+    expect(
+      ensureTask("W1N1", "economy", ENERGY_TASK).procedures.filter(
+        (procedure) => procedure.procedureKey === "extract-source-energy",
+      ),
+    ).toHaveLength(1);
   });
 
-  it("records target retargets separately from Procedure transitions", () => {
-    const first = intent("sustain-energy", "collect-energy", "source-1");
+  it("records same-Procedure target retargets separately from Procedure transitions", () => {
+    const first = harvestIntent("extract-source-energy", "source-1");
     bindFspmActivities([first]);
     const firstId = first.trace?.activityId;
 
     Game.time = 101;
-    const retargeted = intent("sustain-energy", "collect-energy", "source-2");
+    const retargeted = harvestIntent("extract-source-energy", "source-2");
     bindFspmActivities([retargeted]);
 
     expect(retargeted.trace?.activityId).toBe(firstId);
@@ -129,35 +164,41 @@ describe("FSPM Activity lifecycle", () => {
     ).toHaveLength(1);
   });
 
-  it("keeps one Activity while the assignee advances Procedures inside the same Task", () => {
-    const collect = intent("sustain-energy", "collect-energy");
+  it("keeps one Activity while the assignee advances Procedures and targets inside the same Task", () => {
+    const collect = harvestIntent("extract-source-energy", "source-1");
     bindFspmActivities([collect]);
     const firstId = collect.trace?.activityId;
 
     Game.time = 101;
-    const deliver = intent("sustain-energy", "deliver-energy");
-    bindFspmActivities([deliver]);
+    const buffer = transferIntent("buffer-source-energy", "container-1");
+    bindFspmActivities([buffer]);
 
-    expect(deliver.trace?.activityId).toBe(firstId);
+    expect(buffer.trace?.activityId).toBe(firstId);
     expect(activities()).toHaveLength(1);
     expect(activities()[0]).toMatchObject({
       status: "in_progress",
-      currentProcedureId: deliver.trace?.procedureId,
+      currentProcedureId: buffer.trace?.procedureId,
+      currentTargetKey: "container-1",
       metrics: { procedureTransitions: 1, taskPreemptions: 0, targetRetargets: 0 },
     });
+    expect(
+      fspmActivityEvents(ensureColonyPortfolio("W1N1")).filter(
+        (event) => event.type === "target_changed",
+      ),
+    ).toHaveLength(0);
   });
 
   it("puts unfinished work On Hold when the assignee switches Tasks", () => {
-    const economy = intent("sustain-energy", "collect-energy");
+    const economy = harvestIntent();
     bindFspmActivities([economy]);
     const economyId = economy.trace?.activityId;
 
     Game.time = 101;
-    const construction = intent("build-infrastructure", "build-planned-structure");
-    bindFspmActivities([construction]);
+    const controller = controllerIntent();
+    bindFspmActivities([controller]);
 
     const previous = activities().find((activity) => activity.id === economyId);
-    const current = activities().find((activity) => activity.id === construction.trace?.activityId);
+    const current = activities().find((activity) => activity.id === controller.trace?.activityId);
     expect(previous).toMatchObject({
       status: "on_hold",
       metrics: { holdCount: 1, taskPreemptions: 1 },
@@ -165,20 +206,19 @@ describe("FSPM Activity lifecycle", () => {
     expect(current?.status).toBe("in_progress");
   });
 
-  it("does not close held collection work when another Activity fills the assignee", () => {
-    const heldWork = intent("produce-source-energy", "harvest", "source-1");
+  it("does not close held energy-service work when another Task becomes current", () => {
+    const heldWork = harvestIntent("extract-source-energy", "source-1");
     objectById.set("source-1", { energy: 300 } as unknown as RoomObject);
     bindFspmActivities([heldWork]);
     const heldActivityId = heldWork.trace?.activityId;
     const heldTaskId = heldWork.trace?.taskId;
 
     Game.time = 101;
-    const currentWork = intent("maintain-energy-flow", "harvest", "source-2");
-    objectById.set("source-2", { energy: 300 } as unknown as RoomObject);
+    const currentWork = controllerIntent();
     bindFspmActivities([currentWork]);
     const currentActivityId = currentWork.trace?.activityId;
 
-    creepEnergy = creepCapacity;
+    creepEnergy = 0;
     Game.time = 102;
     bindFspmActivities([]);
 
@@ -199,44 +239,61 @@ describe("FSPM Activity lifecycle", () => {
   });
 
   it("resumes the same held Activity when its Task becomes current again", () => {
-    const economy = intent("sustain-energy", "collect-energy");
+    const economy = harvestIntent();
     bindFspmActivities([economy]);
     const economyId = economy.trace?.activityId;
 
     Game.time = 101;
-    bindFspmActivities([intent("build-infrastructure", "build-planned-structure")]);
+    bindFspmActivities([controllerIntent()]);
 
     Game.time = 102;
-    const resumed = intent("sustain-energy", "deliver-energy");
+    const resumed = transferIntent("buffer-source-energy", "container-1");
     bindFspmActivities([resumed]);
 
     expect(resumed.trace?.activityId).toBe(economyId);
     expect(activities().find((activity) => activity.id === economyId)).toMatchObject({
       status: "in_progress",
-      metrics: { resumeCount: 1, procedureTransitions: 1 },
+      currentTargetKey: "container-1",
+      metrics: { resumeCount: 1, procedureTransitions: 1, targetRetargets: 0 },
     });
   });
 
-  it("closes a completed work cycle and writes the KPI only at Activity completion", () => {
-    const work = intent("maintain-energy-flow", "harvest", "source-1");
+  it("closes a canonical energy-service cycle and writes KPI only after its terminal Procedure", () => {
+    const collect = harvestIntent("extract-source-energy", "source-1");
     objectById.set("source-1", { energy: 300 } as unknown as RoomObject);
-    bindFspmActivities([work]);
-    const activityId = work.trace?.activityId;
+    bindFspmActivities([collect]);
+    const activityId = collect.trace?.activityId;
 
     reconcileFspmActivityEvidence([
       {
-        intent: work,
+        intent: collect,
         result: OK,
         movementRequired: false,
         evidence: "harvested full work quantum",
         outcome: { metric: "energy harvested", actual: 10, target: 10, unit: "energy" },
       } satisfies ActivityExecutionObservation,
     ]);
-    expect(ensureColonyPortfolio("W1N1").activityKpiHistory?.[work.trace?.taskId ?? ""]).toBeUndefined();
+    expect(
+      ensureColonyPortfolio("W1N1").activityKpiHistory?.[collect.trace?.taskId ?? ""],
+    ).toBeUndefined();
 
     creepEnergy = creepCapacity;
     Game.time = 101;
-    bindFspmActivities([]);
+    const buffer = transferIntent("buffer-source-energy", "container-1");
+    bindFspmActivities([buffer]);
+    expect(buffer.trace?.activityId).toBe(activityId);
+    expect(activities().find((activity) => activity.id === activityId)?.status).toBe("in_progress");
+
+    creepEnergy = 0;
+    reconcileFspmActivityEvidence([
+      {
+        intent: buffer,
+        result: OK,
+        movementRequired: false,
+        evidence: "buffered completed producer load",
+        outcome: { metric: "energy delivered", actual: 10, target: 10, unit: "energy" },
+      } satisfies ActivityExecutionObservation,
+    ]);
 
     const completed = activities().find((activity) => activity.id === activityId);
     const portfolio = ensureColonyPortfolio("W1N1");
@@ -244,9 +301,10 @@ describe("FSPM Activity lifecycle", () => {
       status: "completed",
       completedAt: 101,
       kpiScore: "exceptional",
+      metrics: { procedureTransitions: 1, targetRetargets: 0 },
     });
-    expect(portfolio.activityKpiHistory?.[work.trace?.taskId ?? ""]).toHaveLength(1);
-    expect(portfolio.tasks[work.trace?.taskId ?? ""]?.qi).toMatchObject({
+    expect(portfolio.activityKpiHistory?.[collect.trace?.taskId ?? ""]).toHaveLength(1);
+    expect(portfolio.tasks[collect.trace?.taskId ?? ""]?.qi).toMatchObject({
       ratedActivities: 1,
       exceptional: 1,
     });
@@ -254,7 +312,7 @@ describe("FSPM Activity lifecycle", () => {
   });
 
   it("separates required travel from productive execution and assignment gaps", () => {
-    const work = intent("sustain-energy", "collect-energy");
+    const work = harvestIntent();
     bindFspmActivities([work]);
     const activityId = work.trace?.activityId;
     if (!activityId) throw new Error("expected bound activity");
@@ -269,7 +327,7 @@ describe("FSPM Activity lifecycle", () => {
     ]);
 
     Game.time = 101;
-    const continued = intent("sustain-energy", "collect-energy");
+    const continued = harvestIntent();
     bindFspmActivities([continued]);
     reconcileFspmActivityEvidence([
       {
