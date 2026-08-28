@@ -16,6 +16,7 @@ import { computeTaskQi } from "./task-kpi";
 
 const ACTIVITY_EVENT_LIMIT = 192;
 const TASK_KPI_HISTORY_LIMIT = 24;
+const PEACETIME_TOWER_RESERVE = 400;
 
 export type FspmAssignmentState =
   | "executing"
@@ -31,6 +32,7 @@ export type FspmActivityEventType =
   | "activity_started"
   | "procedure_entered"
   | "target_changed"
+  | "target_advanced"
   | "activity_held"
   | "activity_reassigned"
   | "activity_resumed"
@@ -85,6 +87,7 @@ interface EvidenceActivityMetrics extends FspmActivityMetrics {
   arbitrationLostTicks?: number;
   blockedTicks?: number;
   targetRetargets?: number;
+  targetAdvances?: number;
   currentTravelStreak?: number;
   maxTravelStreak?: number;
   firstProductiveAt?: number;
@@ -145,6 +148,7 @@ function newMetrics(): EvidenceActivityMetrics {
     arbitrationLostTicks: 0,
     blockedTicks: 0,
     targetRetargets: 0,
+    targetAdvances: 0,
     currentTravelStreak: 0,
     maxTravelStreak: 0,
   };
@@ -231,8 +235,6 @@ function enterProcedure(
 ): void {
   closeCurrentProcedure(activity);
   activity.currentProcedureId = procedureId;
-  // A Procedure transition is allowed to select a different target. Target retargeting
-  // is reserved for churn *within* the same Procedure.
   activity.currentTargetKey = targetKey;
   activity.procedureHistory ??= [];
   activity.procedureHistory.push({
@@ -262,13 +264,7 @@ function startActivity(
     targetKey,
     reason: "Activity transitioned from Not Started to In Progress when the Assignee commenced governed work",
   });
-  enterProcedure(
-    portfolio,
-    activity,
-    procedureId,
-    targetKey,
-    "initial Task Procedure",
-  );
+  enterProcedure(portfolio, activity, procedureId, targetKey, "initial Task Procedure");
 }
 
 function openActivity(
@@ -361,9 +357,7 @@ function latestHeldActivityForTaskWork(
   return Object.values(portfolio.activities ?? {})
     .filter((activity) => {
       if (activity.status !== "on_hold" || activity.taskId !== taskId) return false;
-      const sameWork = workKey
-        ? activity.workKey === workKey
-        : activity.currentTargetKey === targetKey;
+      const sameWork = workKey ? activity.workKey === workKey : activity.currentTargetKey === targetKey;
       if (!sameWork) return false;
       return isSystemAssignee(activity.assignee) || !Game.creeps[activity.assignee];
     })
@@ -375,7 +369,78 @@ function latestHeldActivityForTaskWork(
     )[0];
 }
 
-function recordTargetChange(
+function objectForTargetKey(targetKey: string): RoomObject | null {
+  return Game.getObjectById(
+    targetKey as Id<Source | AnyStructure | ConstructionSite | Tombstone | Ruin>,
+  );
+}
+
+function activityObject(activity: EvidenceActivity): RoomObject | null {
+  return activity.currentTargetKey ? objectForTargetKey(activity.currentTargetKey) : null;
+}
+
+function sourceObjectDepleted(object: RoomObject | null): boolean {
+  return (
+    object !== null &&
+    "energy" in object &&
+    typeof object.energy === "number" &&
+    object.energy <= 0
+  );
+}
+
+function storeObjectDepleted(object: RoomObject | null): boolean {
+  if (!object || !("store" in object)) return false;
+  const storeObject = object as StructureContainer | Tombstone | Ruin;
+  return storeObject.store.getUsedCapacity(RESOURCE_ENERGY) <= 0;
+}
+
+function storeTargetFull(object: RoomObject | null): boolean {
+  if (!object || !("store" in object)) return false;
+  const storeObject = object as AnyStoreStructure;
+  return (storeObject.store.getFreeCapacity(RESOURCE_ENERGY) ?? 0) <= 0;
+}
+
+function towerReserveSatisfied(object: RoomObject | null): boolean {
+  if (!object || !("store" in object)) return false;
+  const tower = object as StructureTower;
+  const capacity = tower.store.getCapacity(RESOURCE_ENERGY);
+  if (capacity === null) return false;
+  const underAttack = tower.room?.find(FIND_HOSTILE_CREEPS).length > 0;
+  const target = underAttack ? capacity : Math.min(PEACETIME_TOWER_RESERVE, capacity);
+  return tower.store.getUsedCapacity(RESOURCE_ENERGY) >= target;
+}
+
+function procedureKey(task: ColonyTask, activity: EvidenceActivity): string | undefined {
+  return task.procedures.find((procedure) => procedure.id === activity.currentProcedureId)
+    ?.procedureKey;
+}
+
+function targetSatisfiedForCurrentProcedure(
+  portfolio: EvidencePortfolio,
+  activity: EvidenceActivity,
+  targetKey: string,
+): boolean {
+  const task = portfolio.tasks[activity.taskId];
+  if (!task) return false;
+  const currentProcedure = procedureKey(task, activity);
+  const object = objectForTargetKey(targetKey);
+
+  switch (currentProcedure) {
+    case "extract-source-energy":
+      return sourceObjectDepleted(object);
+    case "withdraw-buffered-energy":
+    case "recover-salvage-energy":
+      return storeObjectDepleted(object);
+    case "fund-workforce-energy":
+      return storeTargetFull(object);
+    case "fund-tower-reserve":
+      return towerReserveSatisfied(object);
+    default:
+      return false;
+  }
+}
+
+function recordTargetTransition(
   portfolio: EvidencePortfolio,
   activity: EvidenceActivity,
   targetKey: string,
@@ -383,7 +448,22 @@ function recordTargetChange(
 ): void {
   if (activity.currentTargetKey === targetKey) return;
   const previousTargetKey = activity.currentTargetKey;
+  const advanced = previousTargetKey
+    ? targetSatisfiedForCurrentProcedure(portfolio, activity, previousTargetKey)
+    : false;
   activity.currentTargetKey = targetKey;
+
+  if (advanced) {
+    activity.metrics.targetAdvances = metric(activity.metrics.targetAdvances) + 1;
+    appendEvent(portfolio, activity, "target_advanced", {
+      procedureId: activity.currentProcedureId,
+      targetKey,
+      previousTargetKey,
+      reason: `previous target satisfied before same-Procedure progression; ${reason}`,
+    });
+    return;
+  }
+
   activity.metrics.targetRetargets = metric(activity.metrics.targetRetargets) + 1;
   appendEvent(portfolio, activity, "target_changed", {
     procedureId: activity.currentProcedureId,
@@ -421,7 +501,7 @@ function resumeActivity(
       "resumed through a different Procedure",
     );
   } else {
-    recordTargetChange(
+    recordTargetTransition(
       portfolio,
       activity,
       targetKey,
@@ -513,28 +593,12 @@ function sweepMissingAssignees(): void {
   }
 }
 
-function activityObject(activity: EvidenceActivity): RoomObject | null {
-  if (!activity.currentTargetKey) return null;
-  return Game.getObjectById(
-    activity.currentTargetKey as Id<Source | AnyStructure | ConstructionSite | Tombstone | Ruin>,
-  );
-}
-
 function sourceDepleted(activity: EvidenceActivity): boolean {
-  const object = activityObject(activity);
-  return (
-    object !== null &&
-    "energy" in object &&
-    typeof object.energy === "number" &&
-    object.energy <= 0
-  );
+  return sourceObjectDepleted(activityObject(activity));
 }
 
 function storeDepleted(activity: EvidenceActivity): boolean {
-  const object = activityObject(activity);
-  if (!object || !("store" in object)) return false;
-  const storeObject = object as StructureContainer | Tombstone | Ruin;
-  return storeObject.store.getUsedCapacity(RESOURCE_ENERGY) <= 0;
+  return storeObjectDepleted(activityObject(activity));
 }
 
 function repairedEnough(activity: EvidenceActivity): boolean {
@@ -545,11 +609,6 @@ function repairedEnough(activity: EvidenceActivity): boolean {
     return structure.hits >= Math.min(10_000, structure.hitsMax);
   }
   return structure.hits >= structure.hitsMax * 0.5;
-}
-
-function procedureKey(task: ColonyTask, activity: EvidenceActivity): string | undefined {
-  return task.procedures.find((procedure) => procedure.id === activity.currentProcedureId)
-    ?.procedureKey;
 }
 
 function isLegacyWaitingTask(taskKey: string): boolean {
@@ -606,7 +665,6 @@ function completionReason(
         ? "defensive reserve funding load was fully delivered"
         : null;
 
-    // Legacy completion semantics remain only so immutable historical Activities can drain.
     case "produce-source-energy":
     case "maintain-energy-flow":
       if (capacity > 0 && energy >= capacity) return "collection load reached creep capacity";
@@ -754,7 +812,7 @@ function completeActivity(
   delete activity.holdReason;
 
   const rating = scoreActivity(portfolio, activity);
-  const evidence = `${reason}; Quality Metric=${activity.qualityMetric}; productive=${metric(activity.metrics.productiveTicks)} travel=${metric(activity.metrics.travelTicks)} wait=${metric(activity.metrics.waitTicks)} blocked=${metric(activity.metrics.blockedTicks)} assignmentGap=${metric(activity.metrics.assignmentGapTicks)} procedureTransitions=${metric(activity.metrics.procedureTransitions)} retargets=${metric(activity.metrics.targetRetargets)}`;
+  const evidence = `${reason}; Quality Metric=${activity.qualityMetric}; productive=${metric(activity.metrics.productiveTicks)} travel=${metric(activity.metrics.travelTicks)} wait=${metric(activity.metrics.waitTicks)} blocked=${metric(activity.metrics.blockedTicks)} assignmentGap=${metric(activity.metrics.assignmentGapTicks)} procedureTransitions=${metric(activity.metrics.procedureTransitions)} targetAdvances=${metric(activity.metrics.targetAdvances)} retargets=${metric(activity.metrics.targetRetargets)}`;
   activity.kpiScore = rating;
   activity.kpiEvidence = evidence;
 
@@ -787,6 +845,61 @@ function sweepSatisfiedActivities(): void {
   }
 }
 
+function pendingWorkforceTarget(activity: EvidenceActivity): string | null {
+  if (!activity.currentTargetKey?.startsWith("creep:")) return null;
+  return activity.currentTargetKey.slice("creep:".length);
+}
+
+function sweepPendingWorkforceActivities(): void {
+  for (const colony of Object.values(Memory.colonies)) {
+    const rawPortfolio = colony.fspm;
+    if (!rawPortfolio) continue;
+    const portfolio = evidencePortfolio(rawPortfolio);
+    for (const activity of Object.values(portfolio.activities ?? {})) {
+      if (
+        activity.status !== "in_progress" ||
+        !activity.assignee.startsWith("spawn:") ||
+        activity.updatedAt >= Game.time
+      ) {
+        continue;
+      }
+      const task = portfolio.tasks[activity.taskId];
+      if (task?.taskKey !== "maintain-workforce-capacity") continue;
+      const creepName = pendingWorkforceTarget(activity);
+      if (!creepName) continue;
+      const creep = Game.creeps[creepName];
+
+      if (creep?.spawning) {
+        recordAssignmentTick(activity, "waiting_intentional");
+        activity.updatedAt = Game.time;
+        continue;
+      }
+      if (creep) {
+        completeActivity(
+          portfolio,
+          activity,
+          `spawned workforce ${creepName} reached viable non-spawning state`,
+        );
+        continue;
+      }
+
+      const spawnName = activity.assignee.slice("spawn:".length);
+      const spawn = Game.spawns?.[spawnName];
+      if (spawn?.spawning?.name === creepName) {
+        recordAssignmentTick(activity, "waiting_intentional");
+        activity.updatedAt = Game.time;
+        continue;
+      }
+      holdActivity(
+        portfolio,
+        activity,
+        `staffing target ${creepName} disappeared before reaching viable workforce state`,
+        "blocked",
+      );
+    }
+  }
+}
+
 function advanceBoundActivity(
   portfolio: EvidencePortfolio,
   activity: EvidenceActivity,
@@ -807,7 +920,7 @@ function advanceBoundActivity(
       "planner advanced to a different governed Procedure",
     );
   } else {
-    recordTargetChange(
+    recordTargetTransition(
       portfolio,
       activity,
       targetKey,
@@ -910,6 +1023,7 @@ function bindSystemIntent(intent: Exclude<Intent, CreepIntent>): void {
 export function bindFspmActivities(intents: Intent[]): void {
   sweepMissingAssignees();
   sweepSatisfiedActivities();
+  sweepPendingWorkforceActivities();
   for (const intent of intents) {
     if (!intent.trace) continue;
     if (isCreepIntent(intent)) bindCreepIntent(intent);
@@ -930,9 +1044,6 @@ function aggregateOutcome(
     };
     return;
   }
-  // Outcomes from distinct Procedures may use different metrics. Preserve the first
-  // aggregate rather than conflating unlike units/denominators; canonical KPI scoring
-  // uses lifecycle execution evidence across the whole Activity.
   if (activity.outcome.metric !== outcome.metric || activity.outcome.unit !== outcome.unit) return;
   activity.outcome.actual += outcome.actual;
   activity.outcome.target += outcome.target;
@@ -1060,11 +1171,6 @@ function reconcileSystemObservation(
         );
         break;
       case "spawn":
-        completeActivity(
-          portfolio,
-          activity,
-          `spawn ${observation.intent.spawnName} accepted governed staffing prescription for ${observation.intent.name}`,
-        );
         break;
       case "towerAttack":
         completeActivity(
@@ -1103,6 +1209,7 @@ export function reconcileFspmActivityEvidence(
     : input;
 
   sweepMissingAssignees();
+  sweepPendingWorkforceActivities();
   for (const colony of Object.values(Memory.colonies)) {
     const rawPortfolio = colony.fspm;
     if (!rawPortfolio) continue;
