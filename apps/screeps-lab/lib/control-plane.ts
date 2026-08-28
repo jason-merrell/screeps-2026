@@ -108,8 +108,12 @@ export type FspmProgram = {
 export type FspmColonySummary = {
   roomName: string;
   p3: FspmPortfolioP3;
+  /** Compatibility projection for the pre-P3 dashboard. Always mirrors current P3 quality. */
+  contract: FspmRecord;
+  /** Legacy authority is preserved separately and never drives current health. */
+  legacyProgram?: FspmProgram | null;
+  legacyContract?: FspmRecord | null;
   program?: FspmProgram | null;
-  contract?: FspmRecord | null;
   requirements: FspmRequirement[];
   deliverables: FspmDeliverable[];
   tasks: FspmTask[];
@@ -161,6 +165,29 @@ export const benchmarkFallback: BenchmarkMetrics = {
   observability: 0.033,
 };
 
+function normalizeFspmAuthority(snapshot: Snapshot | null): Snapshot | null {
+  for (const colony of snapshot?.runtimeTrace?.fspm?.colonies ?? []) {
+    const raw = colony as FspmColonySummary & {
+      contract?: FspmRecord | null;
+      program?: FspmProgram | null;
+    };
+    const legacyContract = raw.contract ?? null;
+    const legacyProgram = raw.program ?? null;
+
+    colony.legacyContract = legacyContract;
+    colony.legacyProgram = legacyProgram;
+    colony.program = null;
+    colony.contract = {
+      id: colony.p3.id,
+      title: colony.p3.name,
+      status: colony.p3.status,
+      ...(colony.p3.quality ? { quality: colony.p3.quality } : {}),
+    };
+    colony.contractHistory = colony.p3History ?? [];
+  }
+  return snapshot;
+}
+
 export async function loadControlPlane() {
   const [snapshotResult, experimentsResult, benchmarkResult] = await Promise.all([
     supabase.from("observability_snapshots").select("payload,captured_at").order("captured_at", { ascending: false }).limit(1).maybeSingle(),
@@ -168,7 +195,9 @@ export async function loadControlPlane() {
     supabase.from("benchmark_samples").select("metrics,captured_at").order("captured_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
-  const snapshot = (snapshotResult.data?.payload as Snapshot | undefined) ?? null;
+  const snapshot = normalizeFspmAuthority(
+    (snapshotResult.data?.payload as Snapshot | undefined) ?? null,
+  );
   const experiments = (experimentsResult.data as Experiment[] | null) ?? [];
   const metrics = {
     ...benchmarkFallback,
