@@ -79,6 +79,19 @@ interface CompactFspmRecord {
   quality?: CompactFspmQuality;
 }
 
+interface CompactPortfolioP3 {
+  id: string;
+  type: "portfolio";
+  subType: "ou_portfolio";
+  name: string;
+  description: string;
+  parentP3Id: string | null;
+  temporalBasis: "game_tick";
+  startTick: number;
+  status: FspmStatus;
+  quality?: CompactFspmQuality;
+}
+
 interface CompactRequirement extends CompactFspmRecord {
   p3Id: string;
   contractId?: string;
@@ -136,14 +149,7 @@ interface CompactActivity {
 
 interface FspmTraceSummary {
   roomName: string;
-  p3: {
-    id: string;
-    type: "portfolio";
-    subType: "ou_portfolio";
-    title: string;
-    status: FspmStatus;
-    quality?: CompactFspmQuality;
-  };
+  p3: CompactPortfolioP3;
   /** Legacy pre-migration Service Program evidence. */
   program: {
     id: string;
@@ -180,6 +186,7 @@ export interface TickObservabilityTrace {
   };
   settlement: { plans: RoomPlanTraceSummary[] };
   fspm: {
+    rootP3: CompactPortfolioP3 | null;
     colonies: FspmTraceSummary[];
     assignments: FspmAssignmentEvidence[];
   };
@@ -277,16 +284,42 @@ function roomPlanSummaries(): RoomPlanTraceSummary[] {
     .sort((a, b) => a.roomName.localeCompare(b.roomName));
 }
 
+const compactQuality = (quality: FspmQuality): CompactFspmQuality => ({
+  score: quality.score,
+  state: quality.state,
+  trend: quality.trend,
+  evidence: [...quality.evidence],
+});
+
 const compactRecord = (record: { id: string; title: string; status: FspmStatus; quality?: FspmQuality }): CompactFspmRecord => ({
   id: record.id,
   title: record.title,
   status: record.status,
-  ...(record.quality ? { quality: {
-    score: record.quality.score,
-    state: record.quality.state,
-    trend: record.quality.trend,
-    evidence: [...record.quality.evidence],
-  } } : {}),
+  ...(record.quality ? { quality: compactQuality(record.quality) } : {}),
+});
+
+const compactPortfolioP3 = (record: {
+  id: string;
+  type: "portfolio";
+  subType: "ou_portfolio";
+  name: string;
+  description: string;
+  parentP3Id: string | null;
+  temporalBasis: "game_tick";
+  startTick: number;
+  status: FspmStatus;
+  quality?: FspmQuality;
+}): CompactPortfolioP3 => ({
+  id: record.id,
+  type: record.type,
+  subType: record.subType,
+  name: record.name,
+  description: record.description,
+  parentP3Id: record.parentP3Id,
+  temporalBasis: record.temporalBasis,
+  startTick: record.startTick,
+  status: record.status,
+  ...(record.quality ? { quality: compactQuality(record.quality) } : {}),
 });
 
 export function activityTraceDisposition(
@@ -333,11 +366,7 @@ function fspmSummaries(): FspmTraceSummary[] {
       if (!portfolio) return [];
       return [{
         roomName: colony.roomName,
-        p3: {
-          ...compactRecord(portfolio.p3),
-          type: portfolio.p3.type,
-          subType: portfolio.p3.subType,
-        },
+        p3: compactPortfolioP3(portfolio.p3),
         program: portfolio.program ? {
           id: portfolio.program.id,
           type: portfolio.program.type,
@@ -416,6 +445,7 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
     },
     settlement: { plans: roomPlanSummaries() },
     fspm: {
+      rootP3: Memory.empireFspm ? compactPortfolioP3(Memory.empireFspm.p3) : null,
       colonies: fspmSummaries(),
       assignments: input.assignments.map((assignment) => ({ ...assignment })),
     },
