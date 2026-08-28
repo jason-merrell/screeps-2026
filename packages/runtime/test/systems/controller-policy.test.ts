@@ -1,52 +1,70 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Intent } from "../../src/intents/types";
 import {
-  RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD,
-  controllerMaintenanceSatisfied,
-  controllerSpendMode,
-  selectControllerMaintenanceAssignee,
+  allowsRoutineControllerProgress,
+  enforceRoutineControllerProgress,
 } from "../../src/planning/controller-policy";
 
-describe("controller spend policy", () => {
-  it("keeps normal room progression active below RCL8", () => {
-    expect(controllerSpendMode(1, 19_000)).toBe("progress");
-    expect(controllerSpendMode(7, 149_000)).toBe("progress");
+vi.stubGlobal("RESOURCE_ENERGY", "energy");
+
+function upgradeIntent(controllerId: string, creepName = "worker-1"): Intent {
+  return {
+    type: "upgrade",
+    creepName,
+    controllerId: controllerId as Id<StructureController>,
+    priority: 100,
+    reason: "routine room progression",
+  };
+}
+
+describe("routine controller progression policy", () => {
+  beforeEach(() => {
+    Object.assign(globalThis, {
+      Game: {
+        getObjectById: (id: string) => {
+          if (id === "rcl7") return { id, my: true, level: 7 } as StructureController;
+          if (id === "rcl8") return { id, my: true, level: 8 } as StructureController;
+          return null;
+        },
+      },
+    });
   });
 
-  it("does not use a healthy RCL8 controller as an implicit surplus-energy sink", () => {
-    expect(controllerSpendMode(8, 200_000)).toBe("none");
-    expect(controllerSpendMode(8, RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD)).toBe("none");
+  it("allows normal room progression below RCL8", () => {
+    expect(allowsRoutineControllerProgress(1)).toBe(true);
+    expect(allowsRoutineControllerProgress(7)).toBe(true);
   });
 
-  it("activates bounded downgrade maintenance only below the governed RCL8 threshold", () => {
-    expect(controllerSpendMode(8, RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD - 1)).toBe(
-      "maintenance",
-    );
+  it("fails closed for capped or unresolved controllers", () => {
+    expect(allowsRoutineControllerProgress(8)).toBe(false);
+    expect(allowsRoutineControllerProgress(undefined)).toBe(false);
+    expect(allowsRoutineControllerProgress(0)).toBe(false);
   });
 
-  it("fails closed when capped-room downgrade evidence is unavailable", () => {
-    expect(controllerSpendMode(8, undefined)).toBe("none");
-    expect(controllerSpendMode(undefined, undefined)).toBe("none");
+  it("suppresses RCL8 upgrade intents while preserving sub-RCL8 progression", () => {
+    const intents = enforceRoutineControllerProgress([
+      upgradeIntent("rcl7", "worker-7"),
+      upgradeIntent("rcl8", "worker-8"),
+    ]);
+
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      type: "upgrade",
+      creepName: "worker-7",
+      controllerId: "rcl7",
+    });
   });
 
-  it("selects one minimal-capacity maintenance performer deterministically", () => {
-    expect(
-      selectControllerMaintenanceAssignee([
-        { name: "worker-c", work: 3, energy: 50, range: 1 },
-        { name: "worker-b", work: 1, energy: 50, range: 8 },
-        { name: "worker-a", work: 1, energy: 50, range: 8 },
-        { name: "empty", work: 1, energy: 0, range: 1 },
-      ]),
-    ).toBe("worker-a");
-  });
+  it("preserves non-controller intents unchanged", () => {
+    const move: Intent = {
+      type: "move",
+      creepName: "worker-1",
+      targetId: "container-1" as Id<StructureContainer>,
+      range: 1,
+      priority: 200,
+      reason: "stage elsewhere",
+    };
 
-  it("completes maintenance from the controller safety outcome, not creep carry state", () => {
-    const controller = {
-      level: 8,
-      ticksToDowngrade: RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD - 1,
-    } as StructureController;
-
-    expect(controllerMaintenanceSatisfied(controller)).toBe(false);
-    controller.ticksToDowngrade = RCL8_DOWNGRADE_MAINTENANCE_THRESHOLD;
-    expect(controllerMaintenanceSatisfied(controller)).toBe(true);
+    expect(enforceRoutineControllerProgress([move])).toEqual([move]);
   });
 });
