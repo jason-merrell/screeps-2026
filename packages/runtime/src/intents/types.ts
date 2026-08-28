@@ -18,6 +18,8 @@ export interface IntentTrace {
   deliverableId: string;
   taskId: string;
   procedureId: string;
+  /** Stable governed work-instance identity across Procedure/actor/target transitions. */
+  workKey?: string;
   activityId?: string;
 }
 
