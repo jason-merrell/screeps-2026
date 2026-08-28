@@ -155,13 +155,53 @@ describe("FSPM Activity lifecycle", () => {
     expect(retargeted.trace?.activityId).toBe(firstId);
     expect(activities()[0]).toMatchObject({
       currentTargetKey: "source-2",
-      metrics: { targetRetargets: 1, procedureTransitions: 0 },
+      metrics: { targetRetargets: 1, targetAdvances: 0, procedureTransitions: 0 },
     });
     expect(
       fspmActivityEvents(ensureColonyPortfolio("W1N1")).filter(
         (event) => event.type === "target_changed",
       ),
     ).toHaveLength(1);
+  });
+
+  it("records satisfied same-Procedure target progression without a retarget penalty", () => {
+    creepEnergy = 50;
+    objectById.set(
+      "extension-1",
+      {
+        store: {
+          getFreeCapacity: () => 0,
+          getUsedCapacity: () => 50,
+          getCapacity: () => 50,
+        },
+      } as unknown as RoomObject,
+    );
+
+    const first = transferIntent("fund-workforce-energy", "extension-1");
+    bindFspmActivities([first]);
+    const activityId = first.trace?.activityId;
+    reconcileFspmActivityEvidence([
+      {
+        intent: first,
+        result: OK,
+        movementRequired: false,
+        evidence: "filled first workforce consumer",
+      } satisfies ActivityExecutionObservation,
+    ]);
+
+    creepEnergy = 25;
+    Game.time = 101;
+    const next = transferIntent("fund-workforce-energy", "extension-2");
+    bindFspmActivities([next]);
+
+    expect(next.trace?.activityId).toBe(activityId);
+    expect(activities()[0]).toMatchObject({
+      currentTargetKey: "extension-2",
+      metrics: { targetAdvances: 1, targetRetargets: 0, procedureTransitions: 0 },
+    });
+    const events = fspmActivityEvents(ensureColonyPortfolio("W1N1"));
+    expect(events.filter((event) => event.type === "target_advanced")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "target_changed")).toHaveLength(0);
   });
 
   it("keeps one Activity while the assignee advances Procedures and targets inside the same Task", () => {
