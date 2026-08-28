@@ -1,4 +1,9 @@
 import type { Intent } from "../intents/types";
+import {
+  fspmTaskDefinition,
+  requireFspmTaskDefinition,
+  type FspmTaskDetermination,
+} from "./fspm-catalog";
 
 export type FspmDomain = "economy" | "spawning" | "construction" | "defense";
 export type FspmStatus = "active" | "completed" | "cancelled" | "retired";
@@ -131,15 +136,18 @@ export interface ColonyTask {
   kind: "task";
   id: string;
   title: string;
+  description?: string;
   status: FspmTaskStatus;
   statusReason?: string;
   deliverableId: string;
   domain: FspmDomain;
   taskKey: string;
+  taskWeight?: number;
   qualityDescription: string;
   qualityMetric: string;
   kpiMetric: FspmTaskKpiRubric;
   procedures: FspmProcedure[];
+  determination?: FspmTaskDetermination;
   qi?: FspmTaskQi;
   createdAt: number;
   updatedAt: number;
@@ -178,6 +186,36 @@ const defaultKpiMetric = (taskKey: string): FspmTaskKpiRubric => ({
   satisfactory: "completed Activity satisfies the task Quality Metric",
   unsatisfactory: "completed Activity fails the task Quality Metric or requires material rework",
 });
+
+function applyCanonicalDefinition(task: ColonyTask): void {
+  const definition = fspmTaskDefinition(task.domain, task.taskKey);
+  if (!definition) return;
+
+  task.title = definition.title;
+  task.description = definition.description;
+  task.taskWeight = definition.taskWeight;
+  task.qualityDescription = definition.qualityDescription;
+  task.qualityMetric = definition.qualityMetric;
+  task.kpiMetric = { ...definition.kpiMetric };
+  task.determination = { ...definition.determination };
+  task.procedures ??= [];
+
+  for (const procedureDefinition of definition.procedures) {
+    const id = `procedure:${task.id.slice("task:".length)}:${procedureDefinition.key}`;
+    const existing = task.procedures.find((procedure) => procedure.id === id);
+    if (existing) {
+      existing.title = procedureDefinition.title;
+      existing.procedureKey = procedureDefinition.key;
+      continue;
+    }
+    task.procedures.push({
+      id,
+      taskId: task.id,
+      procedureKey: procedureDefinition.key,
+      title: procedureDefinition.title,
+    });
+  }
+}
 
 function transitionStatus(
   record: FspmRecordBase,
@@ -266,10 +304,17 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
       task.statusReason = "migrated to governed Active/Retired Task lifecycle";
       task.updatedAt = Game.time;
     }
-    task.qualityDescription ??= defaultQualityDescription(task.taskKey);
-    task.qualityMetric ??= defaultQualityMetric(task.taskKey);
-    task.kpiMetric ??= defaultKpiMetric(task.taskKey);
-    task.procedures ??= [];
+
+    if (fspmTaskDefinition(task.domain, task.taskKey)) {
+      applyCanonicalDefinition(task);
+    } else {
+      task.qualityDescription ??= defaultQualityDescription(task.taskKey);
+      task.qualityMetric ??= defaultQualityMetric(task.taskKey);
+      task.kpiMetric ??= defaultKpiMetric(task.taskKey);
+      task.procedures ??= [];
+      task.statusReason ??= "legacy Task definition retained for immutable Activity history";
+    }
+
     delete (task as ColonyTask & { completedAt?: number }).completedAt;
     delete (task as ColonyTask & { reopenedAt?: number }).reopenedAt;
     delete (task as ColonyTask & { completionCriterion?: string }).completionCriterion;
@@ -320,14 +365,12 @@ export function ensureDomainHierarchy(roomName: string, domain: FspmDomain) {
 }
 
 export function ensureTask(roomName: string, domain: FspmDomain, taskKey: string): ColonyTask {
+  const definition = requireFspmTaskDefinition(domain, taskKey);
   const { portfolio, deliverable } = ensureDomainHierarchy(roomName, domain);
   const id = `task:${roomName}:${domain}:${taskKey}`;
   const existing = portfolio.tasks[id];
   if (existing) {
-    existing.qualityDescription ??= defaultQualityDescription(taskKey);
-    existing.qualityMetric ??= defaultQualityMetric(taskKey);
-    existing.kpiMetric ??= defaultKpiMetric(taskKey);
-    existing.procedures ??= [];
+    applyCanonicalDefinition(existing);
     if (existing.status !== "retired") existing.status = "active";
     return existing;
   }
@@ -338,17 +381,21 @@ export function ensureTask(roomName: string, domain: FspmDomain, taskKey: string
     deliverableId: deliverable.id,
     domain,
     taskKey,
-    title: titleCase(taskKey),
+    title: definition.title,
+    description: definition.description,
+    taskWeight: definition.taskWeight,
     status: "active",
-    statusReason: "task definition is in the live work set",
-    qualityDescription: defaultQualityDescription(taskKey),
-    qualityMetric: defaultQualityMetric(taskKey),
-    kpiMetric: defaultKpiMetric(taskKey),
+    statusReason: "canonical governed Task definition is in the live work set",
+    qualityDescription: definition.qualityDescription,
+    qualityMetric: definition.qualityMetric,
+    kpiMetric: { ...definition.kpiMetric },
     procedures: [],
+    determination: { ...definition.determination },
     createdAt: Game.time,
     updatedAt: Game.time,
   };
   portfolio.tasks[id] = task;
+  applyCanonicalDefinition(task);
   return task;
 }
 
@@ -358,16 +405,29 @@ export function ensureProcedure(
   taskKey: string,
   procedureKey: string,
 ): FspmProcedure {
+  const definition = requireFspmTaskDefinition(domain, taskKey);
+  const procedureDefinition = definition.procedures.find(
+    (candidate) => candidate.key === procedureKey,
+  );
+  if (!procedureDefinition) {
+    throw new Error(
+      `Unknown FSPM Procedure ${domain}:${taskKey}:${procedureKey}; Procedure definitions are governed by the canonical Task catalog`,
+    );
+  }
+
   const task = ensureTask(roomName, domain, taskKey);
   const id = `procedure:${roomName}:${domain}:${taskKey}:${procedureKey}`;
   const existing = task.procedures.find((procedure) => procedure.id === id);
-  if (existing) return existing;
+  if (existing) {
+    existing.title = procedureDefinition.title;
+    return existing;
+  }
 
   const procedure: FspmProcedure = {
     id,
     taskId: task.id,
     procedureKey,
-    title: titleCase(procedureKey),
+    title: procedureDefinition.title,
   };
   task.procedures.push(procedure);
   task.updatedAt = Game.time;
@@ -382,7 +442,9 @@ export function reconcileFspmLifecycle(_intents: Intent[]): void {
     for (const task of Object.values(portfolio.tasks)) {
       if (task.status !== "retired") {
         task.status = "active";
-        task.statusReason = "task definition is in the live work set";
+        task.statusReason = fspmTaskDefinition(task.domain, task.taskKey)
+          ? "canonical governed Task definition is in the live work set"
+          : "legacy Task definition retained while immutable child Activities drain";
       }
     }
 
