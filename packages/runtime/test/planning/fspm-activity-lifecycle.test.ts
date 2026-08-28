@@ -213,10 +213,19 @@ describe("FSPM Activity lifecycle", () => {
     const heldActivityId = heldWork.trace?.activityId;
     const heldTaskId = heldWork.trace?.taskId;
 
+    creepEnergy = 10;
     Game.time = 101;
     const currentWork = controllerIntent();
     bindFspmActivities([currentWork]);
     const currentActivityId = currentWork.trace?.activityId;
+    reconcileFspmActivityEvidence([
+      {
+        intent: currentWork,
+        result: OK,
+        movementRequired: false,
+        evidence: "controller upgrade executed productively",
+      } satisfies ActivityExecutionObservation,
+    ]);
 
     creepEnergy = 0;
     Game.time = 102;
