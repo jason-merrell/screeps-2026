@@ -110,6 +110,13 @@ interface EvidencePortfolio extends ColonyFspmPortfolio {
   activityEventSequence?: number;
 }
 
+interface InfrastructureIdentity {
+  roomName: string;
+  x: number;
+  y: number;
+  structureType: StructureConstant;
+}
+
 export interface ReconcileFspmActivityEvidenceInput {
   observations: ActivityExecutionObservation[];
   proposed: Intent[];
@@ -353,13 +360,14 @@ function latestHeldActivityForTaskWork(
   taskId: string,
   targetKey: string,
   workKey: string | undefined,
+  allowLiveAssignee = false,
 ): EvidenceActivity | undefined {
   return Object.values(portfolio.activities ?? {})
     .filter((activity) => {
       if (activity.status !== "on_hold" || activity.taskId !== taskId) return false;
       const sameWork = workKey ? activity.workKey === workKey : activity.currentTargetKey === targetKey;
       if (!sameWork) return false;
-      return isSystemAssignee(activity.assignee) || !Game.creeps[activity.assignee];
+      return allowLiveAssignee || isSystemAssignee(activity.assignee) || !Game.creeps[activity.assignee];
     })
     .sort(
       (a, b) =>
@@ -377,6 +385,31 @@ function objectForTargetKey(targetKey: string): RoomObject | null {
 
 function activityObject(activity: EvidenceActivity): RoomObject | null {
   return activity.currentTargetKey ? objectForTargetKey(activity.currentTargetKey) : null;
+}
+
+function infrastructureIdentity(activity: EvidenceActivity): InfrastructureIdentity | null {
+  const parts = activity.workKey?.split(":");
+  if (parts?.length !== 5 || parts[0] !== "infrastructure") return null;
+  const x = Number(parts[2]);
+  const y = Number(parts[3]);
+  const structureType = parts[4];
+  if (!parts[1] || !Number.isInteger(x) || !Number.isInteger(y) || !structureType) return null;
+  return {
+    roomName: parts[1],
+    x,
+    y,
+    structureType: structureType as StructureConstant,
+  };
+}
+
+function infrastructureBuilt(activity: EvidenceActivity): boolean {
+  const identity = infrastructureIdentity(activity);
+  if (!identity) return false;
+  const room = Game.rooms?.[identity.roomName];
+  if (!room) return false;
+  return room
+    .lookForAt(LOOK_STRUCTURES, identity.x, identity.y)
+    .some((structure) => structure.structureType === identity.structureType);
 }
 
 function sourceObjectDepleted(object: RoomObject | null): boolean {
@@ -647,15 +680,15 @@ function completionReason(
         currentProcedure === "build-planned-infrastructure" &&
         productive > 0 &&
         activity.currentTargetKey &&
-        activityObject(activity) === null
+        activityObject(activity) === null &&
+        infrastructureBuilt(activity)
       ) {
-        return "planned infrastructure target reached built terminal state";
+        return "planned infrastructure target verified at governed room-plan location";
       }
       return null;
     case "maintain-infrastructure-condition":
-      if (productive <= 0) return null;
-      if (activity.currentTargetKey && activityObject(activity) === null) {
-        return "maintained infrastructure target is no longer present after productive work";
+      if (productive <= 0 || (activity.currentTargetKey && activityObject(activity) === null)) {
+        return null;
       }
       return repairedEnough(activity)
         ? "infrastructure target reached governed health threshold"
@@ -802,6 +835,7 @@ function completeActivity(
   portfolio: EvidencePortfolio,
   activity: EvidenceActivity,
   reason: string,
+  ratingOverride?: Exclude<FspmKpiRating, "in_progress">,
 ): void {
   if (activity.status === "completed") return;
   closeCurrentProcedure(activity);
@@ -811,7 +845,7 @@ function completeActivity(
   activity.metrics.currentTravelStreak = 0;
   delete activity.holdReason;
 
-  const rating = scoreActivity(portfolio, activity);
+  const rating = ratingOverride ?? scoreActivity(portfolio, activity);
   const evidence = `${reason}; Quality Metric=${activity.qualityMetric}; productive=${metric(activity.metrics.productiveTicks)} travel=${metric(activity.metrics.travelTicks)} wait=${metric(activity.metrics.waitTicks)} blocked=${metric(activity.metrics.blockedTicks)} assignmentGap=${metric(activity.metrics.assignmentGapTicks)} procedureTransitions=${metric(activity.metrics.procedureTransitions)} targetAdvances=${metric(activity.metrics.targetAdvances)} retargets=${metric(activity.metrics.targetRetargets)}`;
   activity.kpiScore = rating;
   activity.kpiEvidence = evidence;
@@ -839,6 +873,43 @@ function sweepSatisfiedActivities(): void {
       if (activity.status !== "in_progress" || isSystemAssignee(activity.assignee)) continue;
       const creep = Game.creeps[activity.assignee];
       if (!creep || creep.spawning) continue;
+      const task = portfolio.tasks[activity.taskId];
+      const currentProcedure = task ? procedureKey(task, activity) : undefined;
+
+      if (
+        task?.taskKey === "realize-planned-infrastructure" &&
+        currentProcedure === "build-planned-infrastructure" &&
+        metric(activity.metrics.productiveTicks) > 0 &&
+        activity.currentTargetKey &&
+        activityObject(activity) === null &&
+        !infrastructureBuilt(activity)
+      ) {
+        activity.metrics.blockedTicks = metric(activity.metrics.blockedTicks) + 1;
+        activity.metrics.idleTicks += 1;
+        holdActivity(
+          portfolio,
+          activity,
+          "construction site disappeared without the governed structure being present; Activity awaits re-siting",
+          "blocked",
+        );
+        continue;
+      }
+
+      if (
+        task?.taskKey === "maintain-infrastructure-condition" &&
+        metric(activity.metrics.productiveTicks) > 0 &&
+        activity.currentTargetKey &&
+        activityObject(activity) === null
+      ) {
+        completeActivity(
+          portfolio,
+          activity,
+          "maintenance target disappeared before governed health restoration could be verified",
+          "unsatisfactory",
+        );
+        continue;
+      }
+
       const reason = completionReason(portfolio, activity, creep);
       if (reason) completeActivity(portfolio, activity, reason);
     }
@@ -1014,7 +1085,21 @@ function bindSystemIntent(intent: Exclude<Intent, CreepIntent>): void {
     if (activity) {
       resumeActivity(portfolio, activity, trace.procedureId, targetKey, trace.workKey);
     } else {
-      activity = openActivity(portfolio, intent);
+      const transferable = trace.workKey
+        ? latestHeldActivityForTaskWork(
+            portfolio,
+            trace.taskId,
+            targetKey,
+            trace.workKey,
+            true,
+          )
+        : undefined;
+      if (transferable) {
+        activity = transferable;
+        reassignActivity(portfolio, activity, intent, targetKey);
+      } else {
+        activity = openActivity(portfolio, intent);
+      }
     }
   }
   if (activity) trace.activityId = activity.id;
