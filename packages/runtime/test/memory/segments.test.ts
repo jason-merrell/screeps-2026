@@ -47,6 +47,7 @@ function installGlobals(): void {
                 `activity-${index}`,
                 activity(index, index >= 70 ? "in_progress" : "completed"),
               ]),
+            ),
           },
         },
       },
@@ -68,7 +69,10 @@ function oversizedTrace(): string {
       colonies: [
         {
           roomName: "W1N1",
-          contractHistory: Array.from({ length: 20 }, (_, tick) => ({ tick, evidence: "x".repeat(300) })),
+          contractHistory: Array.from({ length: 20 }, (_, tick) => ({
+            tick,
+            evidence: "x".repeat(300),
+          })),
           tasks: Array.from({ length: 20 }, (_, index) => ({
             id: `task-${index}`,
             title: `Task ${index}`,
@@ -82,7 +86,10 @@ function oversizedTrace(): string {
               unsatisfactory: "unsatisfactory ".repeat(40),
             },
             procedures: [],
-            recentActivities: Array.from({ length: 8 }, (_, tick) => ({ tick, evidence: "e".repeat(300) })),
+            recentActivities: Array.from({ length: 8 }, (_, tick) => ({
+              tick,
+              evidence: "e".repeat(300),
+            })),
           })),
           activities: Array.from({ length: 100 }, (_, index) => activity(index)),
           activityEvents: Array.from({ length: 200 }, (_, index) => ({
@@ -111,8 +118,14 @@ function oversizedTrace(): string {
       proposedByPlanner: {},
       proposedByType: {},
       acceptedByType: {},
-      acceptedSample: Array.from({ length: 40 }, (_, index) => ({ index, reason: "intent ".repeat(100) })),
-      rejectedSample: Array.from({ length: 40 }, (_, index) => ({ index, reason: "reject ".repeat(100) })),
+      acceptedSample: Array.from({ length: 40 }, (_, index) => ({
+        index,
+        reason: "intent ".repeat(100),
+      })),
+      rejectedSample: Array.from({ length: 40 }, (_, index) => ({
+        index,
+        reason: "reject ".repeat(100),
+      })),
     },
   });
 }
