@@ -1,5 +1,6 @@
 import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
+import { compareConstructionTargets } from "../../planning/construction-priority";
 import type { WorldSnapshot } from "../../runtime/context";
 import { capabilitiesOf } from "../../workforce/capabilities";
 import {
@@ -478,14 +479,27 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     }
 
     if (energyMode === "deliver" && energy > 0 && capabilities.has("build")) {
-      const site = world.spatial.nearest(creep.pos, spatial.constructionSites);
+      const roomPlan = Memory.colonies[roomName]?.roomPlan;
+      const site = spatial.constructionSites
+        .map((candidate) => ({
+          site: candidate,
+          target: {
+            id: candidate.id,
+            x: candidate.pos.x,
+            y: candidate.pos.y,
+            structureType: candidate.structureType,
+            range: creep.pos.getRangeTo(candidate),
+          },
+        }))
+        .sort((left, right) => compareConstructionTargets(roomPlan, left.target, right.target))[0]
+        ?.site;
       if (site) {
         intents.push({
           type: "build",
           creepName: creep.name,
           targetId: site.id,
           priority: 700,
-          reason: "spend delivery-cycle surplus on bootstrap infrastructure",
+          reason: "spend delivery-cycle surplus on the highest-value planned infrastructure",
           trace: trace(roomName, creep.name, "build-infrastructure", `build:${site.id}`),
         });
         continue;
