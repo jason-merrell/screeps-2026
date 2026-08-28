@@ -277,6 +277,13 @@ const compactRecord = (record: { id: string; title: string; status: FspmStatus; 
   } } : {}),
 });
 
+export function activityTraceDisposition(
+  activity: FspmActivityRecord,
+): FspmAssignmentState | null {
+  if (activity.status === "on_hold") return "on_hold";
+  return (activity as ActivityWithEvidence).currentDisposition ?? null;
+}
+
 const compactActivity = (activity: FspmActivityRecord): CompactActivity => {
   const evidence = activity as ActivityWithEvidence;
   return {
@@ -286,7 +293,7 @@ const compactActivity = (activity: FspmActivityRecord): CompactActivity => {
     status: activity.status,
     currentProcedureId: activity.currentProcedureId,
     currentTargetKey: evidence.currentTargetKey ?? null,
-    currentDisposition: evidence.currentDisposition ?? null,
+    currentDisposition: activityTraceDisposition(activity),
     createdAt: activity.createdAt,
     startedAt: activity.startedAt ?? null,
     updatedAt: activity.updatedAt,
