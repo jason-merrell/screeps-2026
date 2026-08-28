@@ -4,11 +4,22 @@ export const OBSERVABILITY_SEGMENT_TARGET_CHARS = 90_000;
 export const FSPM_ACTIVITY_MEMORY_LIMIT = 64;
 export const FSPM_ACTIVITY_TRACE_LIMIT = 40;
 export const FSPM_EVENT_TRACE_LIMIT = 16;
-export const FSPM_RETENTION_VERSION = 1;
+export const FSPM_RETENTION_VERSION = 2;
 
 const requestedSegments = new Set<number>([OBSERVABILITY_SEGMENT]);
 
 type JsonObject = Record<string, unknown>;
+
+interface ActivitySelection {
+  retained: JsonObject[];
+  omitted: {
+    total: number;
+    inProgress: number;
+    onHold: number;
+    otherNonterminal: number;
+    completed: number;
+  };
+}
 
 function asObject(value: unknown): JsonObject | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -25,32 +36,83 @@ function numericField(value: JsonObject, key: string): number {
   return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : 0;
 }
 
-function recentActivityRows(rows: unknown[], limit: number): unknown[] {
+function byRecentActivity(a: JsonObject, b: JsonObject): number {
+  return (
+    numericField(b, "updatedAt") - numericField(a, "updatedAt") ||
+    numericField(b, "completedAt") - numericField(a, "completedAt") ||
+    numericField(b, "createdAt") - numericField(a, "createdAt") ||
+    String(a.id ?? "").localeCompare(String(b.id ?? ""))
+  );
+}
+
+function byStableActivityOrder(a: JsonObject, b: JsonObject): number {
+  return (
+    numericField(a, "createdAt") - numericField(b, "createdAt") ||
+    String(a.id ?? "").localeCompare(String(b.id ?? ""))
+  );
+}
+
+function selectActivityRows(rows: unknown[], limit: number): ActivitySelection {
   const activities = rows.flatMap((row) => {
     const activity = asObject(row);
     return activity ? [activity] : [];
   });
-  if (activities.length <= limit) return activities;
+  const boundedLimit = Math.max(0, limit);
 
-  const active = activities.filter((activity) => activity.status !== "completed");
+  const inProgress = activities
+    .filter((activity) => activity.status === "in_progress")
+    .sort(byRecentActivity);
+  const onHold = activities
+    .filter((activity) => activity.status === "on_hold")
+    .sort(byRecentActivity);
   const completed = activities
     .filter((activity) => activity.status === "completed")
-    .sort(
-      (a, b) =>
-        numericField(b, "updatedAt") - numericField(a, "updatedAt") ||
-        numericField(b, "completedAt") - numericField(a, "completedAt") ||
-        numericField(b, "createdAt") - numericField(a, "createdAt"),
-    );
-  const completedBudget = Math.max(0, limit - active.length);
-  return [...active, ...completed.slice(0, completedBudget)].sort(
-    (a, b) =>
-      numericField(a, "createdAt") - numericField(b, "createdAt") ||
-      String(a.id ?? "").localeCompare(String(b.id ?? "")),
-  );
+    .sort(byRecentActivity);
+  const otherNonterminal = activities
+    .filter(
+      (activity) =>
+        activity.status !== "in_progress" &&
+        activity.status !== "on_hold" &&
+        activity.status !== "completed",
+    )
+    .sort(byRecentActivity);
+
+  let remaining = boundedLimit;
+  const take = (group: JsonObject[]): JsonObject[] => {
+    if (remaining <= 0) return [];
+    const selected = group.slice(0, remaining);
+    remaining -= selected.length;
+    return selected;
+  };
+
+  const retainedInProgress = take(inProgress);
+  const retainedOnHold = take(onHold);
+  const retainedOther = take(otherNonterminal);
+  const retainedCompleted = take(completed);
+  const retained = [
+    ...retainedInProgress,
+    ...retainedOnHold,
+    ...retainedOther,
+    ...retainedCompleted,
+  ].sort(byStableActivityOrder);
+
+  const omitted = {
+    inProgress: inProgress.length - retainedInProgress.length,
+    onHold: onHold.length - retainedOnHold.length,
+    otherNonterminal: otherNonterminal.length - retainedOther.length,
+    completed: completed.length - retainedCompleted.length,
+    total: Math.max(0, activities.length - retained.length),
+  };
+
+  return { retained, omitted };
 }
 
 function trimTransportRows(trace: JsonObject): void {
   let omittedActivities = 0;
+  let omittedInProgressActivities = 0;
+  let omittedOnHoldActivities = 0;
+  let omittedOtherNonterminalActivities = 0;
+  let omittedCompletedActivities = 0;
   let omittedEvents = 0;
   const fspm = asObject(trace.fspm);
   if (fspm) {
@@ -59,9 +121,13 @@ function trimTransportRows(trace: JsonObject): void {
       if (!colony) continue;
 
       const activities = asArray(colony.activities);
-      const retainedActivities = recentActivityRows(activities, FSPM_ACTIVITY_TRACE_LIMIT);
-      omittedActivities += Math.max(0, activities.length - retainedActivities.length);
-      colony.activities = retainedActivities;
+      const selection = selectActivityRows(activities, FSPM_ACTIVITY_TRACE_LIMIT);
+      omittedActivities += selection.omitted.total;
+      omittedInProgressActivities += selection.omitted.inProgress;
+      omittedOnHoldActivities += selection.omitted.onHold;
+      omittedOtherNonterminalActivities += selection.omitted.otherNonterminal;
+      omittedCompletedActivities += selection.omitted.completed;
+      colony.activities = selection.retained;
 
       const activityEvents = asArray(colony.activityEvents);
       const retainedEvents = activityEvents.slice(-FSPM_EVENT_TRACE_LIMIT);
@@ -89,6 +155,10 @@ function trimTransportRows(trace: JsonObject): void {
     activityTraceLimit: FSPM_ACTIVITY_TRACE_LIMIT,
     eventTraceLimit: FSPM_EVENT_TRACE_LIMIT,
     omittedActivities,
+    omittedInProgressActivities,
+    omittedOnHoldActivities,
+    omittedOtherNonterminalActivities,
+    omittedCompletedActivities,
     omittedEvents,
   });
   trace.transport = transport;
@@ -115,7 +185,7 @@ function compactTaskMetadata(trace: JsonObject): void {
   for (const row of asArray(fspm.colonies)) {
     const colony = asObject(row);
     if (!colony) continue;
-    colony.activities = recentActivityRows(asArray(colony.activities), 24);
+    colony.activities = selectActivityRows(asArray(colony.activities), 24).retained;
     colony.activityEvents = asArray(colony.activityEvents).slice(-8);
     for (const taskRow of asArray(colony.tasks)) {
       const task = asObject(taskRow);
