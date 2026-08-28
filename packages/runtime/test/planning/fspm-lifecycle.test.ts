@@ -12,7 +12,7 @@ function installGlobals(time = 100): void {
   Object.assign(globalThis, {
     Game: { time },
     Memory: {
-      version: 2,
+      version: 5,
       colonies: {
         W1N1: {
           roomName: "W1N1",
@@ -38,7 +38,7 @@ function tracedIntent(taskId: string): Intent {
     priority: 100,
     reason: "test demand",
     trace: {
-      contractId: "contract:colony:W1N1",
+      p3Id: "portfolio:colony:W1N1",
       requirementId: "requirement:W1N1:spawning",
       deliverableId: "deliverable:W1N1:spawning",
       taskId,
@@ -58,7 +58,8 @@ describe("FSPM lifecycle reconciliation", () => {
     expect(task.status).toBe("active");
     expect(portfolio().deliverables.spawning?.status).toBe("active");
     expect(portfolio().requirements.spawning?.status).toBe("active");
-    expect(portfolio().contract.status).toBe("active");
+    expect(portfolio().p3.status).toBe("active");
+    expect(portfolio().contract).toBeUndefined();
   });
 
   it("does not reinterpret planner demand as Task lifecycle state", () => {
