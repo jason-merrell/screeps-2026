@@ -11,10 +11,13 @@ import {
   type PlannerName,
   type PlannerRunTrace,
 } from "./observability/trace";
+import {
+  bindFspmActivities,
+  reconcileFspmActivityEvidence,
+} from "./planning/activity-lifecycle";
 import { reconcileFspmLifecycle } from "./planning/fspm";
 import { ensureRoomPlanOwnership } from "./planning/ownership";
 import { reconcileFspmQuality } from "./planning/quality";
-import { reconcileTaskKpis } from "./planning/task-kpi";
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
@@ -69,12 +72,13 @@ export const loop = (): void => {
 
   phaseStart = Game.cpu.getUsed();
   const arbitration = arbitrateDetailed(proposed);
+  bindFspmActivities(arbitration.accepted);
   const arbitrationCpu = Game.cpu.getUsed() - phaseStart;
 
   phaseStart = Game.cpu.getUsed();
   const execution = execute(arbitration.accepted);
   const executionCpu = Game.cpu.getUsed() - phaseStart;
-  reconcileTaskKpis(execution.activities);
+  reconcileFspmActivityEvidence(execution.activities);
 
   publishTickTrace({
     tickStartCpu,

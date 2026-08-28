@@ -13,6 +13,18 @@ export function migrateMemory(): void {
     memory.version = 2;
   }
 
+  if (memory.version === 2) {
+    for (const colony of Object.values(memory.colonies ?? {})) {
+      const portfolio = colony.fspm;
+      if (!portfolio) continue;
+
+      portfolio.activities = {};
+      portfolio.activityKpiHistory = {};
+      for (const task of Object.values(portfolio.tasks)) delete task.qi;
+    }
+    memory.version = 3;
+  }
+
   if (memory.version !== MEMORY_VERSION) {
     throw new Error(`Unsupported Memory version ${memory.version}; expected ${MEMORY_VERSION}`);
   }

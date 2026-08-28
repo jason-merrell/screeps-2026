@@ -2,11 +2,13 @@ import type { ArbitrationRejection } from "../intents/arbitrate";
 import type { Intent, IntentTrace } from "../intents/types";
 import { writeObservabilitySegment } from "../memory/segments";
 import type { MovementMetrics } from "../movement/traffic";
+import { activityContinuityRatio } from "../planning/activity-lifecycle";
 import type {
   ColonyDeliverable,
   ColonyRequirement,
   ColonyTask,
   FspmActivityKpiSample,
+  FspmActivityRecord,
   FspmQuality,
   FspmQualitySample,
   FspmStatus,
@@ -81,9 +83,28 @@ interface CompactTask extends CompactFspmRecord {
   deliverableId: string;
   domain: ColonyTask["domain"];
   taskKey: string;
+  qualityDescription: string;
+  qualityMetric: string;
   kpiMetric: ColonyTask["kpiMetric"];
+  procedures: Array<{ id: string; procedureKey: string; title: string }>;
   qi?: ColonyTask["qi"];
   recentActivities: FspmActivityKpiSample[];
+}
+
+interface CompactActivity {
+  id: string;
+  taskId: string;
+  assignee: string;
+  status: FspmActivityRecord["status"];
+  currentProcedureId: string;
+  createdAt: number;
+  startedAt: number | null;
+  updatedAt: number;
+  completedAt: number | null;
+  kpiScore: FspmActivityRecord["kpiScore"] | null;
+  continuityRatio: number | null;
+  metrics: FspmActivityRecord["metrics"];
+  holdReason: string | null;
 }
 
 interface FspmTraceSummary {
@@ -100,6 +121,7 @@ interface FspmTraceSummary {
   requirements: CompactRequirement[];
   deliverables: CompactDeliverable[];
   tasks: CompactTask[];
+  activities: CompactActivity[];
 }
 
 export interface TickObservabilityTrace {
@@ -223,6 +245,22 @@ const compactRecord = (record: { id: string; title: string; status: FspmStatus; 
   } } : {}),
 });
 
+const compactActivity = (activity: FspmActivityRecord): CompactActivity => ({
+  id: activity.id,
+  taskId: activity.taskId,
+  assignee: activity.assignee,
+  status: activity.status,
+  currentProcedureId: activity.currentProcedureId,
+  createdAt: activity.createdAt,
+  startedAt: activity.startedAt ?? null,
+  updatedAt: activity.updatedAt,
+  completedAt: activity.completedAt ?? null,
+  kpiScore: activity.kpiScore ?? null,
+  continuityRatio: activityContinuityRatio(activity),
+  metrics: { ...activity.metrics },
+  holdReason: activity.holdReason ?? null,
+});
+
 function fspmSummaries(): FspmTraceSummary[] {
   return Object.values(Memory.colonies)
     .flatMap((colony) => {
@@ -251,11 +289,21 @@ function fspmSummaries(): FspmTraceSummary[] {
             deliverableId: record.deliverableId,
             domain: record.domain,
             taskKey: record.taskKey,
+            qualityDescription: record.qualityDescription,
+            qualityMetric: record.qualityMetric,
             kpiMetric: { ...record.kpiMetric },
+            procedures: record.procedures.map((procedure) => ({
+              id: procedure.id,
+              procedureKey: procedure.procedureKey,
+              title: procedure.title,
+            })),
             ...(record.qi ? { qi: { ...record.qi } } : {}),
             recentActivities: (portfolio.activityKpiHistory?.[record.id] ?? []).slice(-8).map((sample) => ({ ...sample })),
           }))
           .sort((a, b) => a.id.localeCompare(b.id)),
+        activities: Object.values(portfolio.activities ?? {})
+          .map(compactActivity)
+          .sort((a, b) => a.assignee.localeCompare(b.assignee) || a.createdAt - b.createdAt || a.id.localeCompare(b.id)),
       }];
     })
     .sort((a, b) => a.roomName.localeCompare(b.roomName));

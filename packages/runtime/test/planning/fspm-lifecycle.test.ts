@@ -40,7 +40,7 @@ function tracedIntent(taskId: string): Intent {
       requirementId: "requirement:W1N1:spawning",
       deliverableId: "deliverable:W1N1:spawning",
       taskId,
-      activityId: "activity:100:W1N1:spawning:Spawn1:spawn-worker",
+      procedureId: `${taskId}:execute`,
     },
   };
 }
@@ -48,52 +48,40 @@ function tracedIntent(taskId: string): Intent {
 describe("FSPM lifecycle reconciliation", () => {
   beforeEach(() => installGlobals());
 
-  it("completes idle tasks and rolls completion through deliverable and requirement", () => {
+  it("keeps Task definitions active when no Activity is demanded this tick", () => {
     const task = ensureTask("W1N1", "spawning", "maintain-workforce");
 
     reconcileFspmLifecycle([]);
 
-    expect(task.status).toBe("completed");
-    expect(task.completedAt).toBe(100);
-    expect(portfolio().deliverables.spawning?.status).toBe("completed");
-    expect(portfolio().requirements.spawning?.status).toBe("completed");
+    expect(task.status).toBe("active");
+    expect(portfolio().deliverables.spawning?.status).toBe("active");
+    expect(portfolio().requirements.spawning?.status).toBe("active");
     expect(portfolio().contract.status).toBe("active");
   });
 
-  it("reopens completed work when planner demand returns", () => {
+  it("does not reinterpret planner demand as Task lifecycle state", () => {
     const task = ensureTask("W1N1", "spawning", "maintain-workforce");
-    reconcileFspmLifecycle([]);
+    const createdAt = task.createdAt;
 
+    reconcileFspmLifecycle([]);
     Game.time = 101;
     reconcileFspmLifecycle([tracedIntent(task.id)]);
 
     expect(task.status).toBe("active");
-    expect(task.completedAt).toBeUndefined();
-    expect(task.reopenedAt).toBe(101);
-    expect(portfolio().deliverables.spawning?.status).toBe("active");
-    expect(portfolio().requirements.spawning?.status).toBe("active");
+    expect(task.createdAt).toBe(createdAt);
   });
 
-  it("does not churn lifecycle timestamps while state and reason remain unchanged", () => {
+  it("preserves explicit Task retirement against derived demand", () => {
     const task = ensureTask("W1N1", "spawning", "maintain-workforce");
-    reconcileFspmLifecycle([]);
-    const updatedAt = task.updatedAt;
+    task.status = "retired";
+    task.retiredAt = 100;
+    task.statusReason = "operator retired test task";
 
     Game.time = 101;
-    reconcileFspmLifecycle([]);
-
-    expect(task.updatedAt).toBe(updatedAt);
-    expect(task.completedAt).toBe(100);
-  });
-
-  it("preserves explicit cancellation against derived demand", () => {
-    const task = ensureTask("W1N1", "spawning", "maintain-workforce");
-    task.status = "cancelled";
-    task.statusReason = "operator cancelled test task";
-
     reconcileFspmLifecycle([tracedIntent(task.id)]);
 
-    expect(task.status).toBe("cancelled");
-    expect(task.statusReason).toBe("operator cancelled test task");
+    expect(task.status).toBe("retired");
+    expect(task.retiredAt).toBe(100);
+    expect(task.statusReason).toBe("operator retired test task");
   });
 });

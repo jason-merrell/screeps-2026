@@ -1,7 +1,9 @@
 import type { Intent } from "../intents/types";
 
 export type FspmDomain = "economy" | "spawning" | "construction" | "defense";
-export type FspmStatus = "active" | "completed" | "cancelled";
+export type FspmStatus = "active" | "completed" | "cancelled" | "retired";
+export type FspmTaskStatus = "active" | "retired";
+export type FspmActivityStatus = "not_started" | "in_progress" | "on_hold" | "completed";
 export type FspmQualityState = "healthy" | "watch" | "degraded";
 export type FspmQualityTrend = "new" | "improving" | "stable" | "declining";
 export type FspmKpiRating = "exceptional" | "satisfactory" | "unsatisfactory" | "in_progress";
@@ -27,6 +29,13 @@ export interface FspmTaskKpiRubric {
   unsatisfactory: string;
 }
 
+export interface FspmProcedure {
+  id: string;
+  taskId: string;
+  procedureKey: string;
+  title: string;
+}
+
 export interface FspmActivityKpiSample {
   tick: number;
   activityId: string;
@@ -48,6 +57,36 @@ export interface FspmTaskQi {
   unsatisfactory: number;
 }
 
+export interface FspmActivityMetrics {
+  inProgressTicks: number;
+  onHoldTicks: number;
+  productiveTicks: number;
+  travelTicks: number;
+  idleTicks: number;
+  holdCount: number;
+  resumeCount: number;
+  taskPreemptions: number;
+  procedureTransitions: number;
+}
+
+export interface FspmActivityRecord {
+  id: string;
+  taskId: string;
+  assignee: string;
+  status: FspmActivityStatus;
+  currentProcedureId: string;
+  qualityDescription: string;
+  qualityMetric: string;
+  kpiMetric: FspmTaskKpiRubric;
+  kpiScore?: Exclude<FspmKpiRating, "in_progress">;
+  createdAt: number;
+  updatedAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  holdReason?: string;
+  metrics: FspmActivityMetrics;
+}
+
 interface FspmRecordBase {
   id: string;
   title: string;
@@ -67,7 +106,7 @@ export interface ColonyServiceProgram {
   subType: "service_program";
   roomName: string;
   title: string;
-  status: FspmStatus;
+  status: "active";
 }
 
 export interface ColonyContract extends FspmRecordBase {
@@ -88,13 +127,23 @@ export interface ColonyDeliverable extends FspmRecordBase {
   domain: FspmDomain;
 }
 
-export interface ColonyTask extends FspmRecordBase {
+export interface ColonyTask {
   kind: "task";
+  id: string;
+  title: string;
+  status: FspmTaskStatus;
+  statusReason?: string;
   deliverableId: string;
   domain: FspmDomain;
   taskKey: string;
+  qualityDescription: string;
+  qualityMetric: string;
   kpiMetric: FspmTaskKpiRubric;
+  procedures: FspmProcedure[];
   qi?: FspmTaskQi;
+  createdAt: number;
+  updatedAt: number;
+  retiredAt?: number;
 }
 
 export interface ColonyFspmPortfolio {
@@ -103,6 +152,7 @@ export interface ColonyFspmPortfolio {
   requirements: Partial<Record<FspmDomain, ColonyRequirement>>;
   deliverables: Partial<Record<FspmDomain, ColonyDeliverable>>;
   tasks: Record<string, ColonyTask>;
+  activities?: Record<string, FspmActivityRecord>;
   qualityHistory?: Record<string, FspmQualitySample[]>;
   activityKpiHistory?: Record<string, FspmActivityKpiSample[]>;
 }
@@ -113,21 +163,25 @@ const titleCase = (value: string): string =>
     .map((part) => (part.length > 0 ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part))
     .join(" ");
 
-const taskCriterion =
-  "complete when the planner emits no activity for this task during the current tick; reopen when demand returns";
 const childRollupCriterion =
-  "complete when at least one child task exists and every materialized child task is completed";
+  "complete when the governed acceptance criteria for this record are satisfied";
+
+const defaultQualityDescription = (taskKey: string): string =>
+  `${titleCase(taskKey)} produces the intended colony outcome without unnecessary interruption or rework`;
+
+const defaultQualityMetric = (taskKey: string): string =>
+  `${titleCase(taskKey)} is evaluated from completed Activity outcome evidence`;
 
 const defaultKpiMetric = (taskKey: string): FspmTaskKpiRubric => ({
   metric: `${titleCase(taskKey)} execution effectiveness`,
-  exceptional: "measurable task outcome exceeds the task-specific expected threshold",
-  satisfactory: "activity successfully produces its intended game-state effect",
-  unsatisfactory: "activity returns a non-transit execution error or fails to produce usable work",
+  exceptional: "completed Activity exceeds the task-specific expected threshold",
+  satisfactory: "completed Activity satisfies the task Quality Metric",
+  unsatisfactory: "completed Activity fails the task Quality Metric or requires material rework",
 });
 
 function transitionStatus(
   record: FspmRecordBase,
-  next: Exclude<FspmStatus, "cancelled">,
+  next: "active" | "completed",
   reason: string,
 ): void {
   if (record.status === "cancelled") return;
@@ -176,6 +230,7 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
       requirements: {},
       deliverables: {},
       tasks: {},
+      activities: {},
       qualityHistory: {},
       activityKpiHistory: {},
     };
@@ -191,6 +246,7 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
     status: "active",
   };
   portfolio.contract.programId ??= portfolio.program.id;
+  portfolio.activities ??= {};
   portfolio.qualityHistory ??= {};
   portfolio.activityKpiHistory ??= {};
   portfolio.contract.completionCriterion ??= "close only by explicit colony decommission";
@@ -205,8 +261,18 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
     deliverable.completionCriterion ??= childRollupCriterion;
   }
   for (const task of Object.values(portfolio.tasks)) {
-    task.completionCriterion ??= taskCriterion;
+    if (task.status !== "active" && task.status !== "retired") {
+      task.status = "active";
+      task.statusReason = "migrated to governed Active/Retired Task lifecycle";
+      task.updatedAt = Game.time;
+    }
+    task.qualityDescription ??= defaultQualityDescription(task.taskKey);
+    task.qualityMetric ??= defaultQualityMetric(task.taskKey);
     task.kpiMetric ??= defaultKpiMetric(task.taskKey);
+    task.procedures ??= [];
+    delete (task as ColonyTask & { completedAt?: number }).completedAt;
+    delete (task as ColonyTask & { reopenedAt?: number }).reopenedAt;
+    delete (task as ColonyTask & { completionCriterion?: string }).completionCriterion;
   }
 
   return portfolio;
@@ -226,7 +292,7 @@ export function ensureDomainHierarchy(roomName: string, domain: FspmDomain) {
       title: `${titleCase(domain)} capability`,
       status: "active",
       completionCriterion: childRollupCriterion,
-      statusReason: "domain work has not yet rolled up to completion",
+      statusReason: "domain work has not yet reached governed acceptance",
       createdAt: Game.time,
       updatedAt: Game.time,
     };
@@ -243,7 +309,7 @@ export function ensureDomainHierarchy(roomName: string, domain: FspmDomain) {
       title: `${titleCase(domain)} operating system`,
       status: "active",
       completionCriterion: childRollupCriterion,
-      statusReason: "domain work has not yet rolled up to completion",
+      statusReason: "deliverable has not yet reached governed acceptance",
       createdAt: Game.time,
       updatedAt: Game.time,
     };
@@ -258,7 +324,11 @@ export function ensureTask(roomName: string, domain: FspmDomain, taskKey: string
   const id = `task:${roomName}:${domain}:${taskKey}`;
   const existing = portfolio.tasks[id];
   if (existing) {
+    existing.qualityDescription ??= defaultQualityDescription(taskKey);
+    existing.qualityMetric ??= defaultQualityMetric(taskKey);
     existing.kpiMetric ??= defaultKpiMetric(taskKey);
+    existing.procedures ??= [];
+    if (existing.status !== "retired") existing.status = "active";
     return existing;
   }
 
@@ -270,9 +340,11 @@ export function ensureTask(roomName: string, domain: FspmDomain, taskKey: string
     taskKey,
     title: titleCase(taskKey),
     status: "active",
-    completionCriterion: taskCriterion,
-    statusReason: "planner demand created activity",
+    statusReason: "task definition is in the live work set",
+    qualityDescription: defaultQualityDescription(taskKey),
+    qualityMetric: defaultQualityMetric(taskKey),
     kpiMetric: defaultKpiMetric(taskKey),
+    procedures: [],
     createdAt: Game.time,
     updatedAt: Game.time,
   };
@@ -280,22 +352,38 @@ export function ensureTask(roomName: string, domain: FspmDomain, taskKey: string
   return task;
 }
 
-export function reconcileFspmLifecycle(intents: Intent[]): void {
-  const demandedTaskIds = new Set(
-    intents.flatMap((intent) => (intent.trace?.taskId ? [intent.trace.taskId] : [])),
-  );
+export function ensureProcedure(
+  roomName: string,
+  domain: FspmDomain,
+  taskKey: string,
+  procedureKey: string,
+): FspmProcedure {
+  const task = ensureTask(roomName, domain, taskKey);
+  const id = `procedure:${roomName}:${domain}:${taskKey}:${procedureKey}`;
+  const existing = task.procedures.find((procedure) => procedure.id === id);
+  if (existing) return existing;
 
+  const procedure: FspmProcedure = {
+    id,
+    taskId: task.id,
+    procedureKey,
+    title: titleCase(procedureKey),
+  };
+  task.procedures.push(procedure);
+  task.updatedAt = Game.time;
+  return procedure;
+}
+
+export function reconcileFspmLifecycle(_intents: Intent[]): void {
   for (const colony of Object.values(Memory.colonies)) {
     const portfolio = colony.fspm;
     if (!portfolio) continue;
 
     for (const task of Object.values(portfolio.tasks)) {
-      const demanded = demandedTaskIds.has(task.id);
-      transitionStatus(
-        task,
-        demanded ? "active" : "completed",
-        demanded ? "planner emitted activity this tick" : "planner emitted no activity this tick",
-      );
+      if (task.status !== "retired") {
+        task.status = "active";
+        task.statusReason = "task definition is in the live work set";
+      }
     }
 
     for (const domain of ["economy", "spawning", "construction", "defense"] as const) {
@@ -303,17 +391,12 @@ export function reconcileFspmLifecycle(intents: Intent[]): void {
       const deliverable = portfolio.deliverables[domain];
       if (!requirement || !deliverable) continue;
 
-      const tasks = Object.values(portfolio.tasks).filter((task) => task.domain === domain);
-      const complete = tasks.length > 0 && tasks.every((task) => task.status === "completed");
-      const activeTasks = tasks.filter((task) => task.status === "active").length;
-      const reason = complete
-        ? `${tasks.length} materialized task${tasks.length === 1 ? "" : "s"} completed`
-        : tasks.length === 0
-          ? "no materialized tasks yet"
-          : `${activeTasks} active task${activeTasks === 1 ? "" : "s"}`;
-
-      transitionStatus(deliverable, complete ? "completed" : "active", reason);
-      transitionStatus(requirement, complete ? "completed" : "active", reason);
+      const activeTasks = Object.values(portfolio.tasks).filter(
+        (task) => task.domain === domain && task.status === "active",
+      ).length;
+      const reason = `${activeTasks} active Task definition${activeTasks === 1 ? "" : "s"}; acceptance is not inferred from tick demand`;
+      transitionStatus(deliverable, "active", reason);
+      transitionStatus(requirement, "active", reason);
     }
 
     transitionStatus(portfolio.contract, "active", "owned colony is operational");
