@@ -93,7 +93,7 @@ describe("surplus hybrid labor utilization", () => {
     world = installWorld();
   });
 
-  it("withdraws available buffered energy instead of falling through with no intent", () => {
+  it("withdraws unclaimed buffered energy instead of falling through with no intent", () => {
     containerEnergy = 500;
 
     const intents = planSurplusLaborUtilization(world, []);
@@ -130,7 +130,7 @@ describe("surplus hybrid labor utilization", () => {
     });
   });
 
-  it("never competes with a primary economy assignment", () => {
+  it("never competes with a primary economy assignment for the same performer", () => {
     const primary: Intent[] = [
       {
         type: "move",
@@ -143,6 +143,30 @@ describe("surplus hybrid labor utilization", () => {
     ];
 
     expect(planSurplusLaborUtilization(world, primary)).toEqual([]);
+  });
+
+  it("does not steal buffered energy already reserved by a primary hauler", () => {
+    containerEnergy = 500;
+    const primary: Intent[] = [
+      {
+        type: "withdraw",
+        creepName: "transport-1",
+        targetId: "container-1" as Id<StructureContainer>,
+        resource: RESOURCE_ENERGY,
+        priority: 1050,
+        reason: "primary source-buffer reservation",
+      },
+    ];
+
+    expect(planSurplusLaborUtilization(world, primary)).toMatchObject([
+      {
+        type: "move",
+        creepName: "worker-1",
+        targetId: "container-1",
+        range: 2,
+        priority: 150,
+      },
+    ]);
   });
 
   it("inherits the primary source-buffer activation gate", () => {
