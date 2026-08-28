@@ -13,7 +13,13 @@ export type CreepIntent =
   | UpgradeIntent;
 
 export interface IntentTrace {
-  contractId: string;
+  /**
+   * Current FSPM authority for newly generated work. Optional only so persisted
+   * pre-migration traces remain decodable while the legacy contract field drains.
+   */
+  p3Id?: string;
+  /** Legacy pre-P3-migration authority. New runtime traces must not emit it. */
+  contractId?: string;
   requirementId: string;
   deliverableId: string;
   taskId: string;
