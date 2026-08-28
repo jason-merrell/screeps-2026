@@ -265,7 +265,8 @@ export function validateFspmTaskCatalog(): string[] {
     if (task.taskWeight <= 0 || task.taskWeight > 100) {
       errors.push(`${id} has invalid Task Weight ${task.taskWeight}`);
     }
-    if (task.procedures.length === 0) errors.push(`${id} has no Procedures`);
+    const procedures: readonly FspmProcedureDefinition[] = task.procedures;
+    if (procedures.length === 0) errors.push(`${id} has no Procedures`);
     if (!task.determination.independentlyMeasurable) {
       errors.push(`${id} failed independent measurability`);
     }
@@ -277,7 +278,7 @@ export function validateFspmTaskCatalog(): string[] {
     }
 
     const procedureKeys = new Set<string>();
-    for (const procedure of task.procedures) {
+    for (const procedure of procedures) {
       if (!procedure.key.trim()) errors.push(`${id} contains a blank Procedure key`);
       if (procedureKeys.has(procedure.key)) {
         errors.push(`${id} contains duplicate Procedure ${procedure.key}`);
