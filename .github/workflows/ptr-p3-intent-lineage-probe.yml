@@ -1,0 +1,55 @@
+name: PTR P3 Intent Lineage Probe
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  probe:
+    if: github.event.pull_request.head.ref == 'probe/p3-live-intent-lineage'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Validate Infisical configuration
+        shell: bash
+        env:
+          INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
+          INFISICAL_PROJECT_SLUG: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          INFISICAL_ENV_SLUG: ${{ vars.INFISICAL_ENV_SLUG }}
+        run: |
+          test -n "$INFISICAL_IDENTITY_ID"
+          test -n "$INFISICAL_PROJECT_SLUG"
+          test -n "$INFISICAL_ENV_SLUG"
+
+      - name: Fetch Screeps token from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          secret-path: /deploy
+          recursive: false
+          include-imports: false
+
+      - name: Create bounded PTR work and capture current P3 lineage
+        run: node scripts/ptr-p3-intent-lineage-probe.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+
+      - name: Upload probe receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ptr-p3-intent-lineage-probe
+          path: artifacts/p3-intent-lineage-probe.json
+          if-no-files-found: warn
