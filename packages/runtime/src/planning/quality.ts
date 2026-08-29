@@ -174,6 +174,10 @@ function measureDomain(
   }
 }
 
+/**
+ * Transitional name retained for callers/tests while the former contract rollup
+ * becomes a P3 rollup. The calculation itself is authority-agnostic.
+ */
 export function rollupContractScore(scores: number[]): number | null {
   if (scores.length === 0) return null;
   return clampScore(scores.reduce((sum, score) => sum + score, 0) / scores.length);
@@ -195,21 +199,23 @@ export function reconcileFspmQuality(world: WorldSnapshot): void {
       applyQuality(portfolio, deliverable, measurement);
     }
 
-    const requirements = Object.values(portfolio.requirements).flatMap((requirement) =>
-      requirement?.quality ? [requirement] : [],
+    const measuredRequirements = Object.values(portfolio.requirements).flatMap((requirement) =>
+      requirement?.quality ? [{ requirement, quality: requirement.quality }] : [],
     );
-    const contractScore = rollupContractScore(requirements.map((requirement) => requirement.quality!.score));
-    if (contractScore === null) continue;
+    const p3Score = rollupContractScore(
+      measuredRequirements.map(({ quality }) => quality.score),
+    );
+    if (p3Score === null) continue;
 
-    applyQuality(portfolio, portfolio.contract, {
-      score: contractScore,
-      state: qualityState(contractScore),
+    applyQuality(portfolio, portfolio.p3, {
+      score: p3Score,
+      state: qualityState(p3Score),
       measuredAt: Game.time,
-      evidence: requirements
-        .sort((a, b) => a.domain.localeCompare(b.domain))
+      evidence: measuredRequirements
+        .sort((a, b) => a.requirement.domain.localeCompare(b.requirement.domain))
         .map(
-          (requirement) =>
-            `${requirement.domain} ${requirement.quality!.score} ${requirement.quality!.state}`,
+          ({ requirement, quality }) =>
+            `${requirement.domain} ${quality.score} ${quality.state}`,
         ),
     });
   }

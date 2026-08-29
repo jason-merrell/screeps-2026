@@ -13,6 +13,8 @@ export type FspmQualityState = "healthy" | "watch" | "degraded";
 export type FspmQualityTrend = "new" | "improving" | "stable" | "declining";
 export type FspmKpiRating = "exceptional" | "satisfactory" | "unsatisfactory" | "in_progress";
 
+export const EMPIRE_PORTFOLIO_ID = "portfolio:empire:operations";
+
 export interface FspmQuality {
   score: number;
   state: FspmQualityState;
@@ -105,15 +107,50 @@ interface FspmRecordBase {
   reopenedAt?: number;
 }
 
+interface PortfolioP3Base {
+  id: string;
+  type: "portfolio";
+  subType: "ou_portfolio";
+  name: string;
+  description: string;
+  parentP3Id: string | null;
+  /** Screeps adaptation of FSPM Start Date. Runtime scheduling authority is game ticks. */
+  temporalBasis: "game_tick";
+  startTick: number;
+  status: "active";
+  statusReason: string;
+  quality?: FspmQuality;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface EmpirePortfolioP3 extends PortfolioP3Base {
+  id: typeof EMPIRE_PORTFOLIO_ID;
+  parentP3Id: null;
+}
+
+export interface EmpireFspmPortfolio {
+  p3: EmpirePortfolioP3;
+}
+
+export interface ColonyPortfolioP3 extends PortfolioP3Base {
+  roomName: string;
+  parentP3Id: typeof EMPIRE_PORTFOLIO_ID;
+}
+
+/** Historical authority retained only to decode pre-migration evidence. */
 export interface ColonyServiceProgram {
   id: string;
   type: "program";
   subType: "service_program";
   roomName: string;
   title: string;
-  status: "active";
+  status: "active" | "retired";
+  statusReason?: string;
+  retiredAt?: number;
 }
 
+/** Historical synthetic authority retained only to decode pre-migration evidence. */
 export interface ColonyContract extends FspmRecordBase {
   kind: "contract";
   roomName: string;
@@ -122,7 +159,9 @@ export interface ColonyContract extends FspmRecordBase {
 
 export interface ColonyRequirement extends FspmRecordBase {
   kind: "requirement";
-  contractId: string;
+  p3Id: string;
+  /** Legacy authority retained on migrated records; new requirements omit it. */
+  contractId?: string;
   domain: FspmDomain;
 }
 
@@ -155,8 +194,12 @@ export interface ColonyTask {
 }
 
 export interface ColonyFspmPortfolio {
+  /** Current P3 authority for all newly generated colony work. */
+  p3: ColonyPortfolioP3;
+  /** Legacy pre-migration Service Program, retained as historical evidence only. */
   program?: ColonyServiceProgram;
-  contract: ColonyContract;
+  /** Legacy synthetic contract, retained as historical evidence only. */
+  contract?: ColonyContract;
   requirements: Partial<Record<FspmDomain, ColonyRequirement>>;
   deliverables: Partial<Record<FspmDomain, ColonyDeliverable>>;
   tasks: Record<string, ColonyTask>;
@@ -222,7 +265,7 @@ function transitionStatus(
   next: "active" | "completed",
   reason: string,
 ): void {
-  if (record.status === "cancelled") return;
+  if (record.status === "cancelled" || record.status === "retired") return;
   if (record.status === next && record.statusReason === reason) return;
 
   const previous = record.status;
@@ -238,33 +281,85 @@ function transitionStatus(
   }
 }
 
+function earliestKnownColonyTick(): number {
+  const discovered = Object.values(Memory.colonies).map((colony) => colony.discoveredAt);
+  return discovered.length > 0 ? Math.min(...discovered) : Game.time;
+}
+
+export function createEmpirePortfolioP3(startTick: number, updatedAt: number): EmpirePortfolioP3 {
+  return {
+    id: EMPIRE_PORTFOLIO_ID,
+    type: "portfolio",
+    subType: "ou_portfolio",
+    name: "EMPIRE-PORTFOLIO-Empire Operations",
+    description:
+      "Continuously manage owned colonies and subordinate P3 work by prioritizing and rebalancing empire resources against strategic operating objectives.",
+    parentP3Id: null,
+    temporalBasis: "game_tick",
+    startTick,
+    status: "active",
+    statusReason: "root Empire Operations Portfolio is continuously managed",
+    createdAt: startTick,
+    updatedAt,
+  };
+}
+
+export function createColonyPortfolioP3(
+  roomName: string,
+  startTick: number,
+  updatedAt: number,
+): ColonyPortfolioP3 {
+  return {
+    id: `portfolio:colony:${roomName}`,
+    type: "portfolio",
+    subType: "ou_portfolio",
+    roomName,
+    name: `COLONY-PORTFOLIO-${roomName} Operations`,
+    description:
+      `Continuously manage economy, workforce, construction, defense, expansion and operational priorities for owned colony ${roomName}.`,
+    parentP3Id: EMPIRE_PORTFOLIO_ID,
+    temporalBasis: "game_tick",
+    startTick,
+    status: "active",
+    statusReason: "owned colony is continuously managed as subordinate Portfolio scope",
+    createdAt: startTick,
+    updatedAt,
+  };
+}
+
+export function ensureEmpirePortfolio(): EmpireFspmPortfolio {
+  Memory.empireFspm ??= {
+    p3: createEmpirePortfolioP3(earliestKnownColonyTick(), Game.time),
+  };
+  Memory.empireFspm.p3.statusReason = "root Empire Operations Portfolio is continuously managed";
+  Memory.empireFspm.p3.updatedAt = Game.time;
+  return Memory.empireFspm;
+}
+
+function retireLegacyAuthority(portfolio: ColonyFspmPortfolio): void {
+  if (portfolio.program && portfolio.program.status !== "retired") {
+    portfolio.program.status = "retired";
+    portfolio.program.statusReason =
+      "retired after governance audit determined colony operations are Portfolio scope, not a Service Program";
+    portfolio.program.retiredAt = Game.time;
+  }
+
+  if (portfolio.contract && portfolio.contract.status !== "retired") {
+    portfolio.contract.status = "retired";
+    portfolio.contract.statusReason =
+      "retired synthetic contract authority; no Federal customer award or contractual period of performance exists";
+    portfolio.contract.updatedAt = Game.time;
+  }
+}
+
 export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
   const colony = Memory.colonies[roomName];
   if (!colony) throw new Error(`Cannot create FSPM portfolio for unknown colony ${roomName}`);
+  ensureEmpirePortfolio();
 
   if (!colony.fspm) {
-    const programId = `program:service:${roomName}`;
     colony.fspm = {
-      program: {
-        id: programId,
-        type: "program",
-        subType: "service_program",
-        roomName,
-        title: `Operate room ${roomName}`,
-        status: "active",
-      },
-      contract: {
-        kind: "contract",
-        id: `contract:colony:${roomName}`,
-        roomName,
-        programId,
-        title: `Operate colony ${roomName}`,
-        status: "active",
-        completionCriterion: "close only by explicit colony decommission",
-        statusReason: "owned colony is operational",
-        createdAt: Game.time,
-        updatedAt: Game.time,
-      },
+      p3: createColonyPortfolioP3(roomName, colony.discoveredAt, Game.time),
       requirements: {},
       deliverables: {},
       tasks: {},
@@ -275,23 +370,24 @@ export function ensureColonyPortfolio(roomName: string): ColonyFspmPortfolio {
   }
 
   const portfolio = colony.fspm;
-  portfolio.program ??= {
-    id: `program:service:${roomName}`,
-    type: "program",
-    subType: "service_program",
-    roomName,
-    title: `Operate room ${roomName}`,
-    status: "active",
-  };
-  portfolio.contract.programId ??= portfolio.program.id;
+  portfolio.p3 ??= createColonyPortfolioP3(roomName, colony.discoveredAt, Game.time);
+  portfolio.p3.parentP3Id = EMPIRE_PORTFOLIO_ID;
+  portfolio.p3.temporalBasis = "game_tick";
+  portfolio.p3.startTick ??= colony.discoveredAt;
+  portfolio.p3.description ??=
+    `Continuously manage economy, workforce, construction, defense, expansion and operational priorities for owned colony ${roomName}.`;
+  portfolio.p3.name ??= `COLONY-PORTFOLIO-${roomName} Operations`;
+  portfolio.p3.statusReason = "owned colony is continuously managed as subordinate Portfolio scope";
+  portfolio.p3.updatedAt = Game.time;
   portfolio.activities ??= {};
   portfolio.qualityHistory ??= {};
   portfolio.activityKpiHistory ??= {};
-  portfolio.contract.completionCriterion ??= "close only by explicit colony decommission";
-  portfolio.contract.statusReason ??= "owned colony is operational";
+
+  retireLegacyAuthority(portfolio);
 
   for (const requirement of Object.values(portfolio.requirements)) {
     if (!requirement) continue;
+    requirement.p3Id ??= portfolio.p3.id;
     requirement.completionCriterion ??= childRollupCriterion;
   }
   for (const deliverable of Object.values(portfolio.deliverables)) {
@@ -332,7 +428,7 @@ export function ensureDomainHierarchy(roomName: string, domain: FspmDomain) {
     requirement = {
       kind: "requirement",
       id: `requirement:${scope}`,
-      contractId: portfolio.contract.id,
+      p3Id: portfolio.p3.id,
       domain,
       title: `${titleCase(domain)} capability`,
       status: "active",
@@ -342,6 +438,8 @@ export function ensureDomainHierarchy(roomName: string, domain: FspmDomain) {
       updatedAt: Game.time,
     };
     portfolio.requirements[domain] = requirement;
+  } else {
+    requirement.p3Id = portfolio.p3.id;
   }
 
   let deliverable = portfolio.deliverables[domain];
@@ -435,9 +533,13 @@ export function ensureProcedure(
 }
 
 export function reconcileFspmLifecycle(_intents: Intent[]): void {
+  ensureEmpirePortfolio();
+
   for (const colony of Object.values(Memory.colonies)) {
     const portfolio = colony.fspm;
     if (!portfolio) continue;
+
+    ensureColonyPortfolio(colony.roomName);
 
     for (const task of Object.values(portfolio.tasks)) {
       if (task.status !== "retired") {
@@ -461,7 +563,7 @@ export function reconcileFspmLifecycle(_intents: Intent[]): void {
       transitionStatus(requirement, "active", reason);
     }
 
-    transitionStatus(portfolio.contract, "active", "owned colony is operational");
-    if (portfolio.program) portfolio.program.status = "active";
+    portfolio.p3.statusReason = "owned colony is continuously managed as subordinate Portfolio scope";
+    portfolio.p3.updatedAt = Game.time;
   }
 }

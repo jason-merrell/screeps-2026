@@ -5,6 +5,7 @@ import { MEMORY_VERSION } from "../src/memory/schema";
 describe("FSPM Activity memory migration", () => {
   beforeEach(() => {
     Object.assign(globalThis, {
+      Game: { time: 100 },
       Memory: {
         version: 2,
         colonies: {
@@ -128,9 +129,20 @@ describe("FSPM Activity memory migration", () => {
     migrateMemory();
 
     expect(Memory.version).toBe(MEMORY_VERSION);
-    expect(Memory.version).toBe(5);
+    expect(Memory.version).toBe(6);
+    expect(Memory.empireFspm?.p3).toMatchObject({
+      id: "portfolio:empire:operations",
+      parentP3Id: null,
+      startTick: 1,
+    });
     const portfolio = Memory.colonies.W1N1?.fspm;
     const task = portfolio?.tasks["task:W1N1:economy:test"];
+    expect(portfolio?.p3).toMatchObject({
+      id: "portfolio:colony:W1N1",
+      parentP3Id: "portfolio:empire:operations",
+      startTick: 1,
+    });
+    expect(portfolio?.contract?.status).toBe("retired");
     expect(task).toBeDefined();
     expect(task?.qi).toBeUndefined();
     expect(task?.procedures).toEqual([]);

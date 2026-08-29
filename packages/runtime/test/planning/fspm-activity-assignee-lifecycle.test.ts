@@ -67,7 +67,7 @@ function intent(creepName: string, sourceId = "source-1"): HarvestIntent {
     priority: 100,
     reason: "test governed energy-service work",
     trace: {
-      contractId: portfolio.contract.id,
+      p3Id: portfolio.p3.id,
       requirementId: requirement.id,
       deliverableId: deliverable.id,
       taskId: task.id,

@@ -66,7 +66,7 @@ function traceFor(taskKey: string, procedureKey: string) {
   const deliverable = portfolio.deliverables.economy;
   if (!requirement || !deliverable) throw new Error("expected economy hierarchy");
   return {
-    contractId: portfolio.contract.id,
+    p3Id: portfolio.p3.id,
     requirementId: requirement.id,
     deliverableId: deliverable.id,
     taskId: task.id,
