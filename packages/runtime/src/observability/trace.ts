@@ -170,7 +170,10 @@ interface FspmTraceSummary {
 }
 
 export interface TickObservabilityTrace {
+  /** Observability payload schema version. */
   version: 1;
+  /** Persistent Screeps Memory schema version active for this tick. */
+  memoryVersion: number;
   tick: number;
   cpu: {
     limit: number;
@@ -430,6 +433,7 @@ export function publishTickTrace(input: PublishTickTraceInput): TickObservabilit
 
   const trace: TickObservabilityTrace = {
     version: 1,
+    memoryVersion: Memory.version,
     tick: Game.time,
     cpu: {
       limit: Game.cpu.limit,
