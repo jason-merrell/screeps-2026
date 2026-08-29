@@ -107,10 +107,11 @@ export type FspmProgram = {
 };
 export type FspmColonySummary = {
   roomName: string;
-  p3: FspmPortfolioP3;
-  /** Compatibility projection for the pre-P3 dashboard. Always mirrors current P3 quality. */
+  /** Optional at the decoder boundary so pre-v6 snapshots remain readable during rollout. */
+  p3?: FspmPortfolioP3;
+  /** Compatibility projection for the pre-P3 dashboard. Mirrors current P3 quality after v6. */
   contract: FspmRecord;
-  /** Legacy authority is preserved separately and never drives current health. */
+  /** Legacy authority is preserved separately and never drives current health after v6. */
   legacyProgram?: FspmProgram | null;
   legacyContract?: FspmRecord | null;
   program?: FspmProgram | null;
@@ -167,6 +168,10 @@ export const benchmarkFallback: BenchmarkMetrics = {
 
 function normalizeFspmAuthority(snapshot: Snapshot | null): Snapshot | null {
   for (const colony of snapshot?.runtimeTrace?.fspm?.colonies ?? []) {
+    // A pre-v6 snapshot has no P3 yet. Leave its legacy contract/program projection
+    // untouched so Screeps Lab stays readable throughout the rolling migration.
+    if (!colony.p3) continue;
+
     const raw = colony as FspmColonySummary & {
       contract?: FspmRecord | null;
       program?: FspmProgram | null;
