@@ -3,8 +3,8 @@
   "schema": "screeps-fspm-conformance/v1",
   "profileVersion": 1,
   "profileStatus": "partial",
-  "evaluatedAt": "2026-08-30",
-  "implementationBaseline": "aded6723d3d86f323a94d429832f66b4283743dd",
+  "evaluatedAt": "2026-08-31",
+  "implementationBaseline": "75d83f695dab92220119fa206a44230041e95c29",
   "governance": {
     "repository": "Namauu/governance-docs",
     "commit": "02d581886a759d19044ff91a80d743fa042f23f7",
