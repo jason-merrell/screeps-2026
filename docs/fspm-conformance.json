@@ -4,7 +4,7 @@
   "profileVersion": 1,
   "profileStatus": "partial",
   "evaluatedAt": "2026-08-31",
-  "implementationBaseline": "9a341af2416e752bb57e1bb96aa18066646dbe39",
+  "implementationBaseline": "8d03c29ea7e2e094a0e568a9743a3d6bc14cb5c8",
   "governance": {
     "repository": "Namauu/governance-docs",
     "commit": "02d581886a759d19044ff91a80d743fa042f23f7",
