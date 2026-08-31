@@ -10,11 +10,17 @@ import {
 } from "../../planning/room-plan";
 import {
   advanceRoomPlanProjection,
+  type SettlementProjectionFault,
   recordSettlementProjectionFault,
   settlementRetryDue,
   supersedeSettlementProjectionFault,
   usableRoomPlanProjection,
 } from "../../planning/room-plan-projection";
+import {
+  isActiveCanonicalEmpirePortfolioP3,
+  publishOperationalColonyMemory,
+  validateColonyGovernanceAuthority,
+} from "../../planning/fspm";
 import type { WorldSnapshot } from "../../runtime/context";
 import { deriveRoomDefenseEnvelope } from "./defense-envelope";
 import { extendRoomPlanToRcl8 } from "./mature-layout";
@@ -876,7 +882,24 @@ export function shouldRegenerateRoomPlan(
   ).usable;
 }
 
-export function ensureSettlementPlans(world: WorldSnapshot): void {
+export interface SettlementPlanProposal {
+  roomName: string;
+  retainedRoomPlan: RoomPlan | undefined;
+  retainedFault: SettlementProjectionFault | undefined;
+  roomPlan: RoomPlan | undefined;
+  fault: SettlementProjectionFault | undefined;
+  publishRoomPlan: boolean;
+}
+
+/**
+ * Build settlement projection changes without mutating Memory. Planning may be
+ * CPU-terminated, so authority and retained projections must remain untouched
+ * until the complete proposal is available and governance has been validated.
+ */
+export function proposeSettlementPlans(
+  world: Pick<WorldSnapshot, "rooms">,
+): SettlementPlanProposal[] {
+  const proposals: SettlementPlanProposal[] = [];
   for (const room of world.rooms) {
     const colony = Memory.colonies[room.name];
     if (!colony) continue;
@@ -890,8 +913,16 @@ export function ensureSettlementPlans(world: WorldSnapshot): void {
           existing,
           Game.time,
         );
-        if (resolved) colony.settlementProjectionFault = resolved;
-        else delete colony.settlementProjectionFault;
+        if (resolved !== colony.settlementProjectionFault) {
+          proposals.push({
+            roomName: room.name,
+            retainedRoomPlan: existing,
+            retainedFault: colony.settlementProjectionFault,
+            roomPlan: existing,
+            fault: resolved,
+            publishRoomPlan: false,
+          });
+        }
       }
       continue;
     }
@@ -918,23 +949,102 @@ export function ensureSettlementPlans(world: WorldSnapshot): void {
       if (existing?.deliverableId) {
         next.deliverableId = existing.deliverableId;
       }
-      colony.roomPlan = next;
       const resolved = supersedeSettlementProjectionFault(
         colony.settlementProjectionFault,
         next,
         Game.time,
       );
-      if (resolved) colony.settlementProjectionFault = resolved;
-      else delete colony.settlementProjectionFault;
+      proposals.push({
+        roomName: room.name,
+        retainedRoomPlan: existing,
+        retainedFault: colony.settlementProjectionFault,
+        roomPlan: next,
+        fault: resolved,
+        publishRoomPlan: true,
+      });
     } catch (error) {
-      colony.settlementProjectionFault = recordSettlementProjectionFault(
-        colony.settlementProjectionFault,
-        existing,
-        Game.time,
-        error,
+      proposals.push({
+        roomName: room.name,
+        retainedRoomPlan: existing,
+        retainedFault: colony.settlementProjectionFault,
+        roomPlan: existing,
+        fault: recordSettlementProjectionFault(
+          colony.settlementProjectionFault,
+          existing,
+          Game.time,
+          error,
+        ),
+        publishRoomPlan: false,
+      });
+    }
+  }
+  return proposals;
+}
+
+/**
+ * Publish a complete detached proposal only beneath exact active FSPM
+ * authority. Every target and retained precondition is checked before the
+ * first write so one malformed colony cannot cause a partial commit.
+ */
+export function commitSettlementPlanProposals(
+  proposals: readonly SettlementPlanProposal[],
+): void {
+  if (proposals.length === 0) return;
+  if (!isActiveCanonicalEmpirePortfolioP3(Memory.empireFspm?.p3)) {
+    throw new Error(
+      "Cannot publish settlement plans without active canonical Empire FSPM authority",
+    );
+  }
+
+  const proposalRooms = new Set<string>();
+  for (const proposal of proposals) {
+    if (proposalRooms.has(proposal.roomName)) {
+      throw new Error(
+        `Cannot publish duplicate settlement proposals for ${proposal.roomName}`,
+      );
+    }
+    proposalRooms.add(proposal.roomName);
+    const colony = Memory.colonies[proposal.roomName];
+    if (!colony?.fspm) {
+      throw new Error(
+        `Cannot publish settlement plan for ${proposal.roomName} without approved FSPM governance`,
+      );
+    }
+    const governanceErrors = validateColonyGovernanceAuthority(colony.fspm);
+    if (governanceErrors.length > 0) {
+      throw new Error(
+        `Cannot publish settlement plan for ${proposal.roomName} beneath invalid FSPM governance: ${governanceErrors.join("; ")}`,
+      );
+    }
+    if (
+      colony.roomPlan !== proposal.retainedRoomPlan ||
+      colony.settlementProjectionFault !== proposal.retainedFault
+    ) {
+      throw new Error(
+        `Cannot publish stale settlement proposal for ${proposal.roomName}; retained projection state changed after planning`,
       );
     }
   }
+
+  const nextColonies = { ...Memory.colonies };
+  for (const proposal of proposals) {
+    const colony = Memory.colonies[proposal.roomName];
+    if (!colony) continue;
+    const nextColony = { ...colony };
+    if (proposal.publishRoomPlan && proposal.roomPlan) {
+      nextColony.roomPlan = proposal.roomPlan;
+    }
+    if (proposal.fault) nextColony.settlementProjectionFault = proposal.fault;
+    else delete nextColony.settlementProjectionFault;
+    nextColonies[proposal.roomName] = nextColony;
+  }
+  publishOperationalColonyMemory(nextColonies);
+}
+
+export function ensureSettlementPlans(
+  world: Pick<WorldSnapshot, "rooms">,
+): void {
+  commitSettlementPlanProposals(proposeSettlementPlans(world));
 }
 
 export function invalidateRoomPlan(

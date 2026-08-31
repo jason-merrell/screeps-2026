@@ -41,6 +41,7 @@ jobs:
         startsWith(github.event.comment.body, '/recommend-start') ||
         startsWith(github.event.comment.body, '/place-start') ||
         startsWith(github.event.comment.body, '/deploy-code') ||
+        startsWith(github.event.comment.body, '/canary') ||
         startsWith(github.event.comment.body, '/experiment') ||
         startsWith(github.event.comment.body, '/scenario') ||
         startsWith(github.event.comment.body, '/benchmark')) &&
@@ -48,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
 
     concurrency:
-      group: screeps-insights-${{ github.event_name == 'issue_comment' && github.event.comment.id || github.run_id }}
+      group: screeps-${{ github.event_name == 'issue_comment' && (startsWith(github.event.comment.body, '/deploy-code') || startsWith(github.event.comment.body, '/canary') || startsWith(github.event.comment.body, '/experiment')) && 'ptr-runtime-mutation' || (github.event_name == 'issue_comment' && github.event.comment.id || github.run_id) }}
       cancel-in-progress: false
 
     steps:
@@ -131,6 +132,7 @@ jobs:
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
           steps.request.outputs.mode != 'place-start' &&
           steps.request.outputs.mode != 'deploy-code' &&
+          steps.request.outputs.mode != 'canary' &&
           steps.request.outputs.mode != 'experiment' &&
           steps.request.outputs.mode != 'scenario' &&
           steps.request.outputs.mode != 'benchmark'
@@ -210,6 +212,35 @@ jobs:
           SCREEPS_EXPERIMENT_INTERVAL_MS: 5000
           SUPABASE_TELEMETRY_URL: https://nflcqzcqpodnfkzjarwv.supabase.co/functions/v1/ingest-telemetry
 
+      - name: Run bounded PTR execution canary
+        id: canary
+        timeout-minutes: 5
+        if: >-
+          (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode == 'canary'
+        run: node scripts/run-ptr-execution-canary.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+          SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
+          SCREEPS_ROOM: ${{ steps.request.outputs.room }}
+          SCREEPS_REQUESTED_SHARD: ${{ steps.request.outputs.shard }}
+          SCREEPS_REQUEST_ID: ${{ steps.request.outputs.request_id }}
+          SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
+          SCREEPS_CANARY_POLL_INTERVAL_MS: 2000
+          SCREEPS_CANARY_TIMEOUT_MS: 180000
+          SCREEPS_CANARY_REQUEST_TIMEOUT_MS: 10000
+
+      - name: Independently restore PTR after canary
+        timeout-minutes: 3
+        if: >-
+          always() &&
+          (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
+          steps.request.outputs.mode == 'canary'
+        run: node scripts/restore-ptr-execution-canary.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+          SCREEPS_CANARY_REQUEST_TIMEOUT_MS: 10000
+
       - name: Run headless scenario
         if: >-
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
@@ -257,7 +288,8 @@ jobs:
           always() &&
           (success() ||
            steps.request.outputs.mode == 'scenario' ||
-           steps.request.outputs.mode == 'benchmark') &&
+           steps.request.outputs.mode == 'benchmark' ||
+           steps.request.outputs.mode == 'canary') &&
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
           steps.request.outputs.mode != 'experiment'
         uses: actions/upload-artifact@v5

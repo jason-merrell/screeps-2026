@@ -29,6 +29,10 @@ Use a persistent Screeps auth token scoped as narrowly as possible. PTR deployme
 - `POST /ptr/api/user/activate-ptr` to request CPU activation after verification
 - `GET /ptr/api/user/world-status` to require a normal authenticated PTR account state
 
+The optional issue-driven PTR execution canary requires additional branch,
+Memory, clock, and room-object endpoints documented in
+[ptr-execution-canary.md](./ptr-execution-canary.md#required-token-endpoints).
+
 Do not add the token to GitHub, the repository, or a local `.env` file.
 
 ## 2. Create the GitHub Actions machine identity
@@ -64,7 +68,7 @@ These are configuration values, not secret credentials.
 
 ## 4. Deploy and verify
 
-`.github/workflows/deploy.yml` runs automatically after a commit lands on `main` and may also be invoked with `workflow_dispatch`.
+`.github/workflows/deploy.yml` runs automatically after a commit lands on `main` and may also be invoked with `workflow_dispatch`. Deployment, PTR experiments, and the temporary PTR execution canary share one repository concurrency key so branch mutations cannot overlap.
 
 The workflow:
 

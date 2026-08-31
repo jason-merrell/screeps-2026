@@ -18,6 +18,7 @@ Exactly one command is accepted per comment. Representative valid requests are:
 /recommend-start shard=shard3
 /place-start target=ptr shard=shard3
 /deploy-code target=ptr
+/canary target=ptr room=E52N38 shard=shard3
 /experiment name=bootstrap-rcl3 target=ptr shard=shard3
 /scenario name=head-on
 /benchmark name=traffic-suite runs=3
@@ -32,6 +33,9 @@ Command rules:
 - `/recommend-start` accepts only optional `shard`.
 - `/place-start` requires `target` and accepts optional `shard`.
 - `/deploy-code` requires `target`.
+- `/canary` requires `target=ptr`, one explicit `room`, and one explicit
+  `shard`. It is the only command that temporarily switches the PTR
+  `activeWorld` branch solely to prove bounded execution.
 - `/experiment` currently requires `name=bootstrap-rcl3` and `target=ptr`; it
   accepts optional `shard`.
 - `/scenario` accepts `head-on`, `funnel`, `crossing`, or `traffic-suite`.
@@ -58,7 +62,24 @@ remain diagnostic and result in `unverified`; contradictory evidence results in
 `runtimeReadiness` is deliberately labeled `runtime-preflight` and never closes
 a release. Deployment byte verification, room-plan v4 publication, maturity
 demand, construction-site creation, and subsequent build progress are separate
-evidence gates.
+evidence gates. CPU allocation, absence of explicit account disablement, shard
+clock availability, and a fresh expected-SHA runtime publication are reported as
+separate facts; none is substituted for another.
+
+## PTR execution canary
+
+PTR `/canary` is a mutation-scoped diagnostic, not a stronger spelling of
+`/collect`. It creates and activates a tiny request-specific branch, accepts
+only untorn Memory and room-engine samples on at least three distinct shard
+ticks, then restores the configured branch and PTR activation. In-process
+`finally` restoration is backed by a separate workflow `always()` step.
+
+The artifact keeps canary-loop execution separate from room-engine consistency.
+An expired creep, overdue partial source regeneration, or overdue road decay
+blocks room-engine evidence even when the canary loop itself advances. No
+module source, token, nonce, account ID, object ID, or raw API body is published.
+See [ptr-execution-canary.md](./ptr-execution-canary.md) for the transaction,
+privacy, verdict, and residual-risk contract.
 
 ## Start recommendation
 
@@ -74,7 +95,8 @@ For issue-comment requests:
 
 1. Validate one immutable comment and normalize its command.
 2. Use `github.event.comment.id` as `requestId`.
-3. Acquire GitHub Actions concurrency for that request.
+3. Acquire GitHub Actions concurrency for that request. PTR code mutations and
+   canaries share one cross-workflow concurrency key.
 4. Check issue #5 for an existing completion marker.
 5. Exit successfully without repeating an already completed operation.
 6. Otherwise execute one bounded operation.
