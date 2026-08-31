@@ -35,7 +35,9 @@ function asArray(value: unknown): unknown[] {
 
 function numericField(value: JsonObject, key: string): number {
   const candidate = value[key];
-  return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : 0;
+  return typeof candidate === "number" && Number.isFinite(candidate)
+    ? candidate
+    : 0;
 }
 
 function byRecentActivity(a: JsonObject, b: JsonObject): number {
@@ -109,14 +111,19 @@ function selectActivityRows(rows: unknown[], limit: number): ActivitySelection {
   return { retained, omitted };
 }
 
-function addActivityOmissions(transport: JsonObject, omitted: ActivityOmissions): void {
-  transport.omittedActivities = numericField(transport, "omittedActivities") + omitted.total;
+function addActivityOmissions(
+  transport: JsonObject,
+  omitted: ActivityOmissions,
+): void {
+  transport.omittedActivities =
+    numericField(transport, "omittedActivities") + omitted.total;
   transport.omittedInProgressActivities =
     numericField(transport, "omittedInProgressActivities") + omitted.inProgress;
   transport.omittedOnHoldActivities =
     numericField(transport, "omittedOnHoldActivities") + omitted.onHold;
   transport.omittedOtherNonterminalActivities =
-    numericField(transport, "omittedOtherNonterminalActivities") + omitted.otherNonterminal;
+    numericField(transport, "omittedOtherNonterminalActivities") +
+    omitted.otherNonterminal;
   transport.omittedCompletedActivities =
     numericField(transport, "omittedCompletedActivities") + omitted.completed;
 }
@@ -227,7 +234,10 @@ function compactTaskMetadata(trace: JsonObject): void {
   trace.transport = transport;
 }
 
-function minimalTransportTrace(trace: JsonObject, originalChars: number): string {
+function minimalTransportTrace(
+  trace: JsonObject,
+  originalChars: number,
+): string {
   const fspm = asObject(trace.fspm);
   const transport = asObject(trace.transport) ?? {};
   return JSON.stringify({
@@ -236,6 +246,7 @@ function minimalTransportTrace(trace: JsonObject, originalChars: number): string
     cpu: asObject(trace.cpu),
     settlement: asObject(trace.settlement),
     fspm: {
+      integrity: asObject(fspm?.integrity),
       colonies: [],
       assignments: asArray(fspm?.assignments).slice(0, 8),
     },
@@ -264,7 +275,10 @@ function minimalTransportTrace(trace: JsonObject, originalChars: number): string
   });
 }
 
-function invalidTransportPayload(originalChars: number, reason: string): string {
+function invalidTransportPayload(
+  originalChars: number,
+  reason: string,
+): string {
   return JSON.stringify({
     version: 1,
     tick: null,
@@ -287,11 +301,17 @@ export function fitObservabilityPayload(payload: string): string {
     const parsed = JSON.parse(payload) as unknown;
     const object = asObject(parsed);
     if (!object) {
-      return invalidTransportPayload(payload.length, "observability payload root was not an object");
+      return invalidTransportPayload(
+        payload.length,
+        "observability payload root was not an object",
+      );
     }
     trace = object;
   } catch {
-    return invalidTransportPayload(payload.length, "observability payload was not valid JSON");
+    return invalidTransportPayload(
+      payload.length,
+      "observability payload was not valid JSON",
+    );
   }
 
   trimTransportRows(trace);
@@ -340,7 +360,9 @@ export function pruneFspmActivityHistory(): number {
 
 export function requestMemorySegment(id: number): void {
   if (!Number.isInteger(id) || id < 0 || id > 99) {
-    throw new Error(`Invalid RawMemory segment ${id}; expected an integer from 0 through 99`);
+    throw new Error(
+      `Invalid RawMemory segment ${id}; expected an integer from 0 through 99`,
+    );
   }
 
   requestedSegments.add(id);
@@ -349,7 +371,9 @@ export function requestMemorySegment(id: number): void {
 export function activateMemorySegments(): void {
   const ids = [...requestedSegments].sort((a, b) => a - b);
   if (ids.length > 10) {
-    throw new Error(`RawMemory supports at most 10 active segments; requested ${ids.length}`);
+    throw new Error(
+      `RawMemory supports at most 10 active segments; requested ${ids.length}`,
+    );
   }
 
   RawMemory.setActiveSegments(ids);

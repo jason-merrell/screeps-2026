@@ -40,17 +40,17 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.15.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .node-version
 
       - name: Set up Turborepo Remote Cache
         continue-on-error: true
@@ -154,7 +154,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
+          pnpm install --filter . --filter @screeps/runtime --frozen-lockfile
           pnpm --filter @screeps/runtime lint
           pnpm --filter @screeps/runtime typecheck
           pnpm --filter @screeps/runtime test
@@ -176,7 +176,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
+          pnpm install --filter . --filter @screeps/runtime --frozen-lockfile
           pnpm --filter @screeps/runtime lint
           pnpm --filter @screeps/runtime typecheck
           pnpm --filter @screeps/runtime test
@@ -202,7 +202,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
+          pnpm install --filter . --filter @screeps/runtime --filter @screeps/lab --frozen-lockfile
           pnpm check
           pnpm scenario:headless
         env:
@@ -220,12 +220,12 @@ jobs:
           # Keep the native private-server tree outside pnpm's workspace links.
           # screeps-server-mockup launches child processes that require the
           # standalone npm topology used by the known-good scenario runner.
-          pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
+          pnpm install --filter . --filter @screeps/runtime --frozen-lockfile
           pnpm --filter @screeps/runtime lint
           pnpm --filter @screeps/runtime typecheck
           pnpm --filter @screeps/runtime test
           pnpm --filter @screeps/scenario lint
-          (cd scenario && npm install --workspaces=false --no-audit --no-fund)
+          (cd scenario && npm ci --workspaces=false --no-audit --no-fund)
           if [[ -L scenario/node_modules/screeps-server-mockup ]]; then
             echo "scenario native runtime resolved through pnpm instead of standalone npm"
             exit 1
@@ -237,9 +237,12 @@ jobs:
           SCREEPS_COMMAND: ${{ steps.request.outputs.command }}
           SCREEPS_BENCHMARK_RUNS: ${{ steps.request.outputs.benchmark_runs }}
 
-      - name: Upload Screeps insights
+      - name: Upload Screeps insights and failure diagnostics
         if: >-
-          success() &&
+          always() &&
+          (success() ||
+           steps.request.outputs.mode == 'scenario' ||
+           steps.request.outputs.mode == 'benchmark') &&
           (github.event_name == 'workflow_dispatch' || steps.dedupe.outputs.completed != 'true') &&
           steps.request.outputs.mode != 'experiment'
         uses: actions/upload-artifact@v5
@@ -282,9 +285,13 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$MODE" == "experiment" && "$TELEMETRY_PERSISTED" == "true" ]]; then
+            # Markdown backticks are intentionally literal.
+            # shellcheck disable=SC2016
             printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\ntelemetry: `supabase`\ncollection-run: `%s`\nexperiment: `%s`\nrun: %s/%s/actions/runs/%s' \
               "$MARKER" "$COMMAND" "$REQUEST_ID" "$COLLECTION_RUN_ID" "$EXPERIMENT_ID" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
           else
+            # Markdown backticks are intentionally literal.
+            # shellcheck disable=SC2016
             printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\nartifact: `%s`\nrun: %s/%s/actions/runs/%s' \
               "$MARKER" "$COMMAND" "$REQUEST_ID" "$ARTIFACT" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
           fi

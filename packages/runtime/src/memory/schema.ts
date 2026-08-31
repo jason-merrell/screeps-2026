@@ -1,8 +1,12 @@
 import type { TrafficMemory } from "../movement/traffic-heatmap";
-import type { ColonyFspmPortfolio, EmpireFspmPortfolio } from "../planning/fspm";
+import type {
+  ColonyFspmPortfolio,
+  EmpireFspmPortfolio,
+} from "../planning/fspm";
 import type { RoomPlan } from "../planning/room-plan";
+import type { RuntimeSupervisorMemory } from "../runtime/supervisor";
 
-export const MEMORY_VERSION = 6;
+export const MEMORY_VERSION = 7;
 
 export interface ColonyMemory {
   roomName: string;
@@ -16,6 +20,7 @@ export interface ScreepsMemorySchema {
   version: number;
   /** Root P3 authority for the continuously managed empire scope. */
   empireFspm?: EmpireFspmPortfolio;
+  runtimeSupervisor?: RuntimeSupervisorMemory;
   colonies: Record<string, ColonyMemory>;
 }
 

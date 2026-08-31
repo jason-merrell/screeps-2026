@@ -1,8 +1,9 @@
 import {
-  EMPIRE_PORTFOLIO_ID,
   createColonyPortfolioP3,
   createEmpirePortfolioP3,
+  EMPIRE_PORTFOLIO_ID,
 } from "../planning/fspm";
+import { createRuntimeSupervisorMemory } from "../runtime/supervisor";
 import { MEMORY_VERSION } from "./schema";
 
 export function migrateMemory(): void {
@@ -14,6 +15,7 @@ export function migrateMemory(): void {
     memory.empireFspm = {
       p3: createEmpirePortfolioP3(Game.time, Game.time),
     };
+    memory.runtimeSupervisor = createRuntimeSupervisorMemory();
     return;
   }
 
@@ -28,7 +30,9 @@ export function migrateMemory(): void {
 
       portfolio.activities = {};
       portfolio.activityKpiHistory = {};
-      for (const task of Object.values(portfolio.tasks)) delete task.qi;
+      for (const task of Object.values(portfolio.tasks)) {
+        if (task) delete task.qi;
+      }
     }
     memory.version = 3;
   }
@@ -50,6 +54,7 @@ export function migrateMemory(): void {
       evidencePortfolio.activityEvents = [];
       evidencePortfolio.activityEventSequence = 0;
       for (const task of Object.values(portfolio.tasks)) {
+        if (!task) continue;
         task.procedures = [];
         delete task.qi;
       }
@@ -73,7 +78,9 @@ export function migrateMemory(): void {
       };
       evidencePortfolio.activityEvents = [];
       evidencePortfolio.activityEventSequence = 0;
-      for (const task of Object.values(portfolio.tasks)) delete task.qi;
+      for (const task of Object.values(portfolio.tasks)) {
+        if (task) delete task.qi;
+      }
     }
     memory.version = 5;
   }
@@ -102,8 +109,7 @@ export function migrateMemory(): void {
       portfolio.p3.temporalBasis = "game_tick";
       portfolio.p3.startTick ??= colony.discoveredAt;
       portfolio.p3.name ??= `COLONY-PORTFOLIO-${colony.roomName} Operations`;
-      portfolio.p3.description ??=
-        `Continuously manage economy, workforce, construction, defense, expansion and operational priorities for owned colony ${colony.roomName}.`;
+      portfolio.p3.description ??= `Continuously manage economy, workforce, construction, defense, expansion and operational priorities for owned colony ${colony.roomName}.`;
 
       if (portfolio.program && portfolio.program.status !== "retired") {
         portfolio.program.status = "retired";
@@ -128,12 +134,20 @@ export function migrateMemory(): void {
     memory.version = 6;
   }
 
+  if (memory.version === 6) {
+    memory.runtimeSupervisor ??= createRuntimeSupervisorMemory();
+    memory.version = 7;
+  }
+
   if (memory.version !== MEMORY_VERSION) {
-    throw new Error(`Unsupported Memory version ${memory.version}; expected ${MEMORY_VERSION}`);
+    throw new Error(
+      `Unsupported Memory version ${memory.version}; expected ${MEMORY_VERSION}`,
+    );
   }
 
   memory.colonies ??= {};
   memory.empireFspm ??= {
     p3: createEmpirePortfolioP3(Game.time, Game.time),
   };
+  memory.runtimeSupervisor ??= createRuntimeSupervisorMemory();
 }

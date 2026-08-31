@@ -1,3 +1,4 @@
+import type { Intent } from "../intents/types";
 import type { FspmDomain, FspmTaskKpiRubric } from "./fspm";
 
 export type FspmComposition = "atomic" | "compound";
@@ -15,6 +16,8 @@ export interface FspmTaskDetermination {
 export interface FspmProcedureDefinition {
   key: string;
   title: string;
+  /** Intent operations this Procedure is permitted to authorize. */
+  allowedIntentTypes: readonly Intent["type"][];
 }
 
 export interface FspmTaskDefinition {
@@ -67,13 +70,41 @@ export const FSPM_TASK_CATALOG = [
         "Cycle completes without productive work, experiences blocked execution, or abandons an unsatisfied target within a Procedure",
     },
     procedures: [
-      { key: "extract-source-energy", title: "Extract Source Energy" },
-      { key: "buffer-source-energy", title: "Buffer Source Energy" },
-      { key: "withdraw-buffered-energy", title: "Withdraw Buffered Energy" },
-      { key: "recover-salvage-energy", title: "Recover Salvage Energy" },
-      { key: "stage-source-transport", title: "Stage Source Transport" },
-      { key: "park-surplus-transport", title: "Park Surplus Transport" },
-      { key: "fund-workforce-energy", title: "Fund Workforce Energy" },
+      {
+        key: "extract-source-energy",
+        title: "Extract Source Energy",
+        allowedIntentTypes: ["harvest"],
+      },
+      {
+        key: "buffer-source-energy",
+        title: "Buffer Source Energy",
+        allowedIntentTypes: ["transfer"],
+      },
+      {
+        key: "withdraw-buffered-energy",
+        title: "Withdraw Buffered Energy",
+        allowedIntentTypes: ["withdraw"],
+      },
+      {
+        key: "recover-salvage-energy",
+        title: "Recover Salvage Energy",
+        allowedIntentTypes: ["withdraw"],
+      },
+      {
+        key: "stage-source-transport",
+        title: "Stage Source Transport",
+        allowedIntentTypes: ["move"],
+      },
+      {
+        key: "park-surplus-transport",
+        title: "Park Surplus Transport",
+        allowedIntentTypes: ["move"],
+      },
+      {
+        key: "fund-workforce-energy",
+        title: "Fund Workforce Energy",
+        allowedIntentTypes: ["transfer"],
+      },
     ],
     determination: determination(
       "a logged recurring colony energy-service cycle that leaves usable energy at an operational buffer or consumer",
@@ -96,10 +127,18 @@ export const FSPM_TASK_CATALOG = [
       metric: "Controller advancement execution quality",
       exceptional:
         "Completed Activity records productive controller work, zero blocked ticks, and work-conversion ratio >= 0.60",
-      satisfactory: "Completed Activity records productive controller work with zero blocked ticks",
-      unsatisfactory: "Activity completes without productive controller work or with blocked execution",
+      satisfactory:
+        "Completed Activity records productive controller work with zero blocked ticks",
+      unsatisfactory:
+        "Activity completes without productive controller work or with blocked execution",
     },
-    procedures: [{ key: "upgrade-controller", title: "Upgrade Controller" }],
+    procedures: [
+      {
+        key: "upgrade-controller",
+        title: "Upgrade Controller",
+        allowedIntentTypes: ["upgrade"],
+      },
+    ],
     determination: determination(
       "externally evidenced owned-controller progress and room-control capability",
       "atomic",
@@ -127,10 +166,26 @@ export const FSPM_TASK_CATALOG = [
         "The staffing occurrence concludes without producing its requested viable workforce increment or requires material rework",
     },
     procedures: [
-      { key: "recover-emergency-workforce", title: "Recover Emergency Workforce" },
-      { key: "staff-source-production", title: "Staff Source Production" },
-      { key: "staff-transport-capacity", title: "Staff Transport Capacity" },
-      { key: "maintain-general-workforce", title: "Maintain General Workforce" },
+      {
+        key: "recover-emergency-workforce",
+        title: "Recover Emergency Workforce",
+        allowedIntentTypes: ["spawn"],
+      },
+      {
+        key: "staff-source-production",
+        title: "Staff Source Production",
+        allowedIntentTypes: ["spawn"],
+      },
+      {
+        key: "staff-transport-capacity",
+        title: "Staff Transport Capacity",
+        allowedIntentTypes: ["spawn"],
+      },
+      {
+        key: "maintain-general-workforce",
+        title: "Maintain General Workforce",
+        allowedIntentTypes: ["spawn"],
+      },
     ],
     determination: determination(
       "a recurring workforce-capacity service with measured viable headcount and capability coverage",
@@ -153,14 +208,32 @@ export const FSPM_TASK_CATALOG = [
       metric: "Planned infrastructure realization quality",
       exceptional:
         "Selected infrastructure is realized with zero blocked execution and work-conversion ratio >= 0.60",
-      satisfactory: "Selected infrastructure is realized with productive work and zero blocked execution",
-      unsatisfactory: "Selected infrastructure fails governed siting/build criteria or requires material rework",
+      satisfactory:
+        "Selected infrastructure is realized with productive work and zero blocked execution",
+      unsatisfactory:
+        "Selected infrastructure fails governed siting/build criteria or requires material rework",
     },
     procedures: [
-      { key: "site-planned-structure", title: "Site Planned Structure" },
-      { key: "site-planned-road", title: "Site Planned Road" },
-      { key: "site-adaptive-road", title: "Site Adaptive Road" },
-      { key: "build-planned-infrastructure", title: "Build Planned Infrastructure" },
+      {
+        key: "site-planned-structure",
+        title: "Site Planned Structure",
+        allowedIntentTypes: ["createConstructionSite"],
+      },
+      {
+        key: "site-planned-road",
+        title: "Site Planned Road",
+        allowedIntentTypes: ["createConstructionSite"],
+      },
+      {
+        key: "site-adaptive-road",
+        title: "Site Adaptive Road",
+        allowedIntentTypes: ["createConstructionSite"],
+      },
+      {
+        key: "build-planned-infrastructure",
+        title: "Build Planned Infrastructure",
+        allowedIntentTypes: ["build"],
+      },
     ],
     determination: determination(
       "persistent built infrastructure conforming to the active room plan or measured traffic demand",
@@ -183,10 +256,18 @@ export const FSPM_TASK_CATALOG = [
       metric: "Infrastructure health restoration quality",
       exceptional:
         "Target reaches the governed health threshold with productive repair work, zero blocked ticks, and work-conversion ratio >= 0.60",
-      satisfactory: "Target reaches the governed health threshold with productive repair work and zero blocked execution",
-      unsatisfactory: "Target is not restored to the governed threshold or execution is materially blocked",
+      satisfactory:
+        "Target reaches the governed health threshold with productive repair work and zero blocked execution",
+      unsatisfactory:
+        "Target is not restored to the governed threshold or execution is materially blocked",
     },
-    procedures: [{ key: "repair-infrastructure", title: "Repair Infrastructure" }],
+    procedures: [
+      {
+        key: "repair-infrastructure",
+        title: "Repair Infrastructure",
+        allowedIntentTypes: ["repair"],
+      },
+    ],
     determination: determination(
       "a structure restored to a persistent governed health state",
       "atomic",
@@ -208,12 +289,22 @@ export const FSPM_TASK_CATALOG = [
       metric: "Defensive readiness and threat-response quality",
       exceptional:
         "Readiness target is restored or hostile response begins immediately with no blocked governed execution",
-      satisfactory: "Readiness or hostile-response requirement is satisfied within the current governed Activity",
-      unsatisfactory: "Available defensive capability fails to satisfy the readiness or threat-response requirement",
+      satisfactory:
+        "Readiness or hostile-response requirement is satisfied within the current governed Activity",
+      unsatisfactory:
+        "Available defensive capability fails to satisfy the readiness or threat-response requirement",
     },
     procedures: [
-      { key: "fund-tower-reserve", title: "Fund Tower Reserve" },
-      { key: "repel-hostile", title: "Repel Hostile" },
+      {
+        key: "fund-tower-reserve",
+        title: "Fund Tower Reserve",
+        allowedIntentTypes: ["transfer"],
+      },
+      {
+        key: "repel-hostile",
+        title: "Repel Hostile",
+        allowedIntentTypes: ["towerAttack"],
+      },
     ],
     determination: determination(
       "a recurring defensive-readiness service with persistent tower reserve and logged hostile-response outcomes",
@@ -229,12 +320,50 @@ const definitionById = new Map<string, FspmTaskDefinition>(
     definition as FspmTaskDefinition,
   ]),
 );
+const procedureDefinitionById = new Map<string, FspmProcedureDefinition>(
+  FSPM_TASK_CATALOG.flatMap((definition) =>
+    definition.procedures.map(
+      (procedure) =>
+        [
+          `${definition.domain}:${definition.taskKey}:${procedure.key}`,
+          procedure,
+        ] as const,
+    ),
+  ),
+);
+const procedureIndexById = new Map<string, number>(
+  FSPM_TASK_CATALOG.flatMap((definition) =>
+    definition.procedures.map(
+      (procedure, index) =>
+        [
+          `${definition.domain}:${definition.taskKey}:${procedure.key}`,
+          index,
+        ] as const,
+    ),
+  ),
+);
 
 export function fspmTaskDefinition(
   domain: FspmDomain,
   taskKey: string,
 ): FspmTaskDefinition | undefined {
   return definitionById.get(`${domain}:${taskKey}`);
+}
+
+export function fspmProcedureDefinition(
+  domain: FspmDomain,
+  taskKey: string,
+  procedureKey: string,
+): FspmProcedureDefinition | undefined {
+  return procedureDefinitionById.get(`${domain}:${taskKey}:${procedureKey}`);
+}
+
+export function fspmProcedureIndex(
+  domain: FspmDomain,
+  taskKey: string,
+  procedureKey: string,
+): number | undefined {
+  return procedureIndexById.get(`${domain}:${taskKey}:${procedureKey}`);
 }
 
 export function requireFspmTaskDefinition(
@@ -262,8 +391,10 @@ export function validateFspmTaskCatalog(): string[] {
 
     if (!task.title.trim()) errors.push(`${id} has no title`);
     if (!task.description.trim()) errors.push(`${id} has no description`);
-    if (!task.qualityDescription.trim()) errors.push(`${id} has no Quality Description`);
-    if (!task.qualityMetric.trim()) errors.push(`${id} has no operational Quality Metric`);
+    if (!task.qualityDescription.trim())
+      errors.push(`${id} has no Quality Description`);
+    if (!task.qualityMetric.trim())
+      errors.push(`${id} has no operational Quality Metric`);
     if (task.taskWeight <= 0 || task.taskWeight > 100) {
       errors.push(`${id} has invalid Task Weight ${task.taskWeight}`);
     }
@@ -281,19 +412,40 @@ export function validateFspmTaskCatalog(): string[] {
 
     const procedureKeys = new Set<string>();
     for (const procedure of procedures) {
-      if (!procedure.key.trim()) errors.push(`${id} contains a blank Procedure key`);
+      if (!procedure.key.trim())
+        errors.push(`${id} contains a blank Procedure key`);
       if (procedureKeys.has(procedure.key)) {
         errors.push(`${id} contains duplicate Procedure ${procedure.key}`);
       }
       procedureKeys.add(procedure.key);
+      if (procedure.allowedIntentTypes.length === 0) {
+        errors.push(`${id}:${procedure.key} authorizes no intent operation`);
+      }
+      if (
+        new Set(procedure.allowedIntentTypes).size !==
+        procedure.allowedIntentTypes.length
+      ) {
+        errors.push(
+          `${id}:${procedure.key} contains duplicate allowed intent operations`,
+        );
+      }
     }
 
-    weightByDomain.set(task.domain, (weightByDomain.get(task.domain) ?? 0) + task.taskWeight);
+    weightByDomain.set(
+      task.domain,
+      (weightByDomain.get(task.domain) ?? 0) + task.taskWeight,
+    );
   }
 
-  for (const domain of ["economy", "spawning", "construction", "defense"] as const) {
+  for (const domain of [
+    "economy",
+    "spawning",
+    "construction",
+    "defense",
+  ] as const) {
     const weight = weightByDomain.get(domain) ?? 0;
-    if (weight !== 100) errors.push(`${domain} Task Weights sum to ${weight}, expected 100`);
+    if (weight !== 100)
+      errors.push(`${domain} Task Weights sum to ${weight}, expected 100`);
   }
 
   return errors;

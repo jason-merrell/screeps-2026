@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jason-merrell/screeps-2026/docs/fspm-conformance.schema.json",
+  "title": "Screeps NTI FSPM conformance profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "profileVersion",
+    "profileStatus",
+    "evaluatedAt",
+    "implementationBaseline",
+    "governance",
+    "statusDefinitions",
+    "components"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema": { "const": "screeps-fspm-conformance/v1" },
+    "profileVersion": { "type": "integer", "minimum": 1 },
+    "profileStatus": { "enum": ["partial", "full"] },
+    "evaluatedAt": { "type": "string", "format": "date" },
+    "implementationBaseline": { "$ref": "#/$defs/gitSha" },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "reviewRule"],
+      "properties": {
+        "repository": { "const": "Namauu/governance-docs" },
+        "commit": { "$ref": "#/$defs/gitSha" },
+        "reviewRule": { "type": "string", "minLength": 20 }
+      }
+    },
+    "statusDefinitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "implemented",
+        "adapted",
+        "not_implemented",
+        "not_applicable"
+      ],
+      "properties": {
+        "implemented": { "type": "string", "minLength": 20 },
+        "adapted": { "type": "string", "minLength": 20 },
+        "not_implemented": { "type": "string", "minLength": 20 },
+        "not_applicable": { "type": "string", "minLength": 20 }
+      }
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/component" }
+    }
+  },
+  "$defs": {
+    "gitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "status": {
+      "enum": ["implemented", "adapted", "not_implemented", "not_applicable"]
+    },
+    "issue": {
+      "type": "string",
+      "pattern": "^#[1-9][0-9]*$"
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "conformanceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "status"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "status": { "$ref": "#/$defs/status" },
+        "adaptation": { "type": "string", "minLength": 20 },
+        "rationale": { "type": "string", "minLength": 20 },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "issue": { "$ref": "#/$defs/issue" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "implemented" } },
+            "required": ["status"]
+          },
+          "then": { "required": ["evidence"] }
+        },
+        {
+          "if": {
+            "properties": { "status": { "const": "adapted" } },
+            "required": ["status"]
+          },
+          "then": { "required": ["adaptation", "evidence"] }
+        },
+        {
+          "if": {
+            "properties": { "status": { "const": "not_implemented" } },
+            "required": ["status"]
+          },
+          "then": { "required": ["rationale", "issue"] }
+        },
+        {
+          "if": {
+            "properties": { "status": { "const": "not_applicable" } },
+            "required": ["status"]
+          },
+          "then": { "required": ["rationale"] }
+        }
+      ]
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "name",
+        "status",
+        "owner",
+        "canonicalSources",
+        "fields",
+        "invariants"
+      ],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "name": { "type": "string", "minLength": 3 },
+        "status": { "$ref": "#/$defs/status" },
+        "owner": { "type": "string", "pattern": "^area:[a-z0-9_-]+$" },
+        "issue": { "$ref": "#/$defs/issue" },
+        "canonicalSources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 3 }
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/conformanceEntry" }
+        },
+        "invariants": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/conformanceEntry" }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "not_implemented" } },
+            "required": ["status"]
+          },
+          "then": { "required": ["issue"] }
+        }
+      ]
+    }
+  }
+}

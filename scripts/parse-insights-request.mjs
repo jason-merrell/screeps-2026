@@ -8,7 +8,12 @@ const outputPath = process.env.GITHUB_OUTPUT;
 
 const roomPattern = /^[WE]\d+[NS]\d+$/i;
 const shardPattern = /^shard\d+$/i;
-const scenarioNames = new Set(["head-on", "funnel", "crossing", "traffic-suite"]);
+const scenarioNames = new Set([
+  "head-on",
+  "funnel",
+  "crossing",
+  "traffic-suite",
+]);
 const benchmarkNames = new Set(["traffic-suite", "bootstrap-suite"]);
 
 const fail = (message) => {
@@ -29,7 +34,8 @@ const normalizeShard = (value) => {
 
 const normalizeTarget = (value, fallback = "world") => {
   const target = (value || fallback).toLowerCase();
-  if (target !== "world" && target !== "ptr") fail(`invalid target '${target}'`);
+  if (target !== "world" && target !== "ptr")
+    fail(`invalid target '${target}'`);
   return target;
 };
 
@@ -112,7 +118,8 @@ if (eventName === "issue_comment") {
                     : mode === "snapshot"
                       ? ["room", "shard", "target"]
                       : ["room", "shard", "target"];
-    if (!allowed.includes(key)) fail(`unknown key '${key}' for ${commandToken}`);
+    if (!allowed.includes(key))
+      fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
     args.set(key, value);
   }
@@ -126,7 +133,9 @@ if (eventName === "issue_comment") {
       .filter(Boolean)
       .join(" ");
   } else if (mode === "recommend") {
-    command = ["/recommend-start", shard && `shard=${shard}`].filter(Boolean).join(" ");
+    command = ["/recommend-start", shard && `shard=${shard}`]
+      .filter(Boolean)
+      .join(" ");
   } else if (mode === "place-start") {
     target = normalizeTarget(args.get("target") || "", "");
     command = ["/place-start", `target=${target}`, shard && `shard=${shard}`]
@@ -138,7 +147,9 @@ if (eventName === "issue_comment") {
   } else if (mode === "experiment") {
     target = normalizeTarget(args.get("target") || "", "");
     if (target !== "ptr") {
-      fail("/experiment currently requires target=ptr; experiments cannot mutate or observe World");
+      fail(
+        "/experiment currently requires target=ptr; experiments cannot mutate or observe World",
+      );
     }
     experiment = (args.get("name") || "").toLowerCase();
     if (experiment !== "bootstrap-rcl3") {
@@ -155,7 +166,9 @@ if (eventName === "issue_comment") {
   } else if (mode === "scenario") {
     scenario = (args.get("name") || "").toLowerCase();
     if (!scenarioNames.has(scenario)) {
-      fail("/scenario requires name=head-on, name=funnel, name=crossing, or name=traffic-suite");
+      fail(
+        "/scenario requires name=head-on, name=funnel, name=crossing, or name=traffic-suite",
+      );
     }
     target = "headless";
     command = `/scenario name=${scenario}`;
@@ -164,9 +177,9 @@ if (eventName === "issue_comment") {
     if (!benchmarkNames.has(scenario)) {
       fail("/benchmark requires name=traffic-suite or name=bootstrap-suite");
     }
-    const runs = args.get("runs") || "2";
-    if (!/^[2-5]$/.test(runs)) {
-      fail("/benchmark runs must be an integer from 2 through 5");
+    const runs = args.get("runs") || "3";
+    if (!/^[3-5]$/.test(runs)) {
+      fail("/benchmark runs must be an integer from 3 through 5");
     }
     benchmarkRuns = runs;
     target = "headless";
@@ -177,9 +190,16 @@ if (eventName === "issue_comment") {
     target = normalizeTarget(args.get("target") || "", "");
     if (!shard) fail("/snapshot requires shard=<SHARD>");
     if (target !== "ptr") {
-      fail("/snapshot currently requires target=ptr while the control-plane contract is proven on PTR");
+      fail(
+        "/snapshot currently requires target=ptr while the control-plane contract is proven on PTR",
+      );
     }
-    command = ["/snapshot", "target=ptr", room && `room=${room}`, `shard=${shard}`]
+    command = [
+      "/snapshot",
+      "target=ptr",
+      room && `room=${room}`,
+      `shard=${shard}`,
+    ]
       .filter(Boolean)
       .join(" ");
   } else {

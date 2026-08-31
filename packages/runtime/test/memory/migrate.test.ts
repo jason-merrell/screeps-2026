@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { migrateMemory } from "../../src/memory/migrate";
 import { MEMORY_VERSION } from "../../src/memory/schema";
-import { ensureColonyPortfolio, ensureProcedure, ensureTask } from "../../src/planning/fspm";
+import {
+  ensureColonyPortfolio,
+  ensureProcedure,
+  ensureTask,
+} from "../../src/planning/fspm";
 
 const TASK_KEY = "maintain-colony-energy-service";
 const PROCEDURE_KEY = "extract-source-energy";
@@ -24,9 +28,32 @@ function installGlobals(): void {
 describe("Memory migration", () => {
   beforeEach(() => installGlobals());
 
+  it("initializes a fresh Memory atomically at the current schema", () => {
+    Object.assign(globalThis, { Memory: {} });
+
+    migrateMemory();
+
+    expect(Memory).toMatchObject({
+      version: MEMORY_VERSION,
+      colonies: {},
+      runtimeSupervisor: { version: 1, phases: {} },
+      empireFspm: {
+        p3: {
+          id: "portfolio:empire:operations",
+          status: "active",
+        },
+      },
+    });
+  });
+
   it("resets contaminated v4 Activity evidence while preserving canonical Tasks and Procedures", () => {
     const task = ensureTask("W1N1", "economy", TASK_KEY);
-    const procedure = ensureProcedure("W1N1", "economy", TASK_KEY, PROCEDURE_KEY);
+    const procedure = ensureProcedure(
+      "W1N1",
+      "economy",
+      TASK_KEY,
+      PROCEDURE_KEY,
+    );
     const portfolio = ensureColonyPortfolio("W1N1");
 
     portfolio.activities = {
@@ -89,7 +116,8 @@ describe("Memory migration", () => {
     migrateMemory();
 
     expect(Memory.version).toBe(MEMORY_VERSION);
-    expect(Memory.version).toBe(6);
+    expect(Memory.version).toBe(7);
+    expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
     expect(Memory.empireFspm?.p3).toMatchObject({
       id: "portfolio:empire:operations",
       parentP3Id: null,
@@ -106,7 +134,9 @@ describe("Memory migration", () => {
     expect(evidencePortfolio.activityEventSequence).toBe(0);
     expect(portfolio.tasks[task.id]?.qi).toBeUndefined();
     expect(portfolio.tasks[task.id]?.procedures).toContainEqual(procedure);
-    expect(portfolio.tasks[task.id]?.procedures.map((entry) => entry.procedureKey)).toEqual([
+    expect(
+      portfolio.tasks[task.id]?.procedures.map((entry) => entry.procedureKey),
+    ).toEqual([
       "extract-source-energy",
       "buffer-source-energy",
       "withdraw-buffered-energy",
@@ -115,5 +145,20 @@ describe("Memory migration", () => {
       "park-surplus-transport",
       "fund-workforce-energy",
     ]);
+  });
+
+  it("preserves a malformed existing Empire container for governed quarantine", () => {
+    Object.assign(globalThis, {
+      Memory: {
+        version: MEMORY_VERSION,
+        colonies: {},
+        empireFspm: {},
+        runtimeSupervisor: { version: 1, phases: {} },
+      },
+    });
+    const before = structuredClone(Memory);
+
+    expect(() => migrateMemory()).not.toThrow();
+    expect(Memory).toEqual(before);
   });
 });

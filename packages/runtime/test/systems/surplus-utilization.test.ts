@@ -61,7 +61,8 @@ function installWorld(): WorldSnapshot {
   Object.assign(globalThis, {
     Game: {
       time: 100,
-      getObjectById: (id: string) => sources.find((source) => source.id === id) ?? null,
+      getObjectById: (id: string) =>
+        sources.find((source) => source.id === id) ?? null,
     },
     Memory: {
       version: 5,
@@ -182,20 +183,25 @@ describe("surplus hybrid labor utilization", () => {
   });
 
   it("distributes multiple surplus performers across available staging buffers", () => {
-    const first = world.creeps[0]!;
+    const first = world.creeps[0];
+    if (!first) throw new Error("expected the fixture's first worker");
     world.creeps.push({ ...first, name: "worker-2" } as Creep);
 
     const intents = planSurplusLaborUtilization(world, []);
 
     expect(intents).toHaveLength(2);
-    expect(intents.map((intent) => ("targetId" in intent ? String(intent.targetId) : null))).toEqual([
-      "container-1",
-      "container-2",
-    ]);
+    expect(
+      intents.map((intent) =>
+        "targetId" in intent ? String(intent.targetId) : null,
+      ),
+    ).toEqual(["container-1", "container-2"]);
   });
 
   it("inherits the primary source-buffer activation gate", () => {
-    (world.rooms[0]!.controller as StructureController).level = 1;
+    const room = world.rooms[0];
+    if (!room?.controller)
+      throw new Error("expected the fixture's owned controller");
+    (room.controller as StructureController).level = 1;
 
     expect(planSurplusLaborUtilization(world, [])).toEqual([]);
   });

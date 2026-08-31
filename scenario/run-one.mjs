@@ -1,6 +1,8 @@
-import { createRequire } from "node:module";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
+
+import { scenarioExitCode } from "./verdict-policy.mjs";
 
 const require = createRequire(import.meta.url);
 const { ScreepsServer, TerrainMatrix } = require("screeps-server-mockup");
@@ -8,22 +10,30 @@ const mockupPackage = require("screeps-server-mockup/package.json");
 
 const scenario = process.argv[2];
 const resultPath = process.env.SCENARIO_RESULT_PATH;
-const bundlePath = path.resolve(process.env.SCENARIO_BUNDLE_PATH || "scenario/dist/main.js");
+const bundlePath = path.resolve(
+  process.env.SCENARIO_BUNDLE_PATH || "scenario/dist/main.js",
+);
 const ROOM_NAME = "W0N0";
 const MAX_ENGINE_TICKS = 320;
 const STARTUP_TICK_LIMIT = 20;
 const LOG_TAIL_LINES = 80;
 const supported = new Set(["head-on", "funnel", "crossing"]);
 
-if (!supported.has(scenario)) throw new Error(`Unsupported headless scenario '${scenario}'`);
+if (!supported.has(scenario))
+  throw new Error(`Unsupported headless scenario '${scenario}'`);
 if (!resultPath) throw new Error("SCENARIO_RESULT_PATH is required");
 
-const runRoot = path.resolve("scenario", ".runtime", `${scenario}-${process.pid}`);
+const runRoot = path.resolve(
+  "scenario",
+  ".runtime",
+  `${scenario}-${process.pid}`,
+);
 const serverPath = path.join(runRoot, "server");
 const logdir = path.join(runRoot, "logs");
 const port = 22000 + (process.pid % 1000);
 let server;
 let preflight = null;
+let exitCode = 1;
 
 function createTerrain() {
   const terrain = new TerrainMatrix();
@@ -52,7 +62,9 @@ function createTerrain() {
 
 function summarizeCreeps(objects) {
   return objects
-    .filter((object) => object.type === "creep" && typeof object.name === "string")
+    .filter(
+      (object) => object.type === "creep" && typeof object.name === "string",
+    )
     .map((object) => ({
       name: object.name,
       x: object.x,
@@ -64,7 +76,9 @@ function summarizeCreeps(objects) {
 }
 
 function positionMap(sample) {
-  return new Map(sample.creeps.map((creep) => [creep.name, { x: creep.x, y: creep.y }]));
+  return new Map(
+    sample.creeps.map((creep) => [creep.name, { x: creep.x, y: creep.y }]),
+  );
 }
 
 function analyzeTimeline(timeline) {
@@ -107,9 +121,11 @@ function analyzeTimeline(timeline) {
   }
 
   const runningCreeps = running.flatMap((sample) => sample.creeps);
-  const offHorizontalCorridor = runningCreeps.filter(
-    (creep) => creep.name === "scenario-A" || creep.name === "scenario-B",
-  ).filter((creep) => creep.y !== 25);
+  const offHorizontalCorridor = runningCreeps
+    .filter(
+      (creep) => creep.name === "scenario-A" || creep.name === "scenario-B",
+    )
+    .filter((creep) => creep.y !== 25);
 
   return {
     nativeTileExchanges,
@@ -158,7 +174,9 @@ try {
 
   const bundle = await readFile(bundlePath, "utf8");
   server = new ScreepsServer({ path: serverPath, logdir, port });
-  server.on("error", (message) => console.error(`[headless:${scenario}] ${message}`));
+  server.on("error", (message) =>
+    console.error(`[headless:${scenario}] ${message}`),
+  );
 
   // Start from the mock server's own known-good 3x3 world so engine/runtime
   // metadata matches its canonical test fixture. Only W0N0 terrain is replaced
@@ -216,12 +234,21 @@ try {
       modules: Object.keys(row.modules ?? {}),
     })),
   };
-  console.error(`[headless:${scenario}:preflight] ${JSON.stringify(preflight)}`);
+  console.error(
+    `[headless:${scenario}:preflight] ${JSON.stringify(preflight)}`,
+  );
 
   if (!driverUsers.some((user) => user._id?.toString?.() === bot.id)) {
-    throw new Error(`driver.getAllUsers() did not return headless bot ${bot.id}`);
+    throw new Error(
+      `driver.getAllUsers() did not return headless bot ${bot.id}`,
+    );
   }
-  if (!codeRows.some((row) => typeof row.modules?.main === "string" && row.modules.main.length > 0)) {
+  if (
+    !codeRows.some(
+      (row) =>
+        typeof row.modules?.main === "string" && row.modules.main.length > 0,
+    )
+  ) {
     throw new Error(`headless bot ${bot.id} has no non-empty main module`);
   }
 
@@ -266,7 +293,11 @@ try {
   const serverLogs = startupFailure ? await captureServerLogs() : undefined;
   const result = {
     name: scenario,
-    status: startupFailure ? "infrastructure-failed" : passed ? "passed" : "failed",
+    status: startupFailure
+      ? "infrastructure-failed"
+      : passed
+        ? "passed"
+        : "failed",
     error: startupFailure,
     engine: {
       serverMockup: mockupPackage.version,
@@ -290,8 +321,11 @@ try {
   };
 
   await writeResult(result);
+  exitCode = scenarioExitCode(result.status);
   if (startupFailure && serverLogs) {
-    console.error(`[headless:${scenario}:engine-logs] ${JSON.stringify(serverLogs)}`);
+    console.error(
+      `[headless:${scenario}:engine-logs] ${JSON.stringify(serverLogs)}`,
+    );
   }
   console.log(
     `[headless:${scenario}] ${result.status} after ${timeline.length} engine ticks; nativeExchanges=${analysis.nativeTileExchangeCount}`,
@@ -301,14 +335,16 @@ try {
   await writeResult({
     name: scenario,
     status: "infrastructure-failed",
-    error: error instanceof Error ? error.stack ?? error.message : String(error),
+    error:
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
     preflight,
     serverLogs,
   });
+  exitCode = scenarioExitCode("infrastructure-failed");
   console.error(`[headless:${scenario}] infrastructure failure`, error);
 } finally {
   if (server) server.stop();
   await rm(runRoot, { recursive: true, force: true }).catch(() => {});
   // screeps-server-mockup intentionally leaves storage handles around after stop().
-  process.exit(0);
+  process.exit(exitCode);
 }

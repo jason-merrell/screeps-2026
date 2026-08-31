@@ -1,0 +1,1003 @@
+{
+  "$schema": "./fspm-conformance.schema.json",
+  "schema": "screeps-fspm-conformance/v1",
+  "profileVersion": 1,
+  "profileStatus": "partial",
+  "evaluatedAt": "2026-08-30",
+  "implementationBaseline": "aded6723d3d86f323a94d429832f66b4283743dd",
+  "governance": {
+    "repository": "Namauu/governance-docs",
+    "commit": "02d581886a759d19044ff91a80d743fa042f23f7",
+    "reviewRule": "A governance commit change requires an explicit conformance review before the runtime catalog may adopt it."
+  },
+  "statusDefinitions": {
+    "implemented": "Canonical field or invariant is represented and enforced without semantic adaptation.",
+    "adapted": "Canonical semantics are preserved through a documented Screeps-domain mapping.",
+    "not_implemented": "Required canonical semantics are absent or insufficiently enforced.",
+    "not_applicable": "The canonical concern does not apply to the governed Screeps domain and has an explicit rationale."
+  },
+  "components": [
+    {
+      "key": "p3",
+      "name": "P3 Portfolio record",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#183",
+      "canonicalSources": [
+        "execution/data/p3.md#4-record-schema",
+        "structure/fspm-framework.md#06-portfolio-management"
+      ],
+      "fields": [
+        {
+          "key": "name",
+          "status": "adapted",
+          "adaptation": "Stable empire and colony Portfolio names replace OU-coded corporate names until the OU model exists.",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "description",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "type",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "sub_type",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "start_date",
+          "status": "adapted",
+          "adaptation": "Game ticks are the authoritative runtime clock; startTick is the deterministic Start Date mapping.",
+          "evidence": [
+            "docs/adr-fspm-p3-authority.md",
+            "packages/runtime/src/planning/fspm.ts"
+          ]
+        },
+        {
+          "key": "end_date",
+          "status": "not_applicable",
+          "rationale": "The current Empire and colony records are continuously managed Portfolios; canonical Portfolios have no end date until retirement."
+        },
+        {
+          "key": "parent_p3_id",
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-p3-authority.test.ts"
+          ]
+        },
+        {
+          "key": "unanet_contract_code",
+          "status": "not_applicable",
+          "rationale": "Screeps has no Unanet ERP or labor-cost integration. Runtime lineage uses immutable P3 identifiers."
+        },
+        {
+          "key": "unanet_contract_key",
+          "status": "not_applicable",
+          "rationale": "Screeps has no Unanet ERP or labor-cost integration. Runtime lineage uses immutable P3 identifiers."
+        }
+      ],
+      "invariants": [
+        {
+          "key": "portfolio_classification",
+          "status": "implemented",
+          "evidence": [
+            "docs/adr-fspm-p3-authority.md",
+            "packages/runtime/test/planning/fspm-p3-authority.test.ts"
+          ]
+        },
+        {
+          "key": "continuous_prioritization_and_rebalancing",
+          "status": "not_implemented",
+          "rationale": "Portfolio records exist, but cross-colony value, risk, urgency, quality, capacity, and resource rebalancing is not yet governed or replayable.",
+          "issue": "#127"
+        },
+        {
+          "key": "ou_identity",
+          "status": "not_implemented",
+          "rationale": "No Organizational Unit record anchors the root Portfolio or derives its accountable Position.",
+          "issue": "#184"
+        }
+      ]
+    },
+    {
+      "key": "corporate_requirement",
+      "name": "Corporate Requirement record",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#184",
+      "canonicalSources": [
+        "execution/data/corporate-requirements.md#4-record-schema"
+      ],
+      "fields": [
+        {
+          "key": "id",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "title",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "requestor",
+          "status": "not_implemented",
+          "rationale": "Planner-created records have no governed requestor identity.",
+          "issue": "#184"
+        },
+        {
+          "key": "requirement_trigger",
+          "status": "not_implemented",
+          "rationale": "No controlled trigger or occurrence identity is stored.",
+          "issue": "#184"
+        },
+        {
+          "key": "requirement_source",
+          "status": "not_implemented",
+          "rationale": "Generated domain placeholders carry no authoritative source record.",
+          "issue": "#184"
+        },
+        {
+          "key": "requirement_verbiage",
+          "status": "not_implemented",
+          "rationale": "The binding obligation is not retained verbatim.",
+          "issue": "#184"
+        },
+        {
+          "key": "originating_authority",
+          "status": "not_implemented",
+          "rationale": "No human originating authority is represented.",
+          "issue": "#184"
+        },
+        {
+          "key": "purpose_statement",
+          "status": "not_implemented",
+          "rationale": "Generic completion criteria do not establish the canonical purpose and scope of an approved obligation.",
+          "issue": "#184"
+        },
+        {
+          "key": "strategic_priority",
+          "status": "not_implemented",
+          "rationale": "No canonical SELL, STAFF, or SERVE mapping or approved Screeps adaptation exists.",
+          "issue": "#184"
+        },
+        {
+          "key": "strategic_alignment",
+          "status": "not_implemented",
+          "rationale": "No strategy-to-requirement evidence is recorded.",
+          "issue": "#184"
+        },
+        {
+          "key": "applicable_ou",
+          "status": "not_implemented",
+          "rationale": "The runtime has no governed OU model.",
+          "issue": "#184"
+        },
+        {
+          "key": "desired_outcomes",
+          "status": "not_implemented",
+          "rationale": "Generated placeholders do not carry approved desired outcomes.",
+          "issue": "#184"
+        },
+        {
+          "key": "business_case",
+          "status": "not_implemented",
+          "rationale": "Resource commitment is not justified by a governed business case.",
+          "issue": "#184"
+        },
+        {
+          "key": "approval_authority",
+          "status": "not_implemented",
+          "rationale": "No human Accountable authority is represented.",
+          "issue": "#164"
+        },
+        {
+          "key": "approval",
+          "status": "not_implemented",
+          "rationale": "Planner demand materializes records without an approval gate.",
+          "issue": "#184"
+        },
+        {
+          "key": "approved_by",
+          "status": "not_implemented",
+          "rationale": "No approving human identity is recorded.",
+          "issue": "#164"
+        },
+        {
+          "key": "approval_signature",
+          "status": "not_implemented",
+          "rationale": "No immutable approval attestation is stored.",
+          "issue": "#164"
+        },
+        {
+          "key": "date_approved",
+          "status": "not_implemented",
+          "rationale": "No approval timestamp exists.",
+          "issue": "#184"
+        },
+        {
+          "key": "created_date",
+          "status": "adapted",
+          "adaptation": "createdAt stores the authoritative game tick rather than a wall-clock timestamp.",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "modified_date",
+          "status": "adapted",
+          "adaptation": "updatedAt stores the authoritative game tick rather than a wall-clock timestamp.",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "created_by",
+          "status": "not_implemented",
+          "rationale": "Creation actor and governing role are not recorded.",
+          "issue": "#164"
+        },
+        {
+          "key": "modified_by",
+          "status": "not_implemented",
+          "rationale": "Mutation actor and governing role are not recorded.",
+          "issue": "#164"
+        }
+      ],
+      "invariants": [
+        {
+          "key": "approval_precedes_binding_authority",
+          "status": "not_implemented",
+          "rationale": "The current record is created as an active side effect of intent tracing.",
+          "issue": "#184"
+        },
+        {
+          "key": "append_only_approval_history",
+          "status": "not_implemented",
+          "rationale": "No approval ledger exists.",
+          "issue": "#184"
+        }
+      ]
+    },
+    {
+      "key": "corporate_deliverable",
+      "name": "Corporate Deliverable record",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#184",
+      "canonicalSources": [
+        "execution/data/corporate-deliverables.md#4-record-schema"
+      ],
+      "fields": [
+        {
+          "key": "category",
+          "status": "not_implemented",
+          "rationale": "The runtime does not distinguish Corporate and Service Program Deliverable categories.",
+          "issue": "#184"
+        },
+        {
+          "key": "type",
+          "status": "not_implemented",
+          "rationale": "Product, Service, and Result semantics are not represented.",
+          "issue": "#184"
+        },
+        {
+          "key": "title",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "details",
+          "status": "not_implemented",
+          "rationale": "Scope, components, technology, and performer qualifications are absent.",
+          "issue": "#184"
+        },
+        {
+          "key": "output",
+          "status": "not_implemented",
+          "rationale": "A canonical product, service, or result output is not defined.",
+          "issue": "#184"
+        },
+        {
+          "key": "requirement_source",
+          "status": "not_implemented",
+          "rationale": "The parent obligation source is absent.",
+          "issue": "#184"
+        },
+        {
+          "key": "requirement_verbiage",
+          "status": "not_implemented",
+          "rationale": "The exact binding language is absent.",
+          "issue": "#184"
+        },
+        {
+          "key": "evaluation_factors",
+          "status": "not_implemented",
+          "rationale": "No canonical evaluation-factor set or approved Screeps adaptation is represented.",
+          "issue": "#184"
+        },
+        {
+          "key": "quality_description",
+          "status": "not_implemented",
+          "rationale": "Deliverable quality is currently a reused room-health measurement, not a governed deliverable quality contract.",
+          "issue": "#136"
+        },
+        {
+          "key": "quality_metric",
+          "status": "not_implemented",
+          "rationale": "No deliverable-level acceptance metric exists.",
+          "issue": "#136"
+        },
+        {
+          "key": "receipt_validation",
+          "status": "not_implemented",
+          "rationale": "Evidence form, storage location, and capture responsibility are absent.",
+          "issue": "#184"
+        },
+        {
+          "key": "deliverable_weight",
+          "status": "not_implemented",
+          "rationale": "Deliverables have no sibling weight and cannot participate in PQI.",
+          "issue": "#136"
+        },
+        {
+          "key": "child_deliverables",
+          "status": "not_implemented",
+          "rationale": "One-level child Deliverable relationships and decomposition rules are absent.",
+          "issue": "#176"
+        }
+      ],
+      "invariants": [
+        {
+          "key": "top_down_activation",
+          "status": "not_implemented",
+          "rationale": "Planner demand can create the Deliverable placeholder.",
+          "issue": "#184"
+        },
+        {
+          "key": "weights_sum_to_100",
+          "status": "not_implemented",
+          "rationale": "Deliverable weights are absent.",
+          "issue": "#136"
+        }
+      ]
+    },
+    {
+      "key": "task",
+      "name": "Task record",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#164",
+      "canonicalSources": ["execution/data/tasks.md#5-record-schema"],
+      "fields": [
+        {
+          "key": "title",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-catalog.ts"]
+        },
+        {
+          "key": "description",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-catalog.ts"]
+        },
+        {
+          "key": "task_weight",
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/fspm-catalog.ts",
+            "packages/runtime/test/planning/fspm-catalog.test.ts"
+          ]
+        },
+        {
+          "key": "quality_description",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-catalog.ts"]
+        },
+        {
+          "key": "quality_metric",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-catalog.ts"]
+        },
+        {
+          "key": "kpi_metric",
+          "status": "adapted",
+          "adaptation": "The governed three-level Screeps rubric uses exceptional, satisfactory, and unsatisfactory terminal ratings.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm-catalog.ts",
+            "docs/adr-fspm-activity-execution.md"
+          ]
+        },
+        {
+          "key": "procedure",
+          "status": "adapted",
+          "adaptation": "Catalog Procedures name runtime execution paths, but detailed executable steps, inputs, checks, and exception paths remain incomplete.",
+          "evidence": ["packages/runtime/src/planning/fspm-catalog.ts"],
+          "issue": "#131"
+        },
+        {
+          "key": "deliverable_id",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "status",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "arci_assignments",
+          "status": "not_implemented",
+          "rationale": "Accountable, Responsible, Consulted, and Informed assignments are absent.",
+          "issue": "#164"
+        },
+        {
+          "key": "id",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "created_date",
+          "status": "adapted",
+          "adaptation": "createdAt stores the authoritative game tick.",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        },
+        {
+          "key": "updated_date",
+          "status": "adapted",
+          "adaptation": "updatedAt stores the authoritative game tick.",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+        }
+      ],
+      "invariants": [
+        {
+          "key": "exactly_one_deliverable",
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-catalog.test.ts"
+          ]
+        },
+        {
+          "key": "task_or_procedure_determination",
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/fspm-catalog.ts",
+            "docs/fspm-activity-execution-notes.md"
+          ]
+        },
+        {
+          "key": "retired_task_cannot_generate_activity",
+          "status": "implemented",
+          "evidence": [
+            "docs/adr-fspm-execution-authority.md",
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/planning/activity-lifecycle.ts",
+            "packages/runtime/test/planning/fspm-execution-authority.test.ts"
+          ]
+        },
+        {
+          "key": "open_activities_resolved_before_retirement",
+          "status": "not_implemented",
+          "rationale": "Cancellation and migration disposition is not yet a complete enforced retirement gate.",
+          "issue": "#162"
+        }
+      ]
+    },
+    {
+      "key": "procedure",
+      "name": "Procedure record and executable mapping",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#131",
+      "canonicalSources": [
+        "execution/data/tasks.md#6-field-definitions",
+        "structure/fspm-framework.md#executable-procedures"
+      ],
+      "fields": [
+        {
+          "key": "title",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-catalog.ts"]
+        },
+        {
+          "key": "video_url",
+          "status": "not_applicable",
+          "rationale": "Runtime Procedures are executable code paths; a video is not the authoritative execution representation."
+        },
+        {
+          "key": "content",
+          "status": "not_implemented",
+          "rationale": "Ordered steps, inputs, outputs, checks, exception paths, and responsible roles are not represented.",
+          "issue": "#131"
+        },
+        {
+          "key": "tools_applications_resources",
+          "status": "not_implemented",
+          "rationale": "Runtime implementation and resource dependencies are implicit in code rather than governed data.",
+          "issue": "#131"
+        },
+        {
+          "key": "version",
+          "status": "not_implemented",
+          "rationale": "Procedures have no semantic version or change history.",
+          "issue": "#131"
+        }
+      ],
+      "invariants": [
+        {
+          "key": "procedure_belongs_to_one_task",
+          "status": "implemented",
+          "evidence": [
+            "docs/adr-fspm-execution-authority.md",
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-execution-authority.test.ts"
+          ]
+        },
+        {
+          "key": "runtime_intent_contract_fails_closed",
+          "status": "adapted",
+          "adaptation": "Each catalog Procedure explicitly enumerates allowed Screeps intent operations; exact global authority identity, colony-local execution scope, snapshot freshness, and operation compatibility are revalidated before arbitration and Activity binding. Governed remote scope is not yet implemented.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm-catalog.ts",
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-execution-authority.test.ts"
+          ]
+        },
+        {
+          "key": "human_readable_and_executable_parity",
+          "status": "not_implemented",
+          "rationale": "No conformance test proves governed Procedure content and runtime behavior remain equivalent.",
+          "issue": "#131"
+        }
+      ]
+    },
+    {
+      "key": "activity",
+      "name": "Activity record",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#164",
+      "canonicalSources": ["execution/data/activities.md#4-record-schema"],
+      "fields": [
+        {
+          "key": "status",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        },
+        {
+          "key": "start_date",
+          "status": "not_implemented",
+          "rationale": "startedAt is actual commencement; planned Start Date is absent.",
+          "issue": "#164"
+        },
+        {
+          "key": "due_date",
+          "status": "not_implemented",
+          "rationale": "No planned completion tick or overdue contract exists.",
+          "issue": "#164"
+        },
+        {
+          "key": "completed_date",
+          "status": "adapted",
+          "adaptation": "completedAt stores the authoritative completion tick.",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        },
+        {
+          "key": "description",
+          "status": "not_implemented",
+          "rationale": "Task Description is not captured as a read-only inherited instance field.",
+          "issue": "#164"
+        },
+        {
+          "key": "quality_description",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        },
+        {
+          "key": "quality_metric",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        },
+        {
+          "key": "kpi_metric",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        },
+        {
+          "key": "kpi_score",
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/activity-lifecycle.ts",
+            "packages/runtime/test/planning/fspm-activity-lifecycle.test.ts"
+          ]
+        },
+        {
+          "key": "task_id",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        },
+        {
+          "key": "assignee",
+          "status": "adapted",
+          "adaptation": "Creep or system executor identity is retained as operational Responsible evidence, but it is not yet a complete ARCI assignment.",
+          "evidence": [
+            "docs/adr-fspm-performer-reassignment.md",
+            "packages/runtime/src/planning/activity-lifecycle.ts"
+          ],
+          "issue": "#164"
+        },
+        {
+          "key": "task_weight",
+          "status": "not_implemented",
+          "rationale": "The parent Task Weight is not captured on the Activity instance.",
+          "issue": "#164"
+        },
+        {
+          "key": "id",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        },
+        {
+          "key": "created_date",
+          "status": "adapted",
+          "adaptation": "createdAt stores the authoritative game tick.",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        },
+        {
+          "key": "updated_date",
+          "status": "adapted",
+          "adaptation": "updatedAt stores the authoritative game tick.",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        }
+      ],
+      "invariants": [
+        {
+          "key": "created_not_started_then_commenced",
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/test/planning/fspm-activity-state-sequence.test.ts"
+          ]
+        },
+        {
+          "key": "reassignment_preserves_identity",
+          "status": "implemented",
+          "evidence": [
+            "docs/adr-fspm-performer-reassignment.md",
+            "packages/runtime/test/planning/fspm-activity-assignee-lifecycle.test.ts"
+          ]
+        },
+        {
+          "key": "completion_requires_quality_and_accountable_validation",
+          "status": "not_implemented",
+          "rationale": "Terminal predicates and KPI evidence exist, but no human Accountable validates the work product.",
+          "issue": "#164"
+        },
+        {
+          "key": "terminal_state_is_immutable",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"]
+        },
+        {
+          "key": "creation_requires_exact_active_authority_ancestry",
+          "status": "implemented",
+          "evidence": [
+            "docs/adr-fspm-execution-authority.md",
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/planning/activity-lifecycle.ts",
+            "packages/runtime/test/planning/fspm-execution-authority.test.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "eqvm",
+      "name": "Earned Quality Value Management",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#136",
+      "canonicalSources": [
+        "structure/eqvm.md#72-eqvm-quality-hierarchy-formulas",
+        "structure/eqvm.md#11-eqvm-governance-model"
+      ],
+      "fields": [
+        {
+          "key": "activity_kpi_rating",
+          "status": "adapted",
+          "adaptation": "Terminal Activity ratings use the governed three-level catalog scale.",
+          "evidence": [
+            "packages/runtime/src/planning/activity-lifecycle.ts",
+            "docs/adr-fspm-activity-execution.md"
+          ]
+        },
+        {
+          "key": "activity_weight",
+          "status": "not_implemented",
+          "rationale": "Activities have no explicit weights or documented equal-weight adaptation.",
+          "issue": "#136"
+        },
+        {
+          "key": "task_qi",
+          "status": "adapted",
+          "adaptation": "Task QI is currently an unweighted mean of rated completed Activities and excludes incomplete evidence.",
+          "evidence": ["packages/runtime/src/planning/task-kpi.ts"],
+          "issue": "#136"
+        },
+        {
+          "key": "task_weight",
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-catalog.ts"]
+        },
+        {
+          "key": "dqi",
+          "status": "not_implemented",
+          "rationale": "Task QI is not rolled up by Task Weight into Deliverable Quality Index.",
+          "issue": "#136"
+        },
+        {
+          "key": "deliverable_weight",
+          "status": "not_implemented",
+          "rationale": "Deliverable weights do not exist.",
+          "issue": "#136"
+        },
+        {
+          "key": "pqi",
+          "status": "not_implemented",
+          "rationale": "No Deliverable Weight by DQI rollup exists at the P3 level.",
+          "issue": "#136"
+        },
+        {
+          "key": "rating_evidence",
+          "status": "adapted",
+          "adaptation": "Activity outcome and KPI evidence is retained, but reviewer identity, approval state, disputes, and durable evidence links remain incomplete.",
+          "evidence": [
+            "packages/runtime/src/planning/activity-lifecycle.ts",
+            "supabase/migrations/20260828192232_fspm_v2_durable_history.sql"
+          ],
+          "issue": "#136"
+        }
+      ],
+      "invariants": [
+        {
+          "key": "value_only_earned_when_quality_demonstrated",
+          "status": "adapted",
+          "adaptation": "Production Task KPI credit is recorded only from terminal Activity evidence; the complete EQVM value hierarchy remains absent.",
+          "evidence": [
+            "packages/runtime/src/main.ts",
+            "packages/runtime/test/planning/fspm-task-kpi.test.ts"
+          ],
+          "issue": "#136"
+        },
+        {
+          "key": "operational_health_is_not_eqvm",
+          "status": "not_implemented",
+          "rationale": "The current quality module assigns room-health measurements to Requirement, Deliverable, and P3 quality records.",
+          "issue": "#136"
+        },
+        {
+          "key": "no_evidence_cannot_appear_healthy",
+          "status": "not_implemented",
+          "rationale": "Missing domains are omitted and can produce a green 100 rollup.",
+          "issue": "#136"
+        }
+      ]
+    },
+    {
+      "key": "ou_arci_ai_performer",
+      "name": "Organizational Units, ARCI, and AI Performer governance",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#164",
+      "canonicalSources": [
+        "execution/organizational-units.md#1-hierarchical-index",
+        "structure/fspm-framework.md#arci-matrix",
+        "structure/fspm-framework.md#04-ai-native-operating-model"
+      ],
+      "fields": [
+        {
+          "key": "organizational_unit",
+          "status": "not_implemented",
+          "rationale": "No OU hierarchy or Accountable Position mapping exists.",
+          "issue": "#184"
+        },
+        {
+          "key": "accountable",
+          "status": "not_implemented",
+          "rationale": "Canonical AI-native doctrine requires exactly one human Accountable for every P3 component.",
+          "issue": "#164"
+        },
+        {
+          "key": "responsible",
+          "status": "adapted",
+          "adaptation": "Creep and system actor identities provide operational performer evidence but are not governed AI Performer records.",
+          "evidence": [
+            "packages/runtime/src/planning/activity-lifecycle.ts",
+            "packages/runtime/src/observability/trace.ts"
+          ],
+          "issue": "#164"
+        },
+        {
+          "key": "consulted",
+          "status": "not_implemented",
+          "rationale": "No Consulted assignments or consultation evidence exists.",
+          "issue": "#164"
+        },
+        {
+          "key": "informed",
+          "status": "not_implemented",
+          "rationale": "No Informed assignments or notification evidence exists.",
+          "issue": "#164"
+        },
+        {
+          "key": "oversight_level",
+          "status": "not_implemented",
+          "rationale": "AI Performer autonomy and human oversight are not explicitly designated.",
+          "issue": "#164"
+        },
+        {
+          "key": "execution_mode",
+          "status": "not_implemented",
+          "rationale": "Tasks and workflows carry no canonical execution-mode designation.",
+          "issue": "#131"
+        },
+        {
+          "key": "provenance",
+          "status": "adapted",
+          "adaptation": "Intent, Activity, performer, target, and result lineage is structured, but governing ARCI role and model/runtime identity are incomplete.",
+          "evidence": [
+            "packages/runtime/src/intents/types.ts",
+            "packages/runtime/src/observability/trace.ts"
+          ],
+          "issue": "#164"
+        }
+      ],
+      "invariants": [
+        {
+          "key": "ai_never_accountable",
+          "status": "not_implemented",
+          "rationale": "Without an Accountable field the runtime cannot prove AI or infrastructure is never Accountable.",
+          "issue": "#164"
+        },
+        {
+          "key": "verification_precedes_earned_output",
+          "status": "adapted",
+          "adaptation": "Terminal predicates verify runtime outcomes before KPI credit, but human Accountable validation is absent.",
+          "evidence": ["packages/runtime/src/planning/activity-lifecycle.ts"],
+          "issue": "#164"
+        }
+      ]
+    },
+    {
+      "key": "authoritative_structured_data",
+      "name": "Authoritative structured data and history",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#156",
+      "canonicalSources": [
+        "structure/fspm-framework.md#the-authoritative-structured-data-principle"
+      ],
+      "fields": [
+        {
+          "key": "typed_records",
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/memory/schema.ts"
+          ]
+        },
+        {
+          "key": "single_authoritative_instance",
+          "status": "adapted",
+          "adaptation": "Memory is authoritative during the tick and Supabase is the durable telemetry history; an explicit acknowledgment contract between them is absent.",
+          "evidence": ["docs/adr-supabase-telemetry-spine.md"],
+          "issue": "#156"
+        },
+        {
+          "key": "append_only_change_ledger",
+          "status": "adapted",
+          "adaptation": "Activity events and Supabase history are append-oriented, but bounded runtime journals can evict before durable acknowledgment.",
+          "evidence": [
+            "packages/runtime/src/planning/activity-lifecycle.ts",
+            "supabase/migrations/20260828192232_fspm_v2_durable_history.sql"
+          ],
+          "issue": "#156"
+        },
+        {
+          "key": "retirement_by_supersession",
+          "status": "not_implemented",
+          "rationale": "Supersession and cancellation are not uniformly represented across every record type.",
+          "issue": "#162"
+        },
+        {
+          "key": "as_of_queryability",
+          "status": "adapted",
+          "adaptation": "Supabase Activity history is queryable over collected history, but runtime sequence gaps cannot yet be detected or backfilled.",
+          "evidence": [
+            "supabase/migrations/20260828192232_fspm_v2_durable_history.sql"
+          ],
+          "issue": "#156"
+        },
+        {
+          "key": "record_provenance",
+          "status": "adapted",
+          "adaptation": "Runtime SHA, target, room, Activity, Task, Procedure, actor, and outcome provenance exists in parts but is not complete on every record and mutation.",
+          "evidence": [
+            "packages/runtime/src/observability/trace.ts",
+            "supabase/functions/ingest-telemetry/index.ts"
+          ],
+          "issue": "#139"
+        }
+      ],
+      "invariants": [
+        {
+          "key": "no_eviction_before_durable_acknowledgment",
+          "status": "not_implemented",
+          "rationale": "No collector high-watermark or gap detector prevents authoritative history loss.",
+          "issue": "#156"
+        },
+        {
+          "key": "schema_migration_is_deterministic",
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/memory/migrate.ts",
+            "packages/runtime/test/memory/migrate.test.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "issue_risk_stakeholder",
+      "name": "Issue, Risk, and Stakeholder governance",
+      "status": "not_implemented",
+      "owner": "area:fspm",
+      "issue": "#183",
+      "canonicalSources": [
+        "execution/data/issues.md#4-record-schema",
+        "execution/data/stakeholder.md#4-record-schema",
+        "structure/fspm-framework.md#p3-risk"
+      ],
+      "fields": [
+        {
+          "key": "issue_register",
+          "status": "adapted",
+          "adaptation": "GitHub Issues are the engineering issue register and now carry priority and area labels, but canonical P3, owner, next-action, lifecycle, and lessons fields are not consistently structured.",
+          "evidence": [".github"],
+          "issue": "#183"
+        },
+        {
+          "key": "runtime_issue_linkage",
+          "status": "not_implemented",
+          "rationale": "Runtime evidence and Lab panels do not carry stable links to the known issue or workaround explaining a defect.",
+          "issue": "#134"
+        },
+        {
+          "key": "risk_register",
+          "status": "not_implemented",
+          "rationale": "No P3-scoped risk likelihood, impact, response, owner, or review cadence exists.",
+          "issue": "#127"
+        },
+        {
+          "key": "stakeholder_register",
+          "status": "not_implemented",
+          "rationale": "No stakeholder identity, role, influence, communication, or engagement record exists.",
+          "issue": "#127"
+        }
+      ],
+      "invariants": [
+        {
+          "key": "issues_link_to_p3_and_resolution_work",
+          "status": "not_implemented",
+          "rationale": "GitHub issue relationships are prose links rather than validated P3 and Task references.",
+          "issue": "#183"
+        },
+        {
+          "key": "risk_and_issue_review_cadence",
+          "status": "not_implemented",
+          "rationale": "No strategic, tactical, or operational governed review cadence is implemented.",
+          "issue": "#127"
+        }
+      ]
+    }
+  ]
+}

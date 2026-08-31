@@ -21,6 +21,8 @@ function installGlobals(): void {
   const creep = {
     name: "worker-1",
     spawning: false,
+    room: { name: "W1N1" },
+    pos: { roomName: "W1N1" },
     memory: {},
     store: {
       getUsedCapacity: () => creepEnergy,
@@ -30,6 +32,8 @@ function installGlobals(): void {
 
   const container = {
     id: "container-1",
+    room: { name: "W1N1" },
+    pos: { roomName: "W1N1" },
     store: {
       getUsedCapacity: () => 500,
       getFreeCapacity: () => 1500,
@@ -43,7 +47,8 @@ function installGlobals(): void {
       creeps: { "worker-1": creep },
       spawns: {},
       rooms: {},
-      getObjectById: (id: string) => (id === "container-1" ? container : null),
+      getObjectById: (id: string) =>
+        id === "container-1" ? container : { id, pos: { roomName: "W1N1" } },
     },
     Memory: {
       version: 5,
@@ -95,7 +100,8 @@ describe("FSPM energy-service handoff", () => {
     bindFspmActivities([withdraw]);
     const energyActivityId = withdraw.trace?.activityId;
     const energyTaskId = withdraw.trace?.taskId;
-    if (!energyActivityId || !energyTaskId) throw new Error("expected energy-service Activity");
+    if (!energyActivityId || !energyTaskId)
+      throw new Error("expected energy-service Activity");
 
     creepEnergy = 50;
     reconcileFspmActivityEvidence([
@@ -104,7 +110,12 @@ describe("FSPM energy-service handoff", () => {
         result: OK,
         movementRequired: false,
         evidence: "buffered energy collected successfully",
-        outcome: { metric: "energy collected", actual: 50, target: 50, unit: "energy" },
+        outcome: {
+          metric: "energy collected",
+          actual: 50,
+          target: 50,
+          unit: "energy",
+        },
       } satisfies ActivityExecutionObservation,
     ]);
 
@@ -127,14 +138,20 @@ describe("FSPM energy-service handoff", () => {
     });
     expect(portfolio.activityKpiHistory?.[energyTaskId]).toHaveLength(1);
     expect(controller.trace?.activityId).not.toBe(energyActivityId);
-    expect(portfolio.activities?.[controller.trace?.activityId ?? ""]?.status).toBe("in_progress");
+    expect(
+      portfolio.activities?.[controller.trace?.activityId ?? ""]?.status,
+    ).toBe("in_progress");
 
     const energyEvents = fspmActivityEvents(portfolio).filter(
       (event) => event.activityId === energyActivityId,
     );
-    expect(energyEvents.map((event) => event.type)).toContain("activity_completed");
+    expect(energyEvents.map((event) => event.type)).toContain(
+      "activity_completed",
+    );
     expect(energyEvents.map((event) => event.type)).toContain("kpi_scored");
-    expect(energyEvents.map((event) => event.type)).not.toContain("activity_held");
+    expect(energyEvents.map((event) => event.type)).not.toContain(
+      "activity_held",
+    );
     expect(
       energyEvents.find((event) => event.type === "activity_completed")?.reason,
     ).toContain("handed usable energy");
@@ -145,7 +162,8 @@ describe("FSPM energy-service handoff", () => {
     bindFspmActivities([withdraw]);
     const energyActivityId = withdraw.trace?.activityId;
     const energyTaskId = withdraw.trace?.taskId;
-    if (!energyActivityId || !energyTaskId) throw new Error("expected energy-service Activity");
+    if (!energyActivityId || !energyTaskId)
+      throw new Error("expected energy-service Activity");
 
     creepEnergy = 50;
     Game.time = 101;
@@ -163,7 +181,9 @@ describe("FSPM energy-service handoff", () => {
       (event) => event.activityId === energyActivityId,
     );
     expect(energyEvents.map((event) => event.type)).toContain("activity_held");
-    expect(energyEvents.map((event) => event.type)).not.toContain("activity_completed");
+    expect(energyEvents.map((event) => event.type)).not.toContain(
+      "activity_completed",
+    );
     expect(energyEvents.map((event) => event.type)).not.toContain("kpi_scored");
   });
 });

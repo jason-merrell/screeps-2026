@@ -7,32 +7,64 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.15.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
-
-      - name: Set up Turborepo Remote Cache
-        continue-on-error: true
-        uses: vercel/setup-turborepo-remote-cache-action@v1.0.0
-        with:
-          team: team_nu4kVwu2CzXfF3XkFsdFJFCS
+          node-version-file: .node-version
 
       - name: Install lightweight workspace dependencies
-        run: pnpm install --filter . --filter @screeps/runtime --filter @screeps/lab --frozen-lockfile=false
+        run: pnpm install --filter . --filter @screeps/runtime --filter @screeps/lab --frozen-lockfile
 
-      - run: pnpm check
-      - run: pnpm build
+      - name: Check source tree
+        run: pnpm check
+
+      - name: Build all workspaces
+        run: pnpm build
+
+      - name: Verify generated output isolation
+        run: |
+          pnpm check
+          git diff --exit-code
+
+  production-main-smoke:
+    name: Production main.loop private-server gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Install runtime build dependencies
+        run: pnpm install --filter . --filter @screeps/runtime --frozen-lockfile
+
+      - name: Install pinned private-server dependencies
+        run: npm ci --prefix scenario --workspaces=false --no-audit --no-fund
+
+      - name: Run four production main.loop modes for 12 native engine ticks
+        run: pnpm gate:production-main
+
+      - name: Upload production-loop diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-main-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/production-main-smoke.json
+          if-no-files-found: error

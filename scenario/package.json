@@ -3,12 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "22.18.x"
+  },
   "scripts": {
     "build": "cd .. && node scripts/build-headless-scenario.mjs",
     "lint": "cd .. && biome lint scenario",
-    "scenario": "npm install --no-audit --no-fund && cd .. && node scenario/run.mjs"
+    "scenario": "npm ci --workspaces=false --no-audit --no-fund && cd .. && node scenario/run.mjs",
+    "test": "cd .. && vitest run scenario/*.test.mjs"
   },
   "dependencies": {
     "screeps-server-mockup": "1.5.1"
+  },
+  "overrides": {
+    "isolated-vm": "https://codeload.github.com/laverdet/isolated-vm/tar.gz/cb93efcc1881c826ee98ad34e66955c08713acb2"
   }
 }

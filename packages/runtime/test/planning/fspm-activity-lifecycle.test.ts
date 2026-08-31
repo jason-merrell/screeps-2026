@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityExecutionObservation } from "../../src/intents/execute";
 import { createIntentTrace } from "../../src/intents/trace";
-import type { HarvestIntent, TransferIntent, UpgradeIntent } from "../../src/intents/types";
+import type {
+  HarvestIntent,
+  TransferIntent,
+  UpgradeIntent,
+} from "../../src/intents/types";
 import {
   activityContinuityRatio,
   activityWorkConversionRatio,
@@ -9,7 +13,11 @@ import {
   fspmActivityEvents,
   reconcileFspmActivityEvidence,
 } from "../../src/planning/activity-lifecycle";
-import { ensureColonyPortfolio, ensureProcedure, ensureTask } from "../../src/planning/fspm";
+import {
+  ensureColonyPortfolio,
+  ensureProcedure,
+  ensureTask,
+} from "../../src/planning/fspm";
 
 vi.stubGlobal("OK", 0);
 vi.stubGlobal("ERR_NOT_IN_RANGE", -9);
@@ -27,12 +35,32 @@ function testCreep(): Creep {
   return {
     name: "worker-1",
     spawning: false,
+    room: { name: "W1N1" },
+    pos: { roomName: "W1N1" },
     memory: {},
     store: {
       getUsedCapacity: () => creepEnergy,
       getCapacity: () => creepCapacity,
     },
   } as unknown as Creep;
+}
+
+function ensureScopedObject(id: string): void {
+  const existing = objectById.get(id) as
+    | (RoomObject & { pos?: { roomName?: string } })
+    | undefined;
+  if (existing) {
+    if (!existing.pos?.roomName) {
+      (existing as unknown as { pos: { roomName: string } }).pos = {
+        roomName: "W1N1",
+      };
+    }
+  } else {
+    objectById.set(id, {
+      id,
+      pos: { roomName: "W1N1" },
+    } as unknown as RoomObject);
+  }
 }
 
 function installGlobals(time = 100): void {
@@ -64,7 +92,8 @@ function traceFor(taskKey: string, procedureKey: string) {
   const portfolio = ensureColonyPortfolio("W1N1");
   const requirement = portfolio.requirements.economy;
   const deliverable = portfolio.deliverables.economy;
-  if (!requirement || !deliverable) throw new Error("expected economy hierarchy");
+  if (!requirement || !deliverable)
+    throw new Error("expected economy hierarchy");
   return {
     p3Id: portfolio.p3.id,
     requirementId: requirement.id,
@@ -78,6 +107,7 @@ function harvestIntent(
   procedureKey = "extract-source-energy",
   sourceId = "source-1",
 ): HarvestIntent {
+  ensureScopedObject(sourceId);
   return {
     type: "harvest",
     creepName: "worker-1",
@@ -92,6 +122,7 @@ function transferIntent(
   procedureKey = "buffer-source-energy",
   targetId = "container-1",
 ): TransferIntent {
+  ensureScopedObject(targetId);
   return {
     type: "transfer",
     creepName: "worker-1",
@@ -104,6 +135,7 @@ function transferIntent(
 }
 
 function controllerIntent(): UpgradeIntent {
+  ensureScopedObject("controller-1");
   return {
     type: "upgrade",
     creepName: "worker-1",
@@ -155,7 +187,11 @@ describe("FSPM Activity lifecycle", () => {
     expect(retargeted.trace?.activityId).toBe(firstId);
     expect(activities()[0]).toMatchObject({
       currentTargetKey: "source-2",
-      metrics: { targetRetargets: 1, targetAdvances: 0, procedureTransitions: 0 },
+      metrics: {
+        targetRetargets: 1,
+        targetAdvances: 0,
+        procedureTransitions: 0,
+      },
     });
     expect(
       fspmActivityEvents(ensureColonyPortfolio("W1N1")).filter(
@@ -166,16 +202,13 @@ describe("FSPM Activity lifecycle", () => {
 
   it("records satisfied same-Procedure target progression without a retarget penalty", () => {
     creepEnergy = 50;
-    objectById.set(
-      "extension-1",
-      {
-        store: {
-          getFreeCapacity: () => 0,
-          getUsedCapacity: () => 50,
-          getCapacity: () => 50,
-        },
-      } as unknown as RoomObject,
-    );
+    objectById.set("extension-1", {
+      store: {
+        getFreeCapacity: () => 0,
+        getUsedCapacity: () => 50,
+        getCapacity: () => 50,
+      },
+    } as unknown as RoomObject);
 
     const first = transferIntent("fund-workforce-energy", "extension-1");
     bindFspmActivities([first]);
@@ -197,11 +230,19 @@ describe("FSPM Activity lifecycle", () => {
     expect(next.trace?.activityId).toBe(activityId);
     expect(activities()[0]).toMatchObject({
       currentTargetKey: "extension-2",
-      metrics: { targetAdvances: 1, targetRetargets: 0, procedureTransitions: 0 },
+      metrics: {
+        targetAdvances: 1,
+        targetRetargets: 0,
+        procedureTransitions: 0,
+      },
     });
     const events = fspmActivityEvents(ensureColonyPortfolio("W1N1"));
-    expect(events.filter((event) => event.type === "target_advanced")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "target_changed")).toHaveLength(0);
+    expect(
+      events.filter((event) => event.type === "target_advanced"),
+    ).toHaveLength(1);
+    expect(
+      events.filter((event) => event.type === "target_changed"),
+    ).toHaveLength(0);
   });
 
   it("keeps one Activity while the assignee advances Procedures and targets inside the same Task", () => {
@@ -219,7 +260,11 @@ describe("FSPM Activity lifecycle", () => {
       status: "in_progress",
       currentProcedureId: buffer.trace?.procedureId,
       currentTargetKey: "container-1",
-      metrics: { procedureTransitions: 1, taskPreemptions: 0, targetRetargets: 0 },
+      metrics: {
+        procedureTransitions: 1,
+        taskPreemptions: 0,
+        targetRetargets: 0,
+      },
     });
     expect(
       fspmActivityEvents(ensureColonyPortfolio("W1N1")).filter(
@@ -238,7 +283,9 @@ describe("FSPM Activity lifecycle", () => {
     bindFspmActivities([controller]);
 
     const previous = activities().find((activity) => activity.id === economyId);
-    const current = activities().find((activity) => activity.id === controller.trace?.activityId);
+    const current = activities().find(
+      (activity) => activity.id === controller.trace?.activityId,
+    );
     expect(previous).toMatchObject({
       status: "on_hold",
       metrics: { holdCount: 1, taskPreemptions: 1 },
@@ -248,7 +295,10 @@ describe("FSPM Activity lifecycle", () => {
 
   it("does not close held energy-service work when another Task becomes current", () => {
     const heldWork = harvestIntent("extract-source-energy", "source-1");
-    objectById.set("source-1", { energy: 300 } as unknown as RoomObject);
+    objectById.set("source-1", {
+      energy: 300,
+      pos: { roomName: "W1N1" },
+    } as unknown as RoomObject);
     bindFspmActivities([heldWork]);
     const heldActivityId = heldWork.trace?.activityId;
     const heldTaskId = heldWork.trace?.taskId;
@@ -272,8 +322,12 @@ describe("FSPM Activity lifecycle", () => {
     bindFspmActivities([]);
 
     const portfolio = ensureColonyPortfolio("W1N1");
-    const held = activities().find((activity) => activity.id === heldActivityId);
-    const current = activities().find((activity) => activity.id === currentActivityId);
+    const held = activities().find(
+      (activity) => activity.id === heldActivityId,
+    );
+    const current = activities().find(
+      (activity) => activity.id === currentActivityId,
+    );
 
     expect(held).toMatchObject({ status: "on_hold" });
     expect(held?.completedAt).toBeUndefined();
@@ -282,7 +336,9 @@ describe("FSPM Activity lifecycle", () => {
     expect(portfolio.activityKpiHistory?.[heldTaskId ?? ""]).toBeUndefined();
     expect(
       fspmActivityEvents(portfolio).filter(
-        (event) => event.activityId === heldActivityId && event.type === "activity_completed",
+        (event) =>
+          event.activityId === heldActivityId &&
+          event.type === "activity_completed",
       ),
     ).toHaveLength(0);
   });
@@ -300,7 +356,9 @@ describe("FSPM Activity lifecycle", () => {
     bindFspmActivities([resumed]);
 
     expect(resumed.trace?.activityId).toBe(economyId);
-    expect(activities().find((activity) => activity.id === economyId)).toMatchObject({
+    expect(
+      activities().find((activity) => activity.id === economyId),
+    ).toMatchObject({
       status: "in_progress",
       currentTargetKey: "container-1",
       metrics: { resumeCount: 1, procedureTransitions: 1, targetRetargets: 0 },
@@ -309,7 +367,10 @@ describe("FSPM Activity lifecycle", () => {
 
   it("closes a canonical energy-service cycle and writes KPI only after its terminal Procedure", () => {
     const collect = harvestIntent("extract-source-energy", "source-1");
-    objectById.set("source-1", { energy: 300 } as unknown as RoomObject);
+    objectById.set("source-1", {
+      energy: 300,
+      pos: { roomName: "W1N1" },
+    } as unknown as RoomObject);
     bindFspmActivities([collect]);
     const activityId = collect.trace?.activityId;
 
@@ -319,11 +380,18 @@ describe("FSPM Activity lifecycle", () => {
         result: OK,
         movementRequired: false,
         evidence: "harvested full work quantum",
-        outcome: { metric: "energy harvested", actual: 10, target: 10, unit: "energy" },
+        outcome: {
+          metric: "energy harvested",
+          actual: 10,
+          target: 10,
+          unit: "energy",
+        },
       } satisfies ActivityExecutionObservation,
     ]);
     expect(
-      ensureColonyPortfolio("W1N1").activityKpiHistory?.[collect.trace?.taskId ?? ""],
+      ensureColonyPortfolio("W1N1").activityKpiHistory?.[
+        collect.trace?.taskId ?? ""
+      ],
     ).toBeUndefined();
 
     creepEnergy = creepCapacity;
@@ -331,7 +399,9 @@ describe("FSPM Activity lifecycle", () => {
     const buffer = transferIntent("buffer-source-energy", "container-1");
     bindFspmActivities([buffer]);
     expect(buffer.trace?.activityId).toBe(activityId);
-    expect(activities().find((activity) => activity.id === activityId)?.status).toBe("in_progress");
+    expect(
+      activities().find((activity) => activity.id === activityId)?.status,
+    ).toBe("in_progress");
 
     creepEnergy = 0;
     reconcileFspmActivityEvidence([
@@ -340,11 +410,18 @@ describe("FSPM Activity lifecycle", () => {
         result: OK,
         movementRequired: false,
         evidence: "buffered completed producer load",
-        outcome: { metric: "energy delivered", actual: 10, target: 10, unit: "energy" },
+        outcome: {
+          metric: "energy delivered",
+          actual: 10,
+          target: 10,
+          unit: "energy",
+        },
       } satisfies ActivityExecutionObservation,
     ]);
 
-    const completed = activities().find((activity) => activity.id === activityId);
+    const completed = activities().find(
+      (activity) => activity.id === activityId,
+    );
     const portfolio = ensureColonyPortfolio("W1N1");
     expect(completed).toMatchObject({
       status: "completed",
@@ -352,12 +429,16 @@ describe("FSPM Activity lifecycle", () => {
       kpiScore: "exceptional",
       metrics: { procedureTransitions: 1, targetRetargets: 0 },
     });
-    expect(portfolio.activityKpiHistory?.[collect.trace?.taskId ?? ""]).toHaveLength(1);
+    expect(
+      portfolio.activityKpiHistory?.[collect.trace?.taskId ?? ""],
+    ).toHaveLength(1);
     expect(portfolio.tasks[collect.trace?.taskId ?? ""]?.qi).toMatchObject({
       ratedActivities: 1,
       exceptional: 1,
     });
-    expect(fspmActivityEvents(portfolio).map((event) => event.type)).toContain("kpi_scored");
+    expect(fspmActivityEvents(portfolio).map((event) => event.type)).toContain(
+      "kpi_scored",
+    );
   });
 
   it("separates required travel from productive execution and assignment gaps", () => {
@@ -399,7 +480,9 @@ describe("FSPM Activity lifecycle", () => {
       creeps: [creep],
     });
 
-    const activity = activities().find((candidate) => candidate.id === activityId);
+    const activity = activities().find(
+      (candidate) => candidate.id === activityId,
+    );
     expect(activity?.metrics).toMatchObject({
       inProgressTicks: 3,
       travelTicks: 1,
@@ -410,8 +493,14 @@ describe("FSPM Activity lifecycle", () => {
       currentTravelStreak: 0,
       firstProductiveAt: 101,
     });
-    expect(assignments[0]).toMatchObject({ state: "planner_unassigned", activityId });
+    expect(assignments[0]).toMatchObject({
+      state: "planner_unassigned",
+      activityId,
+    });
     expect(activity && activityContinuityRatio(activity)).toBeCloseTo(0.667, 3);
-    expect(activity && activityWorkConversionRatio(activity)).toBeCloseTo(0.333, 3);
+    expect(activity && activityWorkConversionRatio(activity)).toBeCloseTo(
+      0.333,
+      3,
+    );
   });
 });

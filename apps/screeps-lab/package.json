@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "cd ../.. && biome lint apps/screeps-lab",
-    "typecheck": "tsc --noEmit"
+    "test": "cd ../.. && vitest run apps/screeps-lab",
+    "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.5",
@@ -30,6 +31,7 @@
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "tailwindcss": "^4.1.13",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "4.1.11"
   }
 }

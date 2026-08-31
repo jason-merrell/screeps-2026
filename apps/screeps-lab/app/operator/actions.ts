@@ -3,17 +3,12 @@
 import { redirect } from "next/navigation";
 
 import { wakeNativeSnapshotWorker } from "@/lib/github/dispatch";
+import { parseSnapshotCommandForm } from "@/lib/operator-command";
 import { createClient } from "@/lib/supabase/server";
 
-function readRequired(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
-
 export async function enqueueSnapshot(formData: FormData) {
-  const commandKey = readRequired(formData, "commandKey");
-  const target = readRequired(formData, "target");
-  const shard = readRequired(formData, "shard");
+  const command = parseSnapshotCommandForm(formData);
+  if (!command.ok) redirect("/operator?error=validation");
 
   const supabase = await createClient();
   const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
@@ -21,14 +16,7 @@ export async function enqueueSnapshot(formData: FormData) {
 
   if (claimsError || !claims?.sub) redirect("/login");
 
-  const { data, error } = await supabase.rpc("enqueue_command", {
-    p_command_key: commandKey,
-    p_command_type: "snapshot",
-    p_target: target,
-    p_shard: shard,
-    p_room_name: null,
-    p_payload: { roomResolution: "owned-colony" },
-  });
+  const { data, error } = await supabase.rpc("enqueue_command", command.args);
 
   if (error || !data?.id) {
     redirect("/operator?error=enqueue");

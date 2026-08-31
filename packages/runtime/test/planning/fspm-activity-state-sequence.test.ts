@@ -18,6 +18,8 @@ function installGlobals(): void {
         "worker-1": {
           name: "worker-1",
           spawning: false,
+          room: { name: "W1N1" },
+          pos: { roomName: "W1N1" },
           memory: {},
           store: {
             getUsedCapacity: () => 0,
@@ -25,7 +27,7 @@ function installGlobals(): void {
           },
         },
       },
-      getObjectById: () => null,
+      getObjectById: (id: string) => ({ id, pos: { roomName: "W1N1" } }),
     },
     Memory: {
       version: 5,

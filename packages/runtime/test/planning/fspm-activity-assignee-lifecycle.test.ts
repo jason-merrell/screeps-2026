@@ -4,7 +4,11 @@ import {
   bindFspmActivities,
   fspmActivityEvents,
 } from "../../src/planning/activity-lifecycle";
-import { ensureColonyPortfolio, ensureProcedure, ensureTask } from "../../src/planning/fspm";
+import {
+  ensureColonyPortfolio,
+  ensureProcedure,
+  ensureTask,
+} from "../../src/planning/fspm";
 
 vi.stubGlobal("OK", 0);
 vi.stubGlobal("ERR_NOT_IN_RANGE", -9);
@@ -18,6 +22,8 @@ function testCreep(name: string): Creep {
   return {
     name,
     spawning: false,
+    room: { name: "W1N1" },
+    pos: { roomName: "W1N1" },
     memory: {},
     store: {
       getUsedCapacity: () => 0,
@@ -32,7 +38,7 @@ function installGlobals(time = 100): void {
     Game: {
       time,
       creeps: { "worker-1": worker },
-      getObjectById: () => null,
+      getObjectById: (id: string) => ({ id, pos: { roomName: "W1N1" } }),
     },
     Memory: {
       version: 5,
@@ -58,7 +64,8 @@ function intent(creepName: string, sourceId = "source-1"): HarvestIntent {
   const portfolio = ensureColonyPortfolio("W1N1");
   const requirement = portfolio.requirements.economy;
   const deliverable = portfolio.deliverables.economy;
-  if (!requirement || !deliverable) throw new Error("expected economy hierarchy");
+  if (!requirement || !deliverable)
+    throw new Error("expected economy hierarchy");
 
   return {
     type: "harvest",
@@ -106,10 +113,18 @@ describe("FSPM Activity assignee lifecycle", () => {
     expect(held?.kpiScore).toBeUndefined();
     expect(portfolio.activityKpiHistory?.[taskId]).toBeUndefined();
 
-    const events = fspmActivityEvents(portfolio).filter((event) => event.activityId === activityId);
-    expect(events.filter((event) => event.type === "activity_held")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "activity_completed")).toHaveLength(0);
-    expect(events.filter((event) => event.type === "kpi_scored")).toHaveLength(0);
+    const events = fspmActivityEvents(portfolio).filter(
+      (event) => event.activityId === activityId,
+    );
+    expect(
+      events.filter((event) => event.type === "activity_held"),
+    ).toHaveLength(1);
+    expect(
+      events.filter((event) => event.type === "activity_completed"),
+    ).toHaveLength(0);
+    expect(events.filter((event) => event.type === "kpi_scored")).toHaveLength(
+      0,
+    );
   });
 
   it("reassigns and resumes the same orphaned Activity for the same Task and concrete target", () => {
@@ -138,7 +153,8 @@ describe("FSPM Activity assignee lifecycle", () => {
     });
 
     const reassignment = fspmActivityEvents(ensureColonyPortfolio("W1N1")).find(
-      (event) => event.activityId === activityId && event.type === "activity_reassigned",
+      (event) =>
+        event.activityId === activityId && event.type === "activity_reassigned",
     );
     expect(reassignment).toMatchObject({
       actor: "worker-2",
@@ -164,19 +180,27 @@ describe("FSPM Activity assignee lifecycle", () => {
 
     expect(differentWork.trace?.activityId).not.toBe(originalId);
     expect(activities()).toHaveLength(2);
-    expect(activities().find((activity) => activity.id === originalId)).toMatchObject({
+    expect(
+      activities().find((activity) => activity.id === originalId),
+    ).toMatchObject({
       assignee: "worker-1",
       status: "on_hold",
       currentTargetKey: "source-1",
     });
-    expect(activities().find((activity) => activity.id === differentWork.trace?.activityId)).toMatchObject({
+    expect(
+      activities().find(
+        (activity) => activity.id === differentWork.trace?.activityId,
+      ),
+    ).toMatchObject({
       assignee: "worker-2",
       status: "in_progress",
       currentTargetKey: "source-2",
     });
     expect(
       fspmActivityEvents(ensureColonyPortfolio("W1N1")).filter(
-        (event) => event.activityId === originalId && event.type === "activity_reassigned",
+        (event) =>
+          event.activityId === originalId &&
+          event.type === "activity_reassigned",
       ),
     ).toHaveLength(0);
   });
