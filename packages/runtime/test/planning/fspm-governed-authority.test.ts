@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createIntentTrace } from "../../src/intents/trace";
 import { migrateMemory } from "../../src/memory/migrate";
+import { MEMORY_VERSION } from "../../src/memory/schema";
 import {
   FSPM_ACTIVITY_MEMORY_LIMIT,
   pruneFspmActivityHistory,
@@ -1198,7 +1199,7 @@ describe("governed Corporate Requirement and Deliverable authority", () => {
     const second = structuredClone(Memory);
 
     expect(second).toEqual(first);
-    expect(Memory.version).toBe(8);
+    expect(Memory.version).toBe(MEMORY_VERSION);
     expect(portfolio().requirements).toEqual({});
     expect(portfolio().governanceBinding).toBeUndefined();
     expect(portfolio().requirementApprovalLedger).toEqual({});

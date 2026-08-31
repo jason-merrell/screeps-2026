@@ -72,14 +72,14 @@ Segment 99 exposes:
 
 - root P3 authority;
 - current Colony P3 authority;
-- current P3 quality history;
+- current P3 operational-health history (diagnostic, not EQVM quality);
 - nullable retired legacy Service Program/contract evidence;
 - requirements with current `p3Id` authority.
 
 Screeps Lab accepts both telemetry eras during rollout:
 
 - pre-v6 snapshots without `p3` continue to render their historical program/contract projection;
-- v6 snapshots with `p3` normalize current P3 health into the existing compatibility UI surface while preserving legacy records separately;
+- v6-and-later snapshots with `p3` normalize current P3 operational health into the compatibility UI surface while preserving legacy records separately;
 - legacy authority never drives current health once a v6 P3 exists.
 
 Durable Supabase Activity/event history is authority-agnostic for this change because persistence walks `fspm.colonies[].activities` and `activityEvents` rather than requiring program/contract fields.

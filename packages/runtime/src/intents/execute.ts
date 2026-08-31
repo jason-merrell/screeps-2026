@@ -26,6 +26,8 @@ export function intentActorKey(intent: Intent): string {
       return `construction:${intent.roomName}:${intent.trace?.workKey ?? `${intent.x}:${intent.y}:${intent.structureType}`}`;
     case "towerAttack":
       return `tower:${intent.towerId}`;
+    case "linkTransfer":
+      return `link:${intent.linkId}`;
     default:
       return intent.creepName;
   }
@@ -132,16 +134,23 @@ function executeCreepIntent(
     case "withdraw": {
       target = Game.getObjectById(intent.targetId);
       if (target) {
-        const storeTarget = target as StructureContainer | Tombstone | Ruin;
+        const storeTarget = target as
+          | StructureContainer
+          | StructureStorage
+          | StructureTerminal
+          | StructureLink
+          | Tombstone
+          | Ruin;
         outcome = energyOutcome(
           "energy collected",
           Math.min(
             creep.store.getFreeCapacity(intent.resource) ?? 0,
-            storeTarget.store.getUsedCapacity(intent.resource),
+            storeTarget.store.getUsedCapacity(intent.resource) ?? 0,
+            intent.amount ?? Number.POSITIVE_INFINITY,
           ),
           creep.store.getCapacity(intent.resource) ?? 0,
         );
-        result = creep.withdraw(storeTarget, intent.resource);
+        result = creep.withdraw(storeTarget, intent.resource, intent.amount);
       }
       break;
     }
@@ -154,10 +163,11 @@ function executeCreepIntent(
           Math.min(
             creep.store.getUsedCapacity(intent.resource),
             storeTarget.store.getFreeCapacity(intent.resource) ?? 0,
+            intent.amount ?? Number.POSITIVE_INFINITY,
           ),
           creep.store.getCapacity(intent.resource) ?? 0,
         );
-        result = creep.transfer(storeTarget, intent.resource);
+        result = creep.transfer(storeTarget, intent.resource, intent.amount);
       }
       break;
     }
@@ -225,6 +235,31 @@ export function execute(intents: Intent[]): ExecutionResult {
       const target = Game.getObjectById(intent.targetId);
       const result = tower && target ? tower.attack(target) : ERR_INVALID_TARGET;
       observe(activities, intent, result, false);
+      continue;
+    }
+
+    if (intent.type === "linkTransfer") {
+      const source = Game.getObjectById(intent.linkId);
+      const target = Game.getObjectById(intent.targetLinkId);
+      const usableEnergy = Math.max(
+        0,
+        intent.amount - Math.ceil(intent.amount * LINK_LOSS_RATIO),
+      );
+      const result =
+        source && target && intent.amount > 0
+          ? source.transferEnergy(target, intent.amount)
+          : ERR_INVALID_TARGET;
+      observe(
+        activities,
+        intent,
+        result,
+        false,
+        energyOutcome(
+          "usable link energy received",
+          usableEnergy,
+          usableEnergy,
+        ),
+      );
       continue;
     }
 

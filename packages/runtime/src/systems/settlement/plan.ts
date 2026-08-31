@@ -1,7 +1,6 @@
 import {
-  ROOM_PLAN_HORIZON_RCL,
-  ROOM_PLAN_VERSION,
   type PlannedPoint,
+  ROOM_PLAN_PLANNER_REVISION,
   type RoomPlan,
   type RoomPlanReservation,
   type RoomPlanRoad,
@@ -9,14 +8,50 @@ import {
   type RoomPlanRoadNode,
   type RoomPlanStructure,
 } from "../../planning/room-plan";
+import {
+  advanceRoomPlanProjection,
+  recordSettlementProjectionFault,
+  settlementRetryDue,
+  supersedeSettlementProjectionFault,
+  usableRoomPlanProjection,
+} from "../../planning/room-plan-projection";
 import type { WorldSnapshot } from "../../runtime/context";
+import { deriveRoomDefenseEnvelope } from "./defense-envelope";
+import { extendRoomPlanToRcl8 } from "./mature-layout";
+import { normalizeRoomPlanProjection } from "./normalize";
 import {
   RAPID_FILL_EXTENSION_OFFSETS,
   RAPID_FILL_ROAD_OFFSETS,
   translateStampPoint,
 } from "./stamps";
 
+const LEGACY_BOOTSTRAP_PLAN_VERSION = 3;
+const LEGACY_BOOTSTRAP_HORIZON_RCL = 3;
+
 const pointKey = (point: PlannedPoint): string => `${point.x}:${point.y}`;
+
+const compareStableText = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+function compareSpawnAnchor(
+  left: StructureSpawn,
+  right: StructureSpawn,
+): number {
+  return (
+    compareStableText(left.name, right.name) ||
+    compareStableText(String(left.id), String(right.id)) ||
+    left.pos.x - right.pos.x ||
+    left.pos.y - right.pos.y
+  );
+}
+
+function compareSourceAnchor(left: Source, right: Source): number {
+  return (
+    compareStableText(String(left.id), String(right.id)) ||
+    left.pos.x - right.pos.x ||
+    left.pos.y - right.pos.y
+  );
+}
 
 function parsePointKey(key: string): PlannedPoint {
   const separator = key.indexOf(":");
@@ -39,20 +74,79 @@ function terrainPenalty(room: Room, point: PlannedPoint): number {
 }
 
 function blocksPlannedStructure(room: Room, point: PlannedPoint): boolean {
-  return room.lookForAt(LOOK_STRUCTURES, point.x, point.y).some(
-    (structure) =>
-      structure.structureType !== STRUCTURE_ROAD &&
-      structure.structureType !== STRUCTURE_RAMPART,
-  );
+  return room
+    .lookForAt(LOOK_STRUCTURES, point.x, point.y)
+    .some(
+      (structure) =>
+        structure.structureType !== STRUCTURE_ROAD &&
+        structure.structureType !== STRUCTURE_RAMPART,
+    );
 }
 
 function openPlanTile(room: Room, point: PlannedPoint): boolean {
   if (!inPlanningBounds(point)) return false;
-  if (room.getTerrain().get(point.x, point.y) === TERRAIN_MASK_WALL) return false;
+  if (room.getTerrain().get(point.x, point.y) === TERRAIN_MASK_WALL)
+    return false;
   if (blocksPlannedStructure(room, point)) return false;
-  if (room.lookForAt(LOOK_CONSTRUCTION_SITES, point.x, point.y).length > 0) return false;
-  if (room.controller?.pos.x === point.x && room.controller.pos.y === point.y) return false;
-  return !room.find(FIND_SOURCES).some((source) => source.pos.x === point.x && source.pos.y === point.y);
+  if (room.lookForAt(LOOK_CONSTRUCTION_SITES, point.x, point.y).length > 0)
+    return false;
+  if (room.controller?.pos.x === point.x && room.controller.pos.y === point.y)
+    return false;
+  return !room
+    .find(FIND_SOURCES)
+    .some((source) => source.pos.x === point.x && source.pos.y === point.y);
+}
+
+function existingStructurePoints(
+  room: Room,
+  structureType: BuildableStructureConstant,
+): PlannedPoint[] {
+  const points = new Map<string, PlannedPoint>();
+  for (const object of [
+    ...room.find(FIND_STRUCTURES),
+    ...room.find(FIND_CONSTRUCTION_SITES),
+  ]) {
+    if (object.structureType !== structureType) continue;
+    points.set(pointKey(object.pos), { x: object.pos.x, y: object.pos.y });
+  }
+  return [...points.values()];
+}
+
+function canAdoptExistingStructure(
+  room: Room,
+  point: PlannedPoint,
+  structureType: BuildableStructureConstant,
+): boolean {
+  if (!inPlanningBounds(point)) return false;
+  if (room.getTerrain().get(point.x, point.y) === TERRAIN_MASK_WALL)
+    return false;
+  if (room.controller?.pos.x === point.x && room.controller.pos.y === point.y)
+    return false;
+  if (
+    room
+      .find(FIND_SOURCES)
+      .some((source) => source.pos.x === point.x && source.pos.y === point.y)
+  )
+    return false;
+
+  const structures = room.lookForAt(LOOK_STRUCTURES, point.x, point.y);
+  const sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, point.x, point.y);
+  const hasDesired =
+    structures.some((structure) => structure.structureType === structureType) ||
+    sites.some((site) => site.structureType === structureType);
+  return (
+    hasDesired &&
+    structures.every(
+      (structure) =>
+        structure.structureType === structureType ||
+        structure.structureType === STRUCTURE_RAMPART ||
+        ((structure.structureType === STRUCTURE_ROAD ||
+          structureType === STRUCTURE_ROAD) &&
+          (structure.structureType === STRUCTURE_CONTAINER ||
+            structureType === STRUCTURE_CONTAINER)),
+    ) &&
+    sites.every((site) => site.structureType === structureType)
+  );
 }
 
 function buildableDensity(room: Room, point: PlannedPoint, radius = 2): number {
@@ -76,9 +170,29 @@ function chooseHub(room: Room, spawn: StructureSpawn): PlannedPoint {
   const sources = room.find(FIND_SOURCES);
   const controller = room.controller;
   const candidates: Array<PlannedPoint & { score: number }> = [];
+  const existingStorage = existingStructurePoints(room, STRUCTURE_STORAGE)
+    .filter((point) =>
+      canAdoptExistingStructure(room, point, STRUCTURE_STORAGE),
+    )
+    .sort(
+      (left, right) =>
+        spawn.pos.getRangeTo(left.x, left.y) -
+          spawn.pos.getRangeTo(right.x, right.y) ||
+        left.x - right.x ||
+        left.y - right.y,
+    )[0];
+  if (existingStorage) return existingStorage;
 
-  for (let x = Math.max(4, spawn.pos.x - 6); x <= Math.min(45, spawn.pos.x + 6); x += 1) {
-    for (let y = Math.max(4, spawn.pos.y - 6); y <= Math.min(45, spawn.pos.y + 6); y += 1) {
+  for (
+    let x = Math.max(4, spawn.pos.x - 6);
+    x <= Math.min(45, spawn.pos.x + 6);
+    x += 1
+  ) {
+    for (
+      let y = Math.max(4, spawn.pos.y - 6);
+      y <= Math.min(45, spawn.pos.y + 6);
+      y += 1
+    ) {
       const point = { x, y };
       if (!openPlanTile(room, point)) continue;
       const spawnRange = spawn.pos.getRangeTo(x, y);
@@ -91,8 +205,10 @@ function chooseHub(room: Room, spawn: StructureSpawn): PlannedPoint {
       const sourceRange =
         sources.length === 0
           ? 0
-          : sources.reduce((total, source) => total + position.getRangeTo(source), 0) /
-            sources.length;
+          : sources.reduce(
+              (total, source) => total + position.getRangeTo(source),
+              0,
+            ) / sources.length;
       const controllerRange = controller ? position.getRangeTo(controller) : 0;
       const density = buildableDensity(room, point);
       const edgePenalty = Math.max(0, 8 - edgeDistance(point)) * 3;
@@ -109,13 +225,19 @@ function chooseHub(room: Room, spawn: StructureSpawn): PlannedPoint {
     }
   }
 
-  return candidates.sort((a, b) => a.score - b.score)[0] ?? {
-    x: Math.max(2, Math.min(47, spawn.pos.x + 2)),
-    y: spawn.pos.y,
-  };
+  return (
+    candidates.sort((a, b) => a.score - b.score)[0] ?? {
+      x: Math.max(2, Math.min(47, spawn.pos.x + 2)),
+      y: spawn.pos.y,
+    }
+  );
 }
 
-function chooseSourceContainer(room: Room, source: Source, hub: PlannedPoint): PlannedPoint {
+function chooseSourceContainer(
+  room: Room,
+  source: Source,
+  hub: PlannedPoint,
+): PlannedPoint {
   const candidates: Array<PlannedPoint & { score: number }> = [];
   const hubPos = new RoomPosition(hub.x, hub.y, room.name);
 
@@ -123,21 +245,36 @@ function chooseSourceContainer(room: Room, source: Source, hub: PlannedPoint): P
     for (let y = source.pos.y - 1; y <= source.pos.y + 1; y += 1) {
       if (x === source.pos.x && y === source.pos.y) continue;
       const point = { x, y };
-      if (!openPlanTile(room, point)) continue;
+      const adoptsExisting = canAdoptExistingStructure(
+        room,
+        point,
+        STRUCTURE_CONTAINER,
+      );
+      if (!adoptsExisting && !openPlanTile(room, point)) continue;
       candidates.push({
         ...point,
-        score: hubPos.getRangeTo(x, y) * 10 + terrainPenalty(room, point) + x / 1000 + y / 100000,
+        score:
+          (adoptsExisting ? -10_000 : 0) +
+          hubPos.getRangeTo(x, y) * 10 +
+          terrainPenalty(room, point) +
+          x / 1000 +
+          y / 100000,
       });
     }
   }
 
-  return candidates.sort((a, b) => a.score - b.score)[0] ?? {
-    x: Math.max(2, Math.min(47, source.pos.x + 1)),
-    y: source.pos.y,
-  };
+  return (
+    candidates.sort((a, b) => a.score - b.score)[0] ?? {
+      x: Math.max(2, Math.min(47, source.pos.x + 1)),
+      y: source.pos.y,
+    }
+  );
 }
 
-function chooseControllerService(room: Room, hub: PlannedPoint): PlannedPoint | null {
+function chooseControllerService(
+  room: Room,
+  hub: PlannedPoint,
+): PlannedPoint | null {
   const controller = room.controller;
   if (!controller) return null;
   const hubPos = new RoomPosition(hub.x, hub.y, room.name);
@@ -145,12 +282,28 @@ function chooseControllerService(room: Room, hub: PlannedPoint): PlannedPoint | 
 
   for (let x = controller.pos.x - 3; x <= controller.pos.x + 3; x += 1) {
     for (let y = controller.pos.y - 3; y <= controller.pos.y + 3; y += 1) {
-      if (Math.max(Math.abs(x - controller.pos.x), Math.abs(y - controller.pos.y)) !== 3) continue;
+      if (
+        Math.max(
+          Math.abs(x - controller.pos.x),
+          Math.abs(y - controller.pos.y),
+        ) !== 3
+      )
+        continue;
       const point = { x, y };
-      if (!openPlanTile(room, point)) continue;
+      const adoptsExisting = canAdoptExistingStructure(
+        room,
+        point,
+        STRUCTURE_CONTAINER,
+      );
+      if (!adoptsExisting && !openPlanTile(room, point)) continue;
       candidates.push({
         ...point,
-        score: hubPos.getRangeTo(x, y) * 10 + terrainPenalty(room, point) + x / 1000 + y / 100000,
+        score:
+          (adoptsExisting ? -10_000 : 0) +
+          hubPos.getRangeTo(x, y) * 10 +
+          terrainPenalty(room, point) +
+          x / 1000 +
+          y / 100000,
       });
     }
   }
@@ -167,16 +320,38 @@ function chooseRapidFillExtensions(
   const selectedKeys = new Set<string>();
   const sources = room.find(FIND_SOURCES);
 
-  const accept = (point: PlannedPoint): boolean => {
+  const accept = (point: PlannedPoint, adoptsExisting = false): boolean => {
     const key = pointKey(point);
-    if (unavailable.has(key) || selectedKeys.has(key) || !openPlanTile(room, point)) return false;
-    const position = new RoomPosition(point.x, point.y, room.name);
-    if (sources.some((source) => position.getRangeTo(source) <= 2)) return false;
-    if (room.controller && position.getRangeTo(room.controller) <= 2) return false;
+    if (
+      unavailable.has(key) ||
+      selectedKeys.has(key) ||
+      (adoptsExisting
+        ? !canAdoptExistingStructure(room, point, STRUCTURE_EXTENSION)
+        : !openPlanTile(room, point))
+    )
+      return false;
+    if (!adoptsExisting) {
+      const position = new RoomPosition(point.x, point.y, room.name);
+      if (sources.some((source) => position.getRangeTo(source) <= 2))
+        return false;
+      if (room.controller && position.getRangeTo(room.controller) <= 2)
+        return false;
+    }
     selected.push(point);
     selectedKeys.add(key);
     return true;
   };
+
+  for (const point of existingStructurePoints(room, STRUCTURE_EXTENSION).sort(
+    (left, right) =>
+      spawn.pos.getRangeTo(left.x, left.y) -
+        spawn.pos.getRangeTo(right.x, right.y) ||
+      left.x - right.x ||
+      left.y - right.y,
+  )) {
+    if (selected.length >= 10) break;
+    accept(point, true);
+  }
 
   for (const offset of RAPID_FILL_EXTENSION_OFFSETS) {
     accept(translateStampPoint(spawn.pos, offset));
@@ -185,17 +360,30 @@ function chooseRapidFillExtensions(
   if (selected.length >= 10) return selected.slice(0, 10);
 
   const fallback: Array<PlannedPoint & { score: number }> = [];
-  for (let x = Math.max(2, spawn.pos.x - 6); x <= Math.min(47, spawn.pos.x + 6); x += 1) {
-    for (let y = Math.max(2, spawn.pos.y - 6); y <= Math.min(47, spawn.pos.y + 6); y += 1) {
+  for (
+    let x = Math.max(2, spawn.pos.x - 6);
+    x <= Math.min(47, spawn.pos.x + 6);
+    x += 1
+  ) {
+    for (
+      let y = Math.max(2, spawn.pos.y - 6);
+      y <= Math.min(47, spawn.pos.y + 6);
+      y += 1
+    ) {
       const point = { x, y };
       const range = spawn.pos.getRangeTo(x, y);
       if (range < 2 || range > 6) continue;
-      if (unavailable.has(pointKey(point)) || selectedKeys.has(pointKey(point)) || !openPlanTile(room, point)) {
+      if (
+        unavailable.has(pointKey(point)) ||
+        selectedKeys.has(pointKey(point)) ||
+        !openPlanTile(room, point)
+      ) {
         continue;
       }
       const position = new RoomPosition(x, y, room.name);
       if (sources.some((source) => position.getRangeTo(source) <= 2)) continue;
-      if (room.controller && position.getRangeTo(room.controller) <= 2) continue;
+      if (room.controller && position.getRangeTo(room.controller) <= 2)
+        continue;
       fallback.push({
         ...point,
         score: range * 10 + terrainPenalty(room, point) + x / 1000 + y / 100000,
@@ -210,14 +398,33 @@ function chooseRapidFillExtensions(
   return selected;
 }
 
-function chooseTowerTile(room: Room, hub: PlannedPoint, unavailable: Set<string>): PlannedPoint | null {
+function chooseTowerTile(
+  room: Room,
+  hub: PlannedPoint,
+  unavailable: Set<string>,
+): PlannedPoint | null {
   const hubPos = new RoomPosition(hub.x, hub.y, room.name);
   const candidates: Array<PlannedPoint & { score: number }> = [];
+  const existingTower = existingStructurePoints(room, STRUCTURE_TOWER)
+    .filter(
+      (point) =>
+        !unavailable.has(pointKey(point)) &&
+        canAdoptExistingStructure(room, point, STRUCTURE_TOWER),
+    )
+    .sort(
+      (left, right) =>
+        hubPos.getRangeTo(left.x, left.y) -
+          hubPos.getRangeTo(right.x, right.y) ||
+        left.x - right.x ||
+        left.y - right.y,
+    )[0];
+  if (existingTower) return existingTower;
 
   for (let x = Math.max(2, hub.x - 5); x <= Math.min(47, hub.x + 5); x += 1) {
     for (let y = Math.max(2, hub.y - 5); y <= Math.min(47, hub.y + 5); y += 1) {
       const point = { x, y };
-      if (unavailable.has(pointKey(point)) || !openPlanTile(room, point)) continue;
+      if (unavailable.has(pointKey(point)) || !openPlanTile(room, point))
+        continue;
       const range = hubPos.getRangeTo(x, y);
       if (range < 2 || range > 5) continue;
       candidates.push({
@@ -234,10 +441,19 @@ function buildRoadGraph(
   room: Room,
   spawn: StructureSpawn,
   hub: PlannedPoint,
-  sourceAnchors: Array<{ sourceId: string; x: number; y: number; container: PlannedPoint }>,
+  sourceAnchors: Array<{
+    sourceId: string;
+    x: number;
+    y: number;
+    container: PlannedPoint;
+  }>,
   controllerService: PlannedPoint | null,
   hardBlocked: Set<string>,
-): { nodes: RoomPlanRoadNode[]; edges: RoomPlanRoadEdge[]; roads: RoomPlanRoad[] } {
+): {
+  nodes: RoomPlanRoadNode[];
+  edges: RoomPlanRoadEdge[];
+  roads: RoomPlanRoad[];
+} {
   const nodes: RoomPlanRoadNode[] = [
     { id: "spawn", kind: "spawn", x: spawn.pos.x, y: spawn.pos.y },
     { id: "hub", kind: "hub", x: hub.x, y: hub.y },
@@ -248,14 +464,22 @@ function buildRoadGraph(
       y: source.container.y,
     })),
     ...(controllerService
-      ? [{ id: "controller", kind: "controller" as const, ...controllerService }]
+      ? [
+          {
+            id: "controller",
+            kind: "controller" as const,
+            ...controllerService,
+          },
+        ]
       : []),
   ];
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const desiredEdges: Array<[string, string]> = [
     ["spawn", "hub"],
-    ...sourceAnchors.map((_, index) => ["hub", `source-${index}`] as [string, string]),
+    ...sourceAnchors.map(
+      (_, index) => ["hub", `source-${index}`] as [string, string],
+    ),
     ...(controllerService ? [["hub", "controller"] as [string, string]] : []),
   ];
 
@@ -303,7 +527,8 @@ function buildRoadGraph(
           }
           for (const key of roadKeys) {
             const point = parsePointKey(key);
-            if (matrix.get(point.x, point.y) < 255) matrix.set(point.x, point.y, 1);
+            if (matrix.get(point.x, point.y) < 255)
+              matrix.set(point.x, point.y, 1);
           }
           return matrix;
         },
@@ -327,7 +552,8 @@ function buildRoadGraph(
         minRcl: 2,
         activation: "demand" as const,
         phase: "strategic-roads" as const,
-        reason: "strategic corridor; activate when traffic ROI justifies construction",
+        reason:
+          "strategic corridor; activate when traffic ROI justifies construction",
       };
     })
     .sort((a, b) => a.x - b.x || a.y - b.y);
@@ -335,21 +561,27 @@ function buildRoadGraph(
   return { nodes, edges, roads };
 }
 
-export function generateRoomPlan(room: Room, reason = "initial settlement plan"): RoomPlan | null {
-  const spawn = room.find(FIND_MY_SPAWNS)[0];
+function generateBootstrapRoomPlan(
+  room: Room,
+  reason: string,
+): RoomPlan | null {
+  const spawn = [...room.find(FIND_MY_SPAWNS)].sort(compareSpawnAnchor)[0];
   if (!spawn) return null;
 
   const hub = chooseHub(room, spawn);
-  const sourceAnchors = room.find(FIND_SOURCES).map((source) => ({
-    sourceId: source.id as string,
-    x: source.pos.x,
-    y: source.pos.y,
-    container: chooseSourceContainer(room, source, hub),
-  }));
+  const sourceAnchors = [...room.find(FIND_SOURCES)]
+    .sort(compareSourceAnchor)
+    .map((source) => ({
+      sourceId: source.id as string,
+      x: source.pos.x,
+      y: source.pos.y,
+      container: chooseSourceContainer(room, source, hub),
+    }));
   const controllerService = chooseControllerService(room, hub);
 
   const unavailable = new Set<string>([pointKey(hub)]);
-  for (const source of sourceAnchors) unavailable.add(pointKey(source.container));
+  for (const source of sourceAnchors)
+    unavailable.add(pointKey(source.container));
   if (controllerService) unavailable.add(pointKey(controllerService));
 
   const extensions = chooseRapidFillExtensions(room, spawn, unavailable);
@@ -366,7 +598,10 @@ export function generateRoomPlan(room: Room, reason = "initial settlement plan")
     activation: "automatic",
     reservation: "hard",
     phase: "bootstrap-capacity",
-    reason: index < 5 ? "RCL2 spawn-capacity expansion" : "RCL3 spawn-capacity expansion",
+    reason:
+      index < 5
+        ? "RCL2 spawn-capacity expansion"
+        : "RCL3 spawn-capacity expansion",
   }));
 
   for (const [index, source] of sourceAnchors.entries()) {
@@ -379,7 +614,8 @@ export function generateRoomPlan(room: Room, reason = "initial settlement plan")
       activation: "demand",
       reservation: "hard",
       phase: "source-logistics",
-      reason: "reserved source logistics tile; build when mining/hauling demand justifies 5000 energy capital cost",
+      reason:
+        "reserved source logistics tile; build when mining/hauling demand justifies 5000 energy capital cost",
     });
   }
 
@@ -393,7 +629,8 @@ export function generateRoomPlan(room: Room, reason = "initial settlement plan")
       activation: "demand",
       reservation: "hard",
       phase: "controller-logistics",
-      reason: "reserved controller logistics tile; activate with dedicated upgrade hauling",
+      reason:
+        "reserved controller logistics tile; activate with dedicated upgrade hauling",
     });
   }
 
@@ -419,7 +656,8 @@ export function generateRoomPlan(room: Room, reason = "initial settlement plan")
         activation: "demand",
         reservation: "hard",
         phase: "bootstrap-defense",
-        reason: "protect defensive tower when defense policy requests fortification",
+        reason:
+          "protect defensive tower when defense policy requests fortification",
       },
     );
   }
@@ -441,7 +679,8 @@ export function generateRoomPlan(room: Room, reason = "initial settlement plan")
     structures
       .filter(
         (structure) =>
-          structure.reservation === "hard" && structure.structureType !== STRUCTURE_RAMPART,
+          structure.reservation === "hard" &&
+          structure.structureType !== STRUCTURE_RAMPART,
       )
       .map(pointKey),
   );
@@ -488,8 +727,9 @@ export function generateRoomPlan(room: Room, reason = "initial settlement plan")
   ];
 
   return {
-    version: ROOM_PLAN_VERSION,
-    horizonRcl: ROOM_PLAN_HORIZON_RCL,
+    plannerRevision: ROOM_PLAN_PLANNER_REVISION,
+    version: LEGACY_BOOTSTRAP_PLAN_VERSION,
+    horizonRcl: LEGACY_BOOTSTRAP_HORIZON_RCL,
     roomName: room.name,
     generatedAt: Game.time,
     generatedReason: reason,
@@ -517,30 +757,197 @@ export function generateRoomPlan(room: Room, reason = "initial settlement plan")
   };
 }
 
-export function shouldRegenerateRoomPlan(plan: RoomPlan | undefined): boolean {
-  return !plan || plan.version !== ROOM_PLAN_VERSION || plan.invalidatedAt !== undefined;
+function completeRoomPlan(
+  room: Room,
+  bootstrapPlan: RoomPlan,
+  reason: string,
+): RoomPlan {
+  const maturePlan = extendRoomPlanToRcl8(room, bootstrapPlan);
+  const envelope = deriveRoomDefenseEnvelope(room, maturePlan);
+  const perimeter = envelope.perimeter;
+  const gateKeys = new Set(envelope.gateTiles.map(pointKey));
+
+  const perimeterKeys = new Set(perimeter.map(pointKey));
+  const existingIds = new Set([
+    ...maturePlan.structures.map((structure) => structure.id),
+    ...maturePlan.roads.map((road) => road.id),
+  ]);
+  const existingRampartKeys = new Set(
+    maturePlan.structures
+      .filter((structure) => structure.structureType === STRUCTURE_RAMPART)
+      .map(pointKey),
+  );
+  const structures = maturePlan.structures.map((structure) => {
+    if (structure.structureType !== STRUCTURE_RAMPART) return structure;
+    const onPerimeter = perimeterKeys.has(pointKey(structure));
+    return {
+      ...structure,
+      activation: "defense" as const,
+      ...(onPerimeter
+        ? {
+            phase: "defense-envelope" as const,
+            stage: "mature-rcl8" as const,
+            reason: gateKeys.has(pointKey(structure))
+              ? "serviceable own-creep gate on the defensive envelope"
+              : "padded terrain minimum-cut defensive perimeter",
+          }
+        : {}),
+      strategicWeight: structure.strategicWeight ?? 4,
+      requiredForStage: onPerimeter,
+    };
+  });
+  const perimeterRamparts: RoomPlanStructure[] = [];
+  for (const point of perimeter) {
+    if (existingRampartKeys.has(pointKey(point))) continue;
+    const id = `defensive-perimeter-rampart-${point.x}-${point.y}`;
+    if (existingIds.has(id)) {
+      throw new Error(`Duplicate defensive room-plan identity ${id}`);
+    }
+    existingIds.add(id);
+    perimeterRamparts.push({
+      id,
+      ...point,
+      structureType: STRUCTURE_RAMPART,
+      minRcl: 4,
+      priority: 600,
+      activation: "defense",
+      reservation: "hard",
+      phase: "defense-envelope",
+      reason: gateKeys.has(pointKey(point))
+        ? "serviceable own-creep gate on the defensive envelope"
+        : "padded terrain minimum-cut defensive perimeter",
+      stage: "mature-rcl8",
+      strategicWeight: 4,
+      requiredForStage: true,
+    });
+  }
+
+  const next: RoomPlan = {
+    ...maturePlan,
+    generatedAt: Game.time,
+    generatedReason: reason,
+    reservations: [
+      ...maturePlan.reservations,
+      ...perimeterRamparts.map((rampart) => ({
+        id: `structure-${rampart.id}`,
+        x: rampart.x,
+        y: rampart.y,
+        kind: "hard" as const,
+        reason: rampart.reason,
+      })),
+    ],
+    structures: [...structures, ...perimeterRamparts],
+    defense: {
+      strategy: "terrain-mincut-v1",
+      protectedTiles: envelope.protectedTiles.map((point) => ({ ...point })),
+      perimeter: perimeter.map((point) => ({ ...point })),
+    },
+  };
+  delete next.invalidatedAt;
+  delete next.invalidationReason;
+  return next;
+}
+
+function generateRoomPlanDraft(
+  room: Room,
+  reason = "initial settlement plan",
+): RoomPlan | null {
+  const bootstrapPlan = generateBootstrapRoomPlan(room, reason);
+  return bootstrapPlan ? completeRoomPlan(room, bootstrapPlan, reason) : null;
+}
+
+export function generateRoomPlan(
+  room: Room,
+  reason = "initial settlement plan",
+): RoomPlan | null {
+  const draft = generateRoomPlanDraft(room, reason);
+  return draft
+    ? advanceRoomPlanProjection(normalizeRoomPlanProjection(draft))
+    : null;
+}
+
+export function shouldRegenerateRoomPlan(
+  plan: RoomPlan | undefined,
+  expectedRoomName: string,
+): boolean {
+  return !usableRoomPlanProjection(
+    plan ? { roomPlan: plan } : undefined,
+    expectedRoomName,
+  ).usable;
 }
 
 export function ensureSettlementPlans(world: WorldSnapshot): void {
   for (const room of world.rooms) {
     const colony = Memory.colonies[room.name];
-    if (!colony || !shouldRegenerateRoomPlan(colony.roomPlan)) continue;
+    if (!colony) continue;
 
     const existing = colony.roomPlan;
-    const reason = !existing
-      ? "missing room plan"
-      : existing.version !== ROOM_PLAN_VERSION
-        ? `room plan version ${existing.version} -> ${ROOM_PLAN_VERSION}`
-        : existing.invalidationReason ?? "explicit room plan invalidation";
-    const next = generateRoomPlan(room, reason);
-    if (next) colony.roomPlan = next;
+    const assessment = usableRoomPlanProjection(colony, room.name);
+    if (assessment.usable) {
+      if (existing) {
+        const resolved = supersedeSettlementProjectionFault(
+          colony.settlementProjectionFault,
+          existing,
+          Game.time,
+        );
+        if (resolved) colony.settlementProjectionFault = resolved;
+        else delete colony.settlementProjectionFault;
+      }
+      continue;
+    }
+    if (!settlementRetryDue(colony.settlementProjectionFault, Game.time)) {
+      continue;
+    }
+
+    const reason = assessment.reason;
+    const upgradesLegacyBootstrap =
+      existing?.version === LEGACY_BOOTSTRAP_PLAN_VERSION &&
+      existing.horizonRcl === LEGACY_BOOTSTRAP_HORIZON_RCL &&
+      existing.invalidatedAt === undefined;
+    try {
+      const generated = upgradesLegacyBootstrap
+        ? completeRoomPlan(room, existing, reason)
+        : generateRoomPlanDraft(room, reason);
+      if (!generated) {
+        throw new Error(
+          `No viable founding spawn is visible for ${room.name}; projection generation returned no candidate`,
+        );
+      }
+      const normalized = normalizeRoomPlanProjection(generated);
+      const next = advanceRoomPlanProjection(normalized, existing);
+      if (existing?.deliverableId) {
+        next.deliverableId = existing.deliverableId;
+      }
+      colony.roomPlan = next;
+      const resolved = supersedeSettlementProjectionFault(
+        colony.settlementProjectionFault,
+        next,
+        Game.time,
+      );
+      if (resolved) colony.settlementProjectionFault = resolved;
+      else delete colony.settlementProjectionFault;
+    } catch (error) {
+      colony.settlementProjectionFault = recordSettlementProjectionFault(
+        colony.settlementProjectionFault,
+        existing,
+        Game.time,
+        error,
+      );
+    }
   }
 }
 
-export function invalidateRoomPlan(roomName: string, reason = "manual invalidation"): boolean {
-  const plan = Memory.colonies[roomName]?.roomPlan;
-  if (!plan) return false;
-  plan.invalidatedAt = Game.time;
-  plan.invalidationReason = reason;
+export function invalidateRoomPlan(
+  roomName: string,
+  reason = "manual invalidation",
+): boolean {
+  const colony = Memory.colonies[roomName];
+  const plan = colony?.roomPlan;
+  if (!colony || !plan) return false;
+  colony.roomPlan = {
+    ...plan,
+    invalidatedAt: Game.time,
+    invalidationReason: reason,
+  };
   return true;
 }

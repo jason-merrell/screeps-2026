@@ -129,7 +129,7 @@ describe("FSPM Activity memory migration", () => {
     migrateMemory();
 
     expect(Memory.version).toBe(MEMORY_VERSION);
-    expect(Memory.version).toBe(8);
+    expect(Memory.version).toBe(MEMORY_VERSION);
     expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
     expect(Memory.empireFspm?.p3).toMatchObject({
       id: "portfolio:empire:operations",

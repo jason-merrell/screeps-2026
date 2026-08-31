@@ -25,7 +25,7 @@ node scripts/validate-fspm-conformance.mjs
 pnpm report:fspm
 ```
 
-The current blockers are canonical human Employee/Position/OU and ARCI authority, general child-Deliverable decomposition, complete EQVM roll-up, continuously governed Portfolio decisions, automatic Deliverable-occurrence reconciliation with bounded acknowledged archival, durable history acknowledgment, and Issue/Risk/Stakeholder registers. Source-controlled service-principal activation is an explicit Screeps adaptation, never a claim of human approval.
+The current blockers are canonical human Employee/Position/OU and ARCI authority, general child-Deliverable decomposition, accountable approval of the recurring-Activity weighting/reporting policy plus a governed ledger that can resolve it before the rated cohort, a governed financial/EVM baseline and lossless human-reviewed EQVM history, continuously governed Portfolio decisions, automatic Deliverable-occurrence reconciliation with bounded acknowledged archival, durable history acknowledgment, and Issue/Risk/Stakeholder registers. Source-controlled service-principal activation is an explicit Screeps adaptation, never a claim of human approval.
 
 ## Tick flow
 

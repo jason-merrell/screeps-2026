@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "memoryVersion": 8,
+  "roomName": "W0N0",
+  "sourceScenario": "production-main-smoke:normal",
+  "projectionEncoding": "json-stringify-v1",
+  "projectionSha256": "921df72f8f981d66c1045aabeb0fa236184c319f99fa8ee7bd737ae43e5c5dac",
+  "taskIds": [
+    "task:W0N0:construction:maintain-infrastructure-condition",
+    "task:W0N0:construction:realize-planned-infrastructure",
+    "task:W0N0:defense:maintain-defensive-readiness",
+    "task:W0N0:economy:advance-controller-capability",
+    "task:W0N0:economy:maintain-colony-energy-service",
+    "task:W0N0:spawning:maintain-workforce-capacity"
+  ]
+}

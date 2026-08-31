@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 import { evaluateProductionPublicationWindow } from "./production-publication-window.mjs";
+import { expectedProductionMemoryVersion } from "./production-runtime-schema.mjs";
 import { scenarioExitCode } from "./verdict-policy.mjs";
 
 const require = createRequire(import.meta.url);
@@ -27,7 +28,7 @@ const expectAnyMalformedAuthority =
 const roomName = "W0N0";
 const segmentId = 99;
 const initialSpawnEnergy = 300;
-const expectedMemoryVersion = 8;
+const expectedMemoryVersion = expectedProductionMemoryVersion();
 const runRoot = path.resolve(
   "scenario",
   ".production-main-smoke",

@@ -1,13 +1,26 @@
 import { invalidateRoomPlan } from "../systems/settlement/plan";
+import { usableRoomPlanProjection } from "../planning/room-plan-projection";
 
 const summarize = (roomName: string): string => {
-  const plan = Memory.colonies[roomName]?.roomPlan;
-  if (!plan) return `No room plan for ${roomName}`;
+  const colony = Memory.colonies[roomName];
+  const assessment = usableRoomPlanProjection(colony, roomName);
+  if (!assessment.usable) {
+    const retained = colony?.roomPlan;
+    return [
+      `Room plan ${roomName} UNUSABLE · ${assessment.status}`,
+      assessment.reason,
+      retained
+        ? `retained identity planner=${String(retained.plannerRevision ?? "missing")} projection=${String(retained.projectionRevision ?? "missing")} fingerprint=${String(retained.projectionFingerprint ?? "missing")}`
+        : "no retained projection",
+    ].join("\n");
+  }
+  const plan = assessment.plan;
 
   const automatic = plan.structures.filter((structure) => structure.activation === "automatic");
   const demand = plan.structures.filter((structure) => structure.activation === "demand");
   return [
-    `Room plan ${roomName} v${plan.version} horizon=RCL${plan.horizonRcl}`,
+    `Room plan ${roomName} USABLE · current`,
+    `v${plan.version} horizon=RCL${plan.horizonRcl}`,
     `generated=${plan.generatedAt} reason=${plan.generatedReason}`,
     `hub=(${plan.anchors.hub.x},${plan.anchors.hub.y})`,
     `automatic structures=${automatic.length}`,

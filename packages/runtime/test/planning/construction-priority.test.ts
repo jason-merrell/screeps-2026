@@ -55,6 +55,19 @@ const plan: RoomPlan = {
       phase: "source-logistics",
       reason: "test",
     },
+    {
+      id: "perimeter-rampart-1",
+      x: 40,
+      y: 40,
+      structureType: "rampart",
+      minRcl: 4,
+      priority: 600,
+      activation: "defense",
+      reservation: "hard",
+      phase: "defense-envelope",
+      reason: "close the defensive cut",
+      strategicWeight: 4,
+    },
   ],
   roads: [
     {
@@ -78,7 +91,11 @@ const plan: RoomPlan = {
       },
     ],
   },
-  defense: { strategy: "pending-mincut", protectedTiles: [], perimeter: [] },
+  defense: {
+    strategy: "terrain-mincut-v1",
+    protectedTiles: [{ x: 25, y: 25 }],
+    perimeter: [{ x: 40, y: 40 }],
+  },
 };
 
 describe("construction priority", () => {
@@ -137,5 +154,39 @@ describe("construction priority", () => {
     expect(compareConstructionTargets(localPlan, farther, nearer)).toBeGreaterThan(0);
     expect(plannedConstructionPriority(localPlan, farther)).toBe(1000);
     expect(plannedConstructionPriority(localPlan, nearer)).toBe(1000);
+  });
+
+  it("closes a far perimeter breach before nearby high-priority growth during an attack", () => {
+    const perimeter = {
+      id: "far-perimeter",
+      x: 40,
+      y: 40,
+      structureType: "rampart" as const,
+      range: 30,
+    };
+    const extension = {
+      id: "near-extension",
+      x: 24,
+      y: 24,
+      structureType: "extension" as const,
+      range: 1,
+    };
+    const tower = {
+      id: "far-tower",
+      x: 30,
+      y: 30,
+      structureType: "tower" as const,
+      range: 12,
+    };
+
+    const ranked = [extension, tower, perimeter].sort((left, right) =>
+      compareConstructionTargets(plan, left, right, { underAttack: true }),
+    );
+
+    expect(ranked.map((candidate) => candidate.id)).toEqual([
+      "far-perimeter",
+      "far-tower",
+      "near-extension",
+    ]);
   });
 });

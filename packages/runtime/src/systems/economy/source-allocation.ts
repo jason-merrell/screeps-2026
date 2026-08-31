@@ -5,6 +5,7 @@ export interface SourceCoverage<TSourceId extends string = string> {
 
 export interface ProducerCandidate {
   name: string;
+  surplusParts?: number;
   work: number;
   rangeBySource: Record<string, number>;
   preferredSourceId?: string | undefined;
@@ -21,8 +22,16 @@ function compareForSource(
   left: ProducerCandidate,
   right: ProducerCandidate,
 ): number {
+  const surplusDifference =
+    (left.surplusParts ?? 0) - (right.surplusParts ?? 0);
+  if (surplusDifference !== 0) return surplusDifference;
   const workDifference = right.work - left.work;
   if (workDifference !== 0) return workDifference;
+
+  const affinityDifference =
+    Number(right.preferredSourceId === sourceId) -
+    Number(left.preferredSourceId === sourceId);
+  if (affinityDifference !== 0) return affinityDifference;
 
   const rangeDifference =
     (left.rangeBySource[sourceId] ?? Number.MAX_SAFE_INTEGER) -
@@ -35,28 +44,12 @@ export function assignSourceProducers<TSourceId extends string>(
   candidates: ProducerCandidate[],
 ): Map<string, TSourceId> {
   const assignments = new Map<string, TSourceId>();
-  const claimedSources = new Set<TSourceId>();
 
-  // Preserve the concrete target of the current governed Activity when it is still valid.
-  // The returned identity always comes from sourceIds, so stale Activity targets cannot escape
-  // this boundary as an unchecked Screeps object ID.
+  // Role fit is an operational invariant: a stale governed Activity cannot keep
+  // an overqualified generalist in a producer slot after an exact specialist is
+  // available. Source affinity remains a tie-break between equally suitable
+  // candidates, preserving stable assignments without laundering capacity.
   for (const sourceId of sourceIds) {
-    const incumbent = candidates
-      .filter(
-        (candidate) =>
-          !assignments.has(candidate.name) && candidate.preferredSourceId === sourceId,
-      )
-      .sort((left, right) => compareForSource(sourceId, left, right))[0];
-
-    if (!incumbent) continue;
-    assignments.set(incumbent.name, sourceId);
-    claimedSources.add(sourceId);
-  }
-
-  // Fill uncovered sources using the pre-existing deterministic work/range/name policy.
-  for (const sourceId of sourceIds) {
-    if (claimedSources.has(sourceId)) continue;
-
     const available = candidates
       .filter((candidate) => !assignments.has(candidate.name))
       .sort((left, right) => compareForSource(sourceId, left, right));
@@ -64,7 +57,6 @@ export function assignSourceProducers<TSourceId extends string>(
     if (!producer) continue;
 
     assignments.set(producer.name, sourceId);
-    claimedSources.add(sourceId);
   }
 
   return assignments;
@@ -77,9 +69,13 @@ export function assignRecoveryHarvesters<TSourceId extends string>(
 ): Map<string, TSourceId> {
   const assignments = new Map<string, TSourceId>();
   const overflowBySource = new Map<TSourceId, number>();
-  const coverage = new Map(sources.map((source) => [source.id, source.assignedWork]));
+  const coverage = new Map(
+    sources.map((source) => [source.id, source.assignedWork]),
+  );
 
-  for (const candidate of [...candidates].sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const candidate of [...candidates].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  )) {
     const target = sources
       .filter(
         (source) =>

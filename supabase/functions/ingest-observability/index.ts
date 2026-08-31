@@ -1,12 +1,25 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5";
 
+import { sanitizeStoredObservabilitySnapshot } from "../_shared/eqvm-snapshot.mjs";
+
+type InboundObservabilitySnapshot = {
+  schema?: unknown;
+  schemaVersion?: unknown;
+  capturedAt?: unknown;
+  gameTick?: unknown;
+  target?: unknown;
+  shard?: unknown;
+  room?: unknown;
+  runtimeTrace?: unknown;
+  [key: string]: unknown;
+};
+
 const jwks = createRemoteJWKSet(
   new URL("https://token.actions.githubusercontent.com/.well-known/jwks"),
 );
 const expectedRepository = "jason-merrell/screeps-2026";
-const expectedWorkflow =
-  `${expectedRepository}/.github/workflows/screeps-observability.yml@refs/heads/main`;
+const expectedWorkflow = `${expectedRepository}/.github/workflows/screeps-observability.yml@refs/heads/main`;
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -43,7 +56,8 @@ Deno.serve(async (req: Request) => {
     }
 
     const secretKeys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}");
-    const secretKey = secretKeys.default ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const secretKey =
+      secretKeys.default ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     if (!secretKey || !supabaseUrl) {
       return json({ error: "server_configuration_error" }, 500);
@@ -61,9 +75,12 @@ Deno.serve(async (req: Request) => {
         ? body.supportedTypes.map((value: unknown) => String(value))
         : ["snapshot"];
 
-      const { error: enqueueError } = await admin.rpc("enqueue_due_collection_commands", {
-        p_limit: 4,
-      });
+      const { error: enqueueError } = await admin.rpc(
+        "enqueue_due_collection_commands",
+        {
+          p_limit: 4,
+        },
+      );
       if (enqueueError) throw enqueueError;
 
       const { data, error } = await admin.rpc("claim_next_command", {
@@ -79,7 +96,8 @@ Deno.serve(async (req: Request) => {
     if (operation === "register_command") {
       const requestId = String(body?.requestId ?? "");
       const commandKey = `github-comment:${requestId}`;
-      if (!/^\d+$/.test(requestId)) return json({ error: "invalid_request_id" }, 400);
+      if (!/^\d+$/.test(requestId))
+        return json({ error: "invalid_request_id" }, 400);
       const { data, error } = await admin.rpc("register_command", {
         p_command_key: commandKey,
         p_command_type: body?.commandType ?? "snapshot",
@@ -89,7 +107,11 @@ Deno.serve(async (req: Request) => {
         p_payload: { command: body?.command ?? null, requestId },
       });
       if (error || !data) throw error ?? new Error("command_register_failed");
-      return json({ ok: true, command: data, duplicate: data.status === "succeeded" });
+      return json({
+        ok: true,
+        command: data,
+        duplicate: data.status === "succeeded",
+      });
     }
 
     if (operation === "transition_command") {
@@ -97,7 +119,8 @@ Deno.serve(async (req: Request) => {
       const requestId = String(body?.requestId ?? "");
       const commandKey = suppliedCommandKey || `github-comment:${requestId}`;
       if (suppliedCommandKey) {
-        if (!validCommandKey(commandKey)) return json({ error: "invalid_command_key" }, 400);
+        if (!validCommandKey(commandKey))
+          return json({ error: "invalid_command_key" }, 400);
       } else if (!/^\d+$/.test(requestId)) {
         return json({ error: "invalid_request_id" }, 400);
       }
@@ -113,22 +136,37 @@ Deno.serve(async (req: Request) => {
 
     const suppliedCommandKey = String(body?.commandKey ?? "");
     const requestId = String(body?.requestId ?? "");
-    const snapshot = body?.snapshot;
+    // Decode before persistence. GitHub OIDC authenticates the publisher, but
+    // nested authority claims remain untrusted until resolved against their
+    // own governed ledger. No EQVM approval ledger exists today.
+    const snapshot =
+      sanitizeStoredObservabilitySnapshot<InboundObservabilitySnapshot>(
+        body?.snapshot,
+      );
     if (suppliedCommandKey) {
-      if (!validCommandKey(suppliedCommandKey)) return json({ error: "invalid_command_key" }, 400);
+      if (!validCommandKey(suppliedCommandKey))
+        return json({ error: "invalid_command_key" }, 400);
     } else if (!/^\d+$/.test(requestId)) {
       return json({ error: "invalid_request_id" }, 400);
     }
     if (
-      !snapshot ||
-      snapshot.schema !== "screeps-observability-snapshot/v1" ||
+      snapshot?.schema !== "screeps-observability-snapshot/v1" ||
       snapshot.schemaVersion !== 1
     ) {
       return json({ error: "invalid_snapshot_schema" }, 400);
     }
-    if (snapshot.target !== "ptr") return json({ error: "invalid_target" }, 400);
-    if (!/^shard\d+$/.test(snapshot.shard ?? "")) return json({ error: "invalid_shard" }, 400);
-    if (!/^[WE]\d+[NS]\d+$/.test(snapshot.room ?? "")) return json({ error: "invalid_room" }, 400);
+    if (snapshot.target !== "ptr")
+      return json({ error: "invalid_target" }, 400);
+    if (
+      typeof snapshot.shard !== "string" ||
+      !/^shard\d+$/.test(snapshot.shard)
+    )
+      return json({ error: "invalid_shard" }, 400);
+    if (
+      typeof snapshot.room !== "string" ||
+      !/^[WE]\d+[NS]\d+$/.test(snapshot.room)
+    )
+      return json({ error: "invalid_room" }, 400);
 
     const commandKey = suppliedCommandKey || `github-comment:${requestId}`;
     const sourceRequestId = suppliedCommandKey || requestId;
@@ -156,12 +194,17 @@ Deno.serve(async (req: Request) => {
     const { data: colony, error: colonyError } = await admin
       .from("colonies")
       .upsert(
-        { target: snapshot.target, shard: snapshot.shard, room_name: snapshot.room },
+        {
+          target: snapshot.target,
+          shard: snapshot.shard,
+          room_name: snapshot.room,
+        },
         { onConflict: "target,shard,room_name" },
       )
       .select("id")
       .single();
-    if (colonyError || !colony) throw colonyError ?? new Error("colony_upsert_failed");
+    if (colonyError || !colony)
+      throw colonyError ?? new Error("colony_upsert_failed");
 
     const { data: row, error: snapshotError } = await admin
       .from("observability_snapshots")
@@ -179,7 +222,8 @@ Deno.serve(async (req: Request) => {
       )
       .select("id")
       .single();
-    if (snapshotError || !row) throw snapshotError ?? new Error("snapshot_upsert_failed");
+    if (snapshotError || !row)
+      throw snapshotError ?? new Error("snapshot_upsert_failed");
 
     const { error: completedError } = await admin.rpc("transition_command", {
       p_command_key: commandKey,
@@ -192,6 +236,9 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, colonyId: colony.id, snapshotId: row.id });
   } catch (error) {
     console.error(error);
-    return json({ error: error instanceof Error ? error.message : String(error) }, 401);
+    return json(
+      { error: error instanceof Error ? error.message : String(error) },
+      401,
+    );
   }
 });

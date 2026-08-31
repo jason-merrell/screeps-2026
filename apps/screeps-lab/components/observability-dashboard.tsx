@@ -1,3 +1,4 @@
+import { StrategicRoomMap } from "@/components/strategic-room-map";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -12,13 +13,20 @@ import type {
   ControlPlaneProvenance,
   FspmColonySummary,
   FspmDeliverable,
-  FspmQuality,
+  FspmEqvmPolicyAuthorization,
+  FspmOperationalHealth,
   FspmRequirement,
   FspmTask,
-  Point,
+  FspmWeightedEqvmCoverage,
   Snapshot,
 } from "@/lib/control-plane";
 import { benchmarkPhases, formatEvidenceAge } from "@/lib/data-trust";
+import {
+  type DevelopmentHealth,
+  type DevelopmentStageSummary,
+  deriveRoomDevelopment,
+  type RoomDevelopmentSummary,
+} from "@/lib/room-development";
 
 function metricCard(label: string, value: string | number, detail: string) {
   return (
@@ -330,194 +338,621 @@ function RuntimeBenchmark({
   );
 }
 
-function RoomGrid({ snapshot }: { snapshot: Snapshot | null }) {
-  type Layer =
-    | "roads"
-    | "extensions"
-    | "towers"
-    | "containers"
-    | "spawn"
-    | "hub"
-    | "sources"
-    | "controller"
-    | "built"
-    | "construction";
-  const layers: Record<Layer, Map<string, Point>> = {
-    roads: new Map(),
-    extensions: new Map(),
-    towers: new Map(),
-    containers: new Map(),
-    spawn: new Map(),
-    hub: new Map(),
-    sources: new Map(),
-    controller: new Map(),
-    built: new Map(),
-    construction: new Map(),
-  };
-  const mark = (point: Point | null | undefined, layer: Layer) => {
-    if (!point || !Number.isInteger(point.x) || !Number.isInteger(point.y))
-      return;
-    if (point.x < 0 || point.x > 49 || point.y < 0 || point.y > 49) return;
-    layers[layer].set(`${point.x}:${point.y}`, point);
-  };
-  const squarePath = (points: Iterable<Point>, inset = 0, size = 1) =>
-    [...points]
-      .map(
-        (point) =>
-          `M${point.x + inset} ${point.y + inset}h${size}v${size}h-${size}z`,
-      )
-      .join("");
-
-  const plan = snapshot?.roomPlan;
-  for (const road of plan?.roads ?? []) mark(road, "roads");
-  for (const structure of plan?.structures ?? []) {
-    const layer =
-      structure.structureType === "tower"
-        ? "towers"
-        : structure.structureType === "container"
-          ? "containers"
-          : "extensions";
-    mark(structure, layer);
+const developmentHealthTone = (health: DevelopmentHealth) => {
+  if (health === "healthy") {
+    return "border-emerald-400/25 bg-emerald-400/6 text-emerald-200";
   }
-  mark(plan?.anchors?.spawn, "spawn");
-  mark(plan?.anchors?.hub, "hub");
-  mark(plan?.anchors?.controller, "controller");
-  for (const source of plan?.anchors?.sources ?? []) {
-    mark(source, "sources");
-    mark(source.container, "containers");
+  if (health === "watch") {
+    return "border-amber-400/25 bg-amber-400/6 text-amber-200";
   }
-  for (const structure of snapshot?.colony?.structures ?? [])
-    mark(structure, "built");
-  for (const site of snapshot?.colony?.constructionSites ?? [])
-    mark(site, "construction");
+  return "border-red-400/30 bg-red-400/7 text-red-200";
+};
 
-  const layerCounts = [
-    `${layers.roads.size} planned roads`,
-    `${layers.extensions.size + layers.towers.size + layers.containers.size} planned structures`,
-    `${layers.built.size} built structures`,
-    `${layers.construction.size} construction sites`,
-  ].join(", ");
+const stageStatusLabel = (status: DevelopmentStageSummary["status"]) => {
+  switch (status) {
+    case "realized":
+      return "Realized";
+    case "in-progress":
+      return "In progress";
+    case "blocked":
+      return "Verified blocker";
+    case "not-started":
+      return "Not started";
+    case "prerequisite-locked":
+      return "Prerequisite locked";
+    case "future":
+      return "Future";
+    case "horizon-gap":
+      return "Horizon blocked";
+    case "invalid-plan":
+      return "Evidence invalid";
+  }
+};
+
+const stageTone = (status: DevelopmentStageSummary["status"]) => {
+  if (status === "realized") {
+    return {
+      border: "border-emerald-400/20 bg-emerald-400/[0.045]",
+      label: "text-emerald-300",
+      bar: "bg-emerald-400",
+    };
+  }
+  if (status === "in-progress") {
+    return {
+      border: "border-primary/25 bg-primary/[0.045]",
+      label: "text-primary",
+      bar: "bg-primary",
+    };
+  }
+  if (status === "not-started") {
+    return {
+      border: "border-amber-400/20 bg-amber-400/[0.035]",
+      label: "text-amber-300",
+      bar: "bg-amber-400",
+    };
+  }
+  if (
+    status === "horizon-gap" ||
+    status === "invalid-plan" ||
+    status === "blocked"
+  ) {
+    return {
+      border: "border-red-400/20 bg-red-400/[0.035]",
+      label: "text-red-300",
+      bar: "bg-red-400",
+    };
+  }
+  return {
+    border: "border-white/8 bg-black/10",
+    label: "text-muted-foreground",
+    bar: "bg-white/20",
+  };
+};
+
+const structureLabel = (structureType: string) =>
+  structureType
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, (character) => character.toUpperCase());
+
+function DevelopmentTruthAlert({
+  development,
+}: {
+  development: RoomDevelopmentSummary;
+}) {
+  if (development.health !== "critical") return null;
+  const debt = development.state === "horizon-debt";
+  const projectionBlocked =
+    (development.projection.fault?.status === "active" &&
+      development.projection.faultAlignment === "current") ||
+    development.projection.traceAlignment === "mismatch" ||
+    development.projection.faultAlignment === "stale";
+  const runtimeEvidenceBlocked =
+    development.state === "runtime-evidence-unavailable";
 
   return (
-    <>
-      <svg
-        className="room-grid"
-        viewBox="0 0 50 50"
-        role="img"
-        aria-labelledby="room-grid-title room-grid-description"
-      >
-        <title id="room-grid-title">50 by 50 Screeps room plan</title>
-        <desc id="room-grid-description">{`Planned geometry overlaid with live built state: ${layerCounts}.`}</desc>
-        <defs>
-          <pattern
-            id="room-grid-lines"
-            width="1"
-            height="1"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M1 0H0V1"
-              fill="none"
-              stroke="rgb(255 255 255 / 5%)"
-              strokeWidth="0.05"
-            />
-          </pattern>
-        </defs>
-        <rect width="50" height="50" fill="#081016" />
-        <g className="room-plan-layer">
-          <path d={squarePath(layers.roads.values())} fill="#314858" />
-          <path
-            d={squarePath(layers.extensions.values(), 0.08, 0.84)}
-            fill="#28735d"
-          />
-          <path
-            d={squarePath(layers.towers.values(), 0.06, 0.88)}
-            fill="#b9823f"
-          />
-          <path
-            d={squarePath(layers.containers.values(), 0.08, 0.84)}
-            fill="#755f42"
-          />
-          <path d={squarePath(layers.hub.values(), 0.05, 0.9)} fill="#4c89b5" />
-          <path
-            d={squarePath(layers.spawn.values(), 0.04, 0.92)}
-            fill="#e7bd55"
-            stroke="#fff0b5"
-            strokeWidth="0.7"
-            vectorEffect="non-scaling-stroke"
-          />
-          {[...layers.sources.values()].map((point) => (
-            <circle
-              key={`${point.x}:${point.y}`}
-              cx={point.x + 0.5}
-              cy={point.y + 0.5}
-              r="0.42"
-              fill="#dbb64f"
-            />
-          ))}
-          {[...layers.controller.values()].map((point) => (
-            <circle
-              key={`${point.x}:${point.y}`}
-              cx={point.x + 0.5}
-              cy={point.y + 0.5}
-              r="0.42"
-              fill="#8d72bc"
-            />
-          ))}
-          <path
-            d={squarePath(layers.built.values(), 0.18, 0.64)}
-            fill="none"
-            stroke="rgb(255 255 255 / 88%)"
-            strokeWidth="0.75"
-            vectorEffect="non-scaling-stroke"
-          />
-          <path
-            d={squarePath(layers.construction.values(), 0.12, 0.76)}
-            fill="none"
-            stroke="#df8a66"
-            strokeWidth="0.8"
-            strokeDasharray="1.5 1"
-            vectorEffect="non-scaling-stroke"
-          />
-        </g>
-        <rect
-          width="50"
-          height="50"
-          fill="url(#room-grid-lines)"
-          pointerEvents="none"
-        />
-      </svg>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {[
-          `plan v${plan?.version ?? "?"}`,
-          `RCL${plan?.horizonRcl ?? "?"} horizon`,
-          "planned geometry",
-          "outlined = built",
-          "dashed = construction",
-        ].map((label) => (
-          <Badge
-            key={label}
-            variant="outline"
-            className="text-[0.68rem] text-muted-foreground"
-          >
-            {label}
-          </Badge>
-        ))}
+    <section
+      aria-label={
+        projectionBlocked || runtimeEvidenceBlocked
+          ? "Settlement projection evidence blocked"
+          : "Footprint evidence blocked"
+      }
+      className="mb-6 overflow-hidden rounded-2xl border border-red-400/25 bg-red-400/[0.055] shadow-[inset_3px_0_0_rgb(248_113_113/0.7)]"
+    >
+      <div className="flex flex-col justify-between gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
+        <div>
+          <div className="text-[0.65rem] font-medium uppercase tracking-[0.18em] text-red-300">
+            {projectionBlocked
+              ? "Settlement projection evidence blocked"
+              : runtimeEvidenceBlocked
+                ? "Runtime development evidence blocked"
+                : "Footprint evidence blocked"}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-foreground/85">
+            {debt
+              ? `Live controller RCL${development.controllerLevel ?? "?"} exceeds the plan's RCL${development.planHorizonRcl ?? "?"} horizon.`
+              : development.nextMilestone.reason}
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className="w-fit shrink-0 border-red-400/30 bg-red-400/10 text-red-200"
+        >
+          Readiness health overridden
+        </Badge>
       </div>
-    </>
+      <div className="border-t border-red-400/15 bg-black/10 px-4 py-2.5 text-xs leading-5 text-red-100/70 sm:px-5">
+        Portfolio telemetry remains visible as reported evidence, but the RCL8
+        footprint is not evidenced while this implementation debt exists. Lab,
+        market, factory, power, nuker, and mature-link actuation are not
+        evidenced by this footprint result; their implementation debt remains
+        explicit below.
+      </div>
+    </section>
   );
 }
 
-const qualityTone = (quality?: FspmQuality) => {
-  if (!quality) return "border-white/10 text-muted-foreground";
-  if (quality.state === "healthy")
+function DevelopmentCommand({
+  development,
+}: {
+  development: RoomDevelopmentSummary;
+}) {
+  const activeStage = development.stages.find(
+    (stage) => stage.id === development.activeStageId,
+  );
+  const defense = development.defense;
+  const projection = development.projection;
+  const matureEnergyService = projection.matureEnergyService;
+  const currentFault =
+    projection.fault?.status === "active" &&
+    projection.faultAlignment === "current"
+      ? projection.fault
+      : null;
+  const staleProjectionEvidence =
+    projection.traceAlignment === "mismatch" ||
+    projection.faultAlignment === "stale";
+  const runtimeProjectionBlocked =
+    projection.runtimeUsability !== null &&
+    (projection.runtimeUsability.usable !== true ||
+      projection.runtimeUsability.status !== "current");
+  const realization = development.realizationPercentage;
+  const missing = development.missingCriticalStructures;
+  const headline = currentFault
+    ? "Settlement projection replacement fault"
+    : runtimeProjectionBlocked
+      ? `Operational projection blocked · ${projection.runtimeUsability?.status.replaceAll("_", " ")}`
+      : staleProjectionEvidence
+        ? "Projection evidence is out of alignment"
+        : development.state === "footprint-realized"
+          ? "Strategic footprint realized"
+          : development.state === "horizon-debt"
+            ? "Planning horizon has fallen behind the colony"
+            : development.state === "plan-invalid"
+              ? "Footprint evidence failed validation"
+              : development.state === "runtime-evidence-unavailable"
+                ? "Runtime development evidence unavailable"
+                : development.state === "plan-missing"
+                  ? "Development plan unavailable"
+                  : `${activeStage?.title ?? "Development"} is active`;
+  const defenseLabel = (() => {
+    switch (defense.state) {
+      case "ready":
+        return "Envelope ready";
+      case "strengthening":
+        return "Hardening";
+      case "condition-unknown":
+        return "Strength unknown";
+      case "building":
+        return "Closing perimeter";
+      case "planned":
+        return "Ready to build";
+      case "missing-plan":
+        return "Perimeter missing";
+      case "locked":
+        return "Unlocks at RCL4";
+    }
+  })();
+
+  return (
+    <Card
+      className={`lab-panel overflow-hidden rounded-2xl ${
+        development.health === "critical"
+          ? "border-red-400/20"
+          : development.health === "healthy"
+            ? "border-emerald-400/15"
+            : "border-primary/15"
+      }`}
+    >
+      <CardHeader className="border-b border-white/8 bg-[linear-gradient(115deg,rgb(235_178_67/0.07),transparent_44%,rgb(47_116_137/0.055))] pb-5">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+          <div>
+            <CardDescription className="text-[0.68rem] uppercase tracking-[0.2em] text-primary">
+              Development command · runtime projection evidence
+            </CardDescription>
+            <CardTitle as="h2" className="mt-2 text-2xl tracking-[-0.025em]">
+              {headline}
+            </CardTitle>
+            <CardDescription className="mt-2 max-w-3xl leading-6">
+              Exact structure type and room coordinates drive realization. A
+              construction site is progress, never a completed outcome.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge
+              variant="outline"
+              className={developmentHealthTone(development.health)}
+            >
+              {development.health === "healthy"
+                ? "RCL8 footprint realized"
+                : development.health === "watch"
+                  ? "Footprint evidence partial"
+                  : "Footprint evidence blocked"}
+            </Badge>
+            <Badge variant="outline" className="font-mono text-foreground/70">
+              RCL{development.controllerLevel ?? "?"} live · RCL
+              {development.planHorizonRcl ?? "?"} plan
+            </Badge>
+            <Badge
+              variant="outline"
+              className="font-mono text-foreground/70"
+              title={projection.projectionFingerprint ?? undefined}
+            >
+              planner p{projection.plannerRevision ?? "?"} · projection r
+              {projection.projectionRevision ?? "?"} ·{" "}
+              {projection.projectionFingerprint?.slice(0, 9) ?? "no identity"}
+            </Badge>
+            <Badge
+              variant="outline"
+              className={
+                projection.runtimeUsability?.usable === true &&
+                projection.runtimeUsability.status === "current"
+                  ? "border-emerald-400/25 bg-emerald-400/8 font-mono text-emerald-200"
+                  : "border-red-400/25 bg-red-400/8 font-mono text-red-200"
+              }
+            >
+              gate {projection.runtimeUsability?.status ?? "unavailable"}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="pt-5 sm:pt-6">
+        {currentFault ? (
+          <section
+            aria-label="Current settlement projection fault"
+            className="mb-4 rounded-xl border border-red-400/25 bg-red-400/[0.05] p-4 shadow-[inset_3px_0_0_rgb(248_113_113/0.65)]"
+          >
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div>
+                <div className="text-[0.65rem] uppercase tracking-[0.17em] text-red-300">
+                  Projection replacement fault · current retained epoch
+                </div>
+                <div className="mt-1 text-sm font-medium text-red-100">
+                  {currentFault.reason}
+                </div>
+                <p className="mt-1 text-xs leading-5 text-red-100/70">
+                  {currentFault.remediation}
+                </p>
+              </div>
+              <div className="grid shrink-0 grid-cols-2 gap-x-4 gap-y-1 text-xs sm:text-right">
+                <span className="text-muted-foreground">Attempts</span>
+                <span className="font-mono text-red-100">
+                  {currentFault.attemptCount ?? "?"}
+                </span>
+                <span className="text-muted-foreground">Retry tick</span>
+                <span className="font-mono text-red-100">
+                  {currentFault.nextRetryTick ?? "manual"}
+                </span>
+              </div>
+            </div>
+            <div className="mt-3 border-t border-red-400/15 pt-2 font-mono text-[0.62rem] text-red-100/60">
+              retained p{currentFault.retainedPlannerRevision ?? "?"} · r
+              {currentFault.retainedProjectionRevision ?? "?"} ·{" "}
+              {currentFault.retainedProjectionFingerprint ??
+                "identity unavailable"}
+            </div>
+          </section>
+        ) : runtimeProjectionBlocked ? (
+          <section
+            aria-label="Runtime projection usability failure"
+            className="mb-4 rounded-xl border border-red-400/25 bg-red-400/[0.05] px-4 py-3 text-xs leading-5 text-red-100/80"
+          >
+            <span className="font-mono uppercase tracking-[0.12em] text-red-200">
+              {projection.runtimeUsability?.status.replaceAll("_", " ")}
+            </span>
+            <span className="mt-1 block">
+              {projection.runtimeUsability?.reason}
+            </span>
+          </section>
+        ) : staleProjectionEvidence ? (
+          <section
+            aria-label="Projection evidence mismatch"
+            className="mb-4 rounded-xl border border-amber-400/25 bg-amber-400/[0.045] px-4 py-3 text-xs leading-5 text-amber-100/75"
+          >
+            Runtime settlement evidence does not match this exact planner and
+            projection epoch. Refresh the snapshot before acting on fault or
+            recovery status.
+          </section>
+        ) : projection.fault?.status === "superseded" &&
+          projection.faultAlignment === "current" ? (
+          <section
+            aria-label="Settlement projection recovery"
+            className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.035] px-4 py-3 text-xs leading-5 text-emerald-100/70"
+          >
+            {`Settlement generation recovered at tick ${projection.fault.resolvedAtTick ?? "?"}; fault evidence was superseded by projection r${projection.projectionRevision ?? "?"}.`}
+          </section>
+        ) : null}
+
+        <section
+          aria-label="Advanced capability evidence"
+          className="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.035] px-4 py-3 text-xs leading-5 text-amber-100/75"
+        >
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+            <div>
+              <div className="font-medium uppercase tracking-[0.14em] text-amber-200">
+                Advanced capability actuation · not evidenced
+              </div>
+              <p className="mt-1">
+                Lab, market, factory, power, and nuker services have no runtime
+                actuation evaluator in this trace. Footprint completion never
+                promotes them to ready.
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className="w-fit shrink-0 border-amber-400/25 bg-amber-400/5 font-mono text-amber-200"
+            >
+              mature link · {matureEnergyService?.status ?? "unavailable"}
+            </Badge>
+          </div>
+          <p className="mt-2 border-t border-amber-400/15 pt-2">
+            {matureEnergyService?.reason ??
+              "Mature-link service evidence is unavailable in the current runtime trace; container hauling remains the evidenced fallback."}
+          </p>
+        </section>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,0.72fr)_minmax(0,1.35fr)_minmax(270px,0.9fr)]">
+          <div className="rounded-xl border border-white/8 bg-black/15 p-4 sm:p-5">
+            <div className="text-[0.65rem] uppercase tracking-[0.17em] text-muted-foreground">
+              Eligible realization
+            </div>
+            <div className="mt-3 flex items-end gap-2">
+              <span className="font-mono text-4xl font-semibold tracking-[-0.06em] sm:text-5xl">
+                {realization === null ? "—" : Math.round(realization)}
+              </span>
+              <span className="pb-1 text-sm text-muted-foreground">
+                {realization === null ? "withheld" : "%"}
+              </span>
+            </div>
+            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/7">
+              <div
+                className={`h-full rounded-full ${
+                  development.health === "critical"
+                    ? "bg-red-400"
+                    : development.health === "healthy"
+                      ? "bg-emerald-400"
+                      : "bg-primary"
+                }`}
+                style={{ width: `${realization ?? 0}%` }}
+              />
+            </div>
+            <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-white/7 pt-4 text-xs">
+              <div>
+                <dt className="text-muted-foreground">Missing critical</dt>
+                <dd className="mt-1 font-mono text-sm text-foreground">
+                  {realization === null
+                    ? "withheld"
+                    : development.missingStructureCount}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Blocked</dt>
+                <dd className="mt-1 font-mono text-sm text-foreground">
+                  {development.blockedStructureCount}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Active stage</dt>
+                <dd className="mt-1 truncate text-sm text-foreground">
+                  {activeStage?.title ??
+                    (development.state === "footprint-realized"
+                      ? "Complete"
+                      : "Blocked")}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="rounded-xl border border-primary/15 bg-primary/[0.035] p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[0.65rem] uppercase tracking-[0.17em] text-primary">
+                Next milestone
+              </div>
+              <Badge
+                variant="outline"
+                className="border-primary/20 font-mono text-[0.62rem] text-primary"
+              >
+                {development.nextMilestone.kind.replaceAll("-", " ")}
+              </Badge>
+            </div>
+            <div className="mt-3 text-lg font-medium tracking-[-0.015em]">
+              {development.nextMilestone.title}
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {development.nextMilestone.reason}
+            </p>
+            {development.firstBlocker ? (
+              <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/[0.04] px-3 py-2.5 text-xs leading-5 text-red-100/75">
+                <span className="font-medium text-red-200">
+                  First evidenced blocker ·{" "}
+                  {development.firstBlocker.occupantType}
+                </span>
+                <span className="mt-0.5 block">
+                  {development.firstBlocker.reason}
+                </span>
+              </div>
+            ) : null}
+            {development.validationIssues.length > 1 ? (
+              <details className="mt-4 border-t border-white/7 pt-3 text-xs text-muted-foreground">
+                <summary className="cursor-pointer text-foreground/75">
+                  {development.validationIssues.length} validation failures
+                </summary>
+                <ul className="mt-2 grid gap-1 pl-4">
+                  {development.validationIssues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+
+          <div className="rounded-xl border border-red-400/15 bg-red-400/[0.025] p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[0.65rem] uppercase tracking-[0.17em] text-red-300/80">
+                  Defensive envelope
+                </div>
+                <div className="mt-2 text-base font-medium">{defenseLabel}</div>
+              </div>
+              <span
+                className={`mt-1 size-2.5 rounded-full ${
+                  defense.state === "ready"
+                    ? "bg-emerald-400 shadow-[0_0_16px_rgb(52_211_153/0.45)]"
+                    : defense.state === "locked"
+                      ? "bg-white/20"
+                      : "bg-red-400 shadow-[0_0_16px_rgb(248_113_113/0.35)]"
+                }`}
+                aria-hidden="true"
+              />
+            </div>
+            <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-white/7 pt-4 text-xs">
+              <div>
+                <dt className="text-muted-foreground">Planned</dt>
+                <dd className="mt-1 font-mono text-base text-foreground">
+                  {defense.plannedCount}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Built</dt>
+                <dd className="mt-1 font-mono text-base text-foreground">
+                  {defense.builtCount}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">At target</dt>
+                <dd className="mt-1 font-mono text-base text-foreground">
+                  {defense.atTargetCount ?? "—"}
+                </dd>
+              </div>
+            </dl>
+            <div className="mt-3 text-xs leading-5 text-muted-foreground">
+              {defense.targetHits > 0
+                ? `${defense.targetHits.toLocaleString()} hits per rampart${defense.underAttack ? " · doubled threat target" : ""} · ${defense.strategy ?? "strategy unavailable"}`
+                : "Rampart hardening target activates at RCL3; envelope evidence is required from RCL4."}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 text-[0.62rem] uppercase tracking-[0.16em] text-muted-foreground">
+          Runtime adaptation stages · non-authoritative projection identity ·
+          linked deliverable {projection.deliverableId ?? "unavailable"}
+        </div>
+        <ol
+          aria-label="Runtime adaptation stage progression"
+          className="mt-2 grid list-none gap-2 md:grid-cols-5"
+        >
+          {development.stages.map((stage, index) => {
+            const tone = stageTone(stage.status);
+            return (
+              <li
+                key={stage.id}
+                className={`relative min-w-0 rounded-xl border p-3.5 ${tone.border}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[0.62rem] text-muted-foreground">
+                    {String(index + 1).padStart(2, "0")} · RCL{stage.minRcl}
+                  </span>
+                  <span className={`text-[0.62rem] ${tone.label}`}>
+                    {stage.realizationPercentage === null
+                      ? "—"
+                      : `${Math.round(stage.realizationPercentage)}%`}
+                  </span>
+                </div>
+                <div className="mt-2 truncate text-sm font-medium">
+                  {stage.title.replace(" Base", "")}
+                </div>
+                <div className={`mt-1 text-[0.65rem] ${tone.label}`}>
+                  {stageStatusLabel(stage.status)}
+                </div>
+                <div
+                  className="mt-3 h-1 overflow-hidden rounded-full bg-white/7"
+                  role="progressbar"
+                  aria-label={`${stage.title} realization`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={stage.realizationPercentage ?? undefined}
+                  aria-valuetext={
+                    stage.realizationPercentage === null
+                      ? "Evidence withheld"
+                      : `${Math.round(stage.realizationPercentage)} percent`
+                  }
+                >
+                  <div
+                    className={`h-full rounded-full ${tone.bar}`}
+                    style={{ width: `${stage.realizationPercentage ?? 0}%` }}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+
+        {missing.length > 0 ? (
+          <div className="mt-4 border-t border-white/7 pt-4">
+            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+              <div>
+                <div className="text-[0.65rem] uppercase tracking-[0.17em] text-muted-foreground">
+                  Critical realization queue
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Highest-value missing outcomes, ordered by stage and strategic
+                  weight.
+                </p>
+              </div>
+              <span className="font-mono text-xs text-muted-foreground">
+                showing {Math.min(missing.length, 4)} of {missing.length}
+              </span>
+            </div>
+            <ul className="mt-3 grid list-none gap-2 lg:grid-cols-4">
+              {missing.slice(0, 4).map((requirement) => (
+                <li
+                  key={requirement.id}
+                  className="rounded-lg border border-white/7 bg-black/10 px-3 py-2.5"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-sm font-medium">
+                      {structureLabel(requirement.structureType)}
+                    </span>
+                    <span className="shrink-0 font-mono text-[0.62rem] text-primary">
+                      w{requirement.strategicWeight}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-3 text-[0.65rem] text-muted-foreground">
+                    <span className="truncate">
+                      {requirement.stageId.replaceAll("-", " ")}
+                    </span>
+                    <span className="shrink-0 font-mono">
+                      ({requirement.x},{requirement.y})
+                    </span>
+                  </div>
+                  {requirement.blockers[0] ? (
+                    <div className="mt-2 truncate text-[0.62rem] text-red-300">
+                      blocked · {requirement.blockers[0].occupantType}
+                    </div>
+                  ) : requirement.underConstruction ? (
+                    <div className="mt-2 text-[0.62rem] text-amber-300">
+                      construction in progress
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+const operationalHealthTone = (health?: FspmOperationalHealth) => {
+  if (!health) return "border-white/10 text-muted-foreground";
+  if (health.state === "healthy")
     return "border-emerald-400/20 bg-emerald-400/5 text-emerald-300";
-  if (quality.state === "watch")
+  if (health.state === "watch")
     return "border-amber-400/20 bg-amber-400/5 text-amber-300";
   return "border-red-400/20 bg-red-400/5 text-red-300";
 };
 
-const trendGlyph = (trend?: FspmQuality["trend"]) => {
+const trendGlyph = (trend?: FspmOperationalHealth["trend"]) => {
   if (trend === "improving") return "↑";
   if (trend === "declining") return "↓";
   if (trend === "stable") return "→";
@@ -531,6 +966,18 @@ const formatBasisPoints = (value?: number) => {
 };
 
 type AuthorityDisplayState = "eligible" | "blocked" | "legacy";
+
+const requiredGovernanceChecks = [
+  "empireRoot",
+  "packageProjection",
+  "approvalLedger",
+  "ancestry",
+  "relationships",
+  "exactWeights",
+  "receiptContracts",
+  "acceptancePolicies",
+  "receiptLedgers",
+] as const;
 
 const compactIdentifier = (value: string, edge = 12) =>
   value.length > edge * 2 + 1
@@ -570,7 +1017,7 @@ const authorityDisplayState = (
   return governance.valid &&
     governance.executionEligible === true &&
     checks !== undefined &&
-    checks.empireRoot === true &&
+    requiredGovernanceChecks.every((key) => checks[key] === true) &&
     Object.values(checks).every((value) => value === true)
     ? "eligible"
     : "blocked";
@@ -966,31 +1413,97 @@ function DeliverableWeightBadge({
   );
 }
 
-function HealthBadge({ quality }: { quality?: FspmQuality }) {
+function PortfolioOperationalHealthBadge({
+  health,
+}: {
+  health?: FspmOperationalHealth;
+}) {
   return (
     <Badge
       variant="outline"
-      className={`gap-1.5 capitalize ${qualityTone(quality)}`}
+      className={`gap-1.5 capitalize ${operationalHealthTone(health)}`}
     >
-      <span aria-hidden="true">{trendGlyph(quality?.trend)}</span>
-      {quality ? `${quality.score} · ${quality.state}` : "unmeasured"}
+      <span aria-hidden="true">{trendGlyph(health?.trend)}</span>
+      <span>Operational health</span>
+      <span className="font-mono">
+        {health ? `${health.score} · ${health.state}` : "unmeasured"}
+      </span>
     </Badge>
   );
 }
 
-function OperationalHealthBadge({ quality }: { quality?: FspmQuality }) {
+function OperationalHealthBadge({
+  health,
+}: {
+  health?: FspmOperationalHealth;
+}) {
   const tone =
-    quality?.state === "degraded"
+    health?.state === "degraded"
       ? "border-red-400/20 bg-red-400/5 text-red-300"
-      : quality
+      : health
         ? "border-sky-400/20 bg-sky-400/5 text-sky-200"
         : "border-white/10 text-muted-foreground";
   return (
     <Badge variant="outline" className={`gap-1.5 ${tone}`}>
       <span>Operational health</span>
       <span className="font-mono">
-        {quality ? `${quality.score} · ${quality.state}` : "unmeasured"}
+        {health ? `${health.score} · ${health.state}` : "unmeasured"}
       </span>
+    </Badge>
+  );
+}
+
+function EqvmRollupBadge({
+  label,
+  score,
+  coverage,
+  policyAuthorization,
+  authorityState,
+}: {
+  label: "PQI" | "DQI";
+  score: number | null | undefined;
+  coverage?: FspmWeightedEqvmCoverage;
+  policyAuthorization?: FspmEqvmPolicyAuthorization;
+  authorityState: AuthorityDisplayState;
+}) {
+  if (
+    authorityState === "eligible" &&
+    policyAuthorization?.status === "approved" &&
+    typeof score === "number" &&
+    coverage?.status === "complete"
+  ) {
+    return (
+      <Badge
+        variant="outline"
+        className="border-emerald-400/20 font-mono text-emerald-300"
+      >
+        {label} {score.toFixed(3)} · complete
+      </Badge>
+    );
+  }
+  const status = coverage?.status ?? "unavailable";
+  const authorizationStatus = policyAuthorization?.status ?? "missing-policy";
+  const displayStatus =
+    authorityState === "eligible"
+      ? authorizationStatus === "approved"
+        ? status
+        : authorizationStatus
+      : `authority-${authorityState}`;
+  const tone =
+    status === "invalid"
+      ? "border-red-400/25 bg-red-400/5 text-red-300"
+      : "border-amber-400/20 bg-amber-400/5 text-amber-200";
+  return (
+    <Badge
+      variant="outline"
+      className={`font-mono ${tone}`}
+      title={
+        policyAuthorization?.status === "unapproved"
+          ? policyAuthorization.authorizationDebt
+          : undefined
+      }
+    >
+      {label} UNAVAILABLE · {displayStatus}
     </Badge>
   );
 }
@@ -1006,13 +1519,26 @@ function TaskQi({
   if (!qi)
     return (
       <Badge variant="outline" className="text-muted-foreground">
-        QI pending
+        QI UNAVAILABLE · no record
       </Badge>
     );
-  if (authorityState !== "eligible")
+  if (
+    authorityState !== "eligible" ||
+    qi.score === null ||
+    qi.status !== "complete" ||
+    qi.policyAuthorization.status !== "approved"
+  )
     return (
-      <Badge variant="outline" className="font-mono text-muted-foreground">
-        Historical QI {qi.score.toFixed(3)}
+      <Badge
+        variant="outline"
+        className="border-amber-400/20 bg-amber-400/5 font-mono text-amber-200"
+        title={
+          qi.policyAuthorization.status === "unapproved"
+            ? qi.policyAuthorization.authorizationDebt
+            : undefined
+        }
+      >
+        QI UNAVAILABLE · policy unapproved
       </Badge>
     );
   const tone =
@@ -1063,7 +1589,7 @@ function TaskCard({
         </div>
       </div>
 
-      {task.kpiMetric || task.recentActivities?.length ? (
+      {task.qi || task.kpiMetric || task.recentActivities?.length ? (
         <details className="group mt-3 rounded-lg border border-white/7 bg-black/10 px-3 py-2 text-xs text-muted-foreground">
           <summary className="cursor-pointer list-none font-medium text-foreground/80 marker:hidden">
             <span className="flex items-center justify-between gap-3">
@@ -1077,6 +1603,33 @@ function TaskCard({
             </span>
           </summary>
           <div className="mt-3 grid gap-3 border-t border-white/7 pt-3">
+            {task.qi ? (
+              <div className="rounded-lg border border-amber-400/15 bg-amber-400/[0.025] p-3 leading-5 text-amber-100/75">
+                <div className="font-medium text-amber-200">
+                  Canonical EQVM ·{" "}
+                  {task.qi.score === null ? "unavailable" : task.qi.status}
+                </div>
+                <div className="mt-1">
+                  Coverage {task.qi.status} · {task.qi.freshActivities}/
+                  {task.qi.totalActivities} fresh terminal Activities · policy{" "}
+                  {task.qi.policyAuthorization.status}
+                </div>
+                {task.qi.policyAuthorization.status === "unapproved" ? (
+                  <div className="mt-1">
+                    {task.qi.policyAuthorization.authorizationDebt}
+                  </div>
+                ) : (
+                  <div className="mt-1 font-mono text-[0.62rem] text-amber-100/55">
+                    approval {task.qi.policyAuthorization.approvalEventId} ·
+                    signer {task.qi.policyAuthorization.signerPrincipalId}
+                  </div>
+                )}
+                <div className="mt-1 font-mono text-[0.62rem] text-amber-100/55">
+                  {task.qi.activityWeightPolicyId} · window{" "}
+                  {task.qi.evidenceWindowTicks.toLocaleString()} ticks
+                </div>
+              </div>
+            ) : null}
             {task.kpiMetric ? (
               <div className="grid gap-1.5 leading-5">
                 <div className="font-medium text-foreground/80">
@@ -1137,8 +1690,8 @@ function TaskCard({
 
 function PortfolioTrend({ fspm }: { fspm: FspmColonySummary }) {
   const history = fspm.p3
-    ? (fspm.p3History ?? [])
-    : (fspm.contractHistory ?? []);
+    ? (fspm.p3OperationalHealthHistory ?? [])
+    : (fspm.contractOperationalHealthHistory ?? []);
   const authority = fspm.p3 ? "Portfolio/P3" : "legacy contract";
   if (!history.length)
     return (
@@ -1155,7 +1708,7 @@ function PortfolioTrend({ fspm }: { fspm: FspmColonySummary }) {
       <div
         className="flex h-16 items-end gap-1"
         role="img"
-        aria-label={`${authority} quality history with ${history.length} samples`}
+        aria-label={`${authority} operational health history with ${history.length} samples`}
       >
         {history.map((sample) => (
           <div
@@ -1509,7 +2062,13 @@ function GovernanceAuthority({ fspm }: { fspm: FspmColonySummary }) {
   );
 }
 
-function FspmOverview({ fspm }: { fspm: FspmColonySummary | null }) {
+function FspmOverview({
+  fspm,
+  development,
+}: {
+  fspm: FspmColonySummary | null;
+  development: RoomDevelopmentSummary;
+}) {
   if (!fspm) {
     return (
       <Card className="lab-panel rounded-2xl border-white/8 bg-card/65">
@@ -1518,7 +2077,8 @@ function FspmOverview({ fspm }: { fspm: FspmColonySummary | null }) {
             Colony health
           </CardTitle>
           <CardDescription>
-            FSPM quality has not reached the latest sanitized snapshot yet.
+            FSPM authority telemetry has not reached the latest sanitized
+            snapshot yet.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -1528,7 +2088,13 @@ function FspmOverview({ fspm }: { fspm: FspmColonySummary | null }) {
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <Card className="lab-panel min-w-0 rounded-2xl border-white/8 bg-card/65">
+      <Card
+        className={`lab-panel min-w-0 rounded-2xl bg-card/65 ${
+          development.health === "critical"
+            ? "border-red-400/20"
+            : "border-white/8"
+        }`}
+      >
         <CardHeader className="border-b border-white/8 pb-5">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
             <div>
@@ -1545,7 +2111,28 @@ function FspmOverview({ fspm }: { fspm: FspmColonySummary | null }) {
                 Activity.
               </CardDescription>
             </div>
-            <HealthBadge quality={fspm.p3?.quality ?? fspm.contract.quality} />
+            <div className="flex flex-wrap justify-end gap-2">
+              <PortfolioOperationalHealthBadge
+                health={
+                  fspm.p3?.operationalHealth ?? fspm.contract.operationalHealth
+                }
+              />
+              <EqvmRollupBadge
+                label="PQI"
+                score={fspm.p3?.pqi?.score}
+                coverage={fspm.p3?.pqi?.coverage}
+                policyAuthorization={fspm.p3?.pqi?.policyAuthorization}
+                authorityState={authorityState}
+              />
+              {development.health === "critical" ? (
+                <Badge
+                  variant="outline"
+                  className="border-red-400/30 bg-red-400/10 text-red-200"
+                >
+                  RCL8 footprint evidence blocked
+                </Badge>
+              ) : null}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="pt-5">
@@ -1583,7 +2170,9 @@ function FspmOverview({ fspm }: { fspm: FspmColonySummary | null }) {
                   ) : null}
                 </div>
                 <div className="mt-3 border-t border-white/7 pt-3">
-                  <OperationalHealthBadge quality={requirement.quality} />
+                  <OperationalHealthBadge
+                    health={requirement.operationalHealth}
+                  />
                 </div>
               </div>
             ))}
@@ -1603,8 +2192,9 @@ function FspmOverview({ fspm }: { fspm: FspmColonySummary | null }) {
         <CardContent>
           <PortfolioTrend fspm={fspm} />
           <div className="mt-4 border-t border-white/7 pt-3 text-xs leading-5 text-muted-foreground">
-            Task QI uses FSPM multipliers. Deeper Portfolio/P3 mechanics live in
-            the FSPM tab.
+            Canonical EQVM remains unavailable until accountable authority
+            approves Activity-weight semantics. Operational health is a separate
+            diagnostic channel.
           </div>
         </CardContent>
       </Card>
@@ -1764,7 +2354,9 @@ function FspmHierarchy({ fspm }: { fspm: FspmColonySummary }) {
                 <span>
                   Diagnostic channel · never used as approval or EQVM evidence
                 </span>
-                <OperationalHealthBadge quality={requirement.quality} />
+                <OperationalHealthBadge
+                  health={requirement.operationalHealth}
+                />
               </div>
               {deliverables.map((deliverable) => {
                 const tasks = fspm.tasks.filter(
@@ -1808,6 +2400,15 @@ function FspmHierarchy({ fspm }: { fspm: FspmColonySummary }) {
                           ) : null}
                           <DeliverableWeightBadge
                             deliverable={deliverable}
+                            authorityState={authorityState}
+                          />
+                          <EqvmRollupBadge
+                            label="DQI"
+                            score={deliverable.dqi?.score}
+                            coverage={deliverable.dqi?.coverage}
+                            policyAuthorization={
+                              deliverable.dqi?.policyAuthorization
+                            }
                             authorityState={authorityState}
                           />
                           <ReceiptEvidenceBadge
@@ -1861,14 +2462,23 @@ function FspmHierarchy({ fspm }: { fspm: FspmColonySummary }) {
                             Task QI coverage
                           </div>
                           <div className="mt-1 font-mono text-foreground/80">
-                            {tasks.filter((task) => task.qi).length}/
-                            {tasks.length} rated
+                            {deliverable.dqi
+                              ? `${deliverable.dqi.coverage.coveredWeightBasisPoints.toLocaleString()}/${deliverable.dqi.coverage.expectedWeightBasisPoints.toLocaleString()} bp · ${deliverable.dqi.coverage.status}`
+                              : "UNAVAILABLE"}
                           </div>
                         </div>
                         <div>
                           <div className="text-muted-foreground">DQI</div>
-                          <div className="mt-1 font-mono text-amber-300">
-                            PENDING · #136
+                          <div className="mt-1">
+                            <EqvmRollupBadge
+                              label="DQI"
+                              score={deliverable.dqi?.score}
+                              coverage={deliverable.dqi?.coverage}
+                              policyAuthorization={
+                                deliverable.dqi?.policyAuthorization
+                              }
+                              authorityState={authorityState}
+                            />
                           </div>
                         </div>
                         <div className="flex flex-wrap content-start gap-1.5">
@@ -1994,6 +2604,7 @@ export function ObservabilityDashboard({
 }: ObservabilityDashboardProps) {
   const controller = snapshot?.colony?.controller;
   const energy = snapshot?.colony?.energy;
+  const development = deriveRoomDevelopment(snapshot);
 
   const tabs = [
     {
@@ -2001,7 +2612,7 @@ export function ObservabilityDashboard({
       label: "Overview",
       hint: "health & orientation",
       href: "/?view=overview",
-      content: <FspmOverview fspm={fspm} />,
+      content: <FspmOverview fspm={fspm} development={development} />,
     },
     {
       id: "colony",
@@ -2009,45 +2620,107 @@ export function ObservabilityDashboard({
       hint: "room & movement",
       href: "/?view=colony",
       content: (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.65fr)]">
-          <Card className="lab-panel rounded-2xl border-white/8 bg-card/65">
-            <CardHeader className="border-b border-white/8 pb-5">
-              <CardTitle as="h2" className="text-xl">
-                Room plan
-              </CardTitle>
-              <CardDescription className="mt-1">
-                Planned geometry overlaid with built state.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <RoomGrid snapshot={snapshot} />
-            </CardContent>
-          </Card>
-          <Card className="lab-panel rounded-2xl border-white/8 bg-card/65">
-            <CardHeader className="border-b border-white/8 pb-5">
-              <CardTitle as="h2" className="text-xl">
-                Movement strategy
-              </CardTitle>
-              <CardDescription className="mt-1">
-                Current runtime routing posture.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5 pt-6 text-sm leading-6 text-muted-foreground">
-              <p>
-                Native Screeps pathing owns routing, with traffic-aware cached
-                movement, congestion detection, and bounded swap/repath
-                fallback.
-              </p>
-              <div className="rounded-xl border border-primary/15 bg-primary/5 p-4">
-                <div className="text-[0.68rem] uppercase tracking-[0.16em] text-primary">
-                  Measurement spine
+        <div className="grid gap-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.58fr)]">
+            <Card className="lab-panel rounded-2xl border-white/8 bg-card/65">
+              <CardHeader className="border-b border-white/8 pb-5">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                  <div>
+                    <CardTitle as="h2" className="text-xl">
+                      Strategic room plan
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Mature geometry, built outcomes, and the defensive cut.
+                    </CardDescription>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="w-fit font-mono text-muted-foreground"
+                  >
+                    50 × 50
+                  </Badge>
                 </div>
-                <div className="mt-1 text-sm font-medium text-foreground">
-                  Activities feed Task QI
+              </CardHeader>
+              <CardContent className="pt-6">
+                <StrategicRoomMap
+                  snapshot={snapshot}
+                  development={development}
+                />
+              </CardContent>
+            </Card>
+            <Card className="lab-panel rounded-2xl border-white/8 bg-card/65">
+              <CardHeader className="border-b border-white/8 pb-5">
+                <CardDescription className="text-[0.68rem] uppercase tracking-[0.18em] text-primary">
+                  Runtime posture
+                </CardDescription>
+                <CardTitle as="h2" className="mt-1 text-xl">
+                  Construction control
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  What the colony can prove and what remains to execute.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-5">
+                <dl className="grid gap-2 text-sm">
+                  {[
+                    [
+                      "Projection horizon",
+                      `v${development.planVersion ?? "?"} · RCL${development.planHorizonRcl ?? "?"}`,
+                    ],
+                    [
+                      "Critical queue",
+                      development.realizationPercentage === null
+                        ? "withheld"
+                        : `${development.missingStructureCount} structures`,
+                    ],
+                    [
+                      "Active sites",
+                      `${snapshot?.colony?.constructionSites?.length ?? 0} visible`,
+                    ],
+                    [
+                      "Verified blockers",
+                      `${development.blockedStructureCount} evidenced`,
+                    ],
+                    [
+                      "Perimeter",
+                      `${development.defense.builtCount}/${development.defense.plannedCount} built`,
+                    ],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="flex items-center justify-between gap-4 rounded-lg border border-white/7 bg-black/10 px-3 py-3"
+                    >
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd className="font-mono text-xs text-foreground/80">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                {development.firstBlocker ? (
+                  <div className="mt-3 rounded-lg border border-red-400/15 bg-red-400/[0.035] px-3 py-2.5 text-xs leading-5 text-red-100/70">
+                    <span className="font-medium text-red-200">
+                      {development.firstBlocker.occupantType}
+                    </span>
+                    <span className="mt-0.5 block">
+                      {development.firstBlocker.reason}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="mt-5 border-t border-white/7 pt-4">
+                  <div className="text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">
+                    Movement · supporting system
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    Traffic-aware cached native pathing handles congestion with
+                    bounded swap and repath fallbacks. Movement supports the
+                    development outcome; it is not the outcome.
+                  </p>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
+          <DevelopmentCommand development={development} />
         </div>
       ),
     },
@@ -2161,13 +2834,14 @@ export function ObservabilityDashboard({
           </Card>
         </div>
       ) : (
-        <FspmOverview fspm={null} />
+        <FspmOverview fspm={null} development={development} />
       ),
     },
   ];
 
   const genericTelemetry = (
     <>
+      <DevelopmentTruthAlert development={development} />
       <DataProvenance provenance={provenance} />
       <section
         aria-label="Colony at a glance"

@@ -15,6 +15,10 @@ Implemented execution semantics:
 - Activity evidence distinguishes productive work, required travel, blocked work, idle ticks, holds, resumes, Procedure transitions, and Task preemptions.
 - Task-specific terminal predicates evaluate Activity outcomes before assigning a terminal KPI rating.
 - Tick-level commands cannot independently create Task QI credit.
+- An explicitly unapproved research configuration gives one equal unit to each of the latest 24 verified terminal Activity KPI samples inside a 1,500-tick window; it is stored outside governed Task records.
+- Canonical Task QI is null with `activity_weight_policy_unapproved`; the separately named research estimate also withholds a number for missing, partial, stale, duplicate, extra, cross-Task, or unverified evidence.
+- Exact Task and Deliverable weight formulas are implemented without renormalizing around gaps, but DQI/PQI remain unavailable while canonical Task QI is withheld.
+- Room readiness and current execution risk are separately named operational health and cannot enter EQVM.
 - Completion-only KPI history, Activity events, compact Segment 99 evidence, and Supabase durable history are available for review.
 
 Known conformance blockers:
@@ -24,9 +28,10 @@ Known conformance blockers:
 - Canonical human Employee/Position/OU and ARCI authority, including exactly one human Accountable, is absent under #164.
 - General one-level child-Deliverable decomposition remains #176.
 - Planned Activity start/due semantics, inherited Task Description and Task Weight, and transition authority are incomplete.
-- Task QI is not yet rolled through Task Weight to DQI and Deliverable Weight to P3/PQI.
-- Room operational health is still represented in fields named as FSPM quality and must not be interpreted as EQVM.
 - Bounded runtime history has no durable collector acknowledgment or gap detector.
+- Canonical human reviewer approval and dispute governance remain absent; terminal evidence verification is the disclosed service-principal adaptation.
+- Accountable approval of recurring Activity weights, cohort length, and freshness policy is absent; research telemetry cannot be presented as Task QI.
+- P3/PQI over the current OU Portfolio applies the canonical weighted formula as a disclosed Portfolio reporting adaptation because the governance guide labels PQI at project/program level.
 - Receipt and decision ledgers have no bounded checkpoint/archive or durable ACK protocol; #194 tracks the required lossless design.
 
 `docs/fspm-conformance.json` is the authoritative machine-checkable map. This checkpoint must never be used alone to claim complete NTI FSPM parity.

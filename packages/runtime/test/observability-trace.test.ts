@@ -5,13 +5,14 @@ import {
   publishTickTrace,
 } from "../src/observability/trace";
 import type { FspmAssignmentState } from "../src/planning/activity-lifecycle";
+import { reconcilePortfolioEqvm } from "../src/planning/eqvm";
 import {
   activateApprovedColonyGovernance,
   createEmpirePortfolioP3,
   decideDeliverableReceipt,
   type FspmActivityRecord,
-  recordDeliverableReceipt,
   reconcileFspmLifecycle,
+  recordDeliverableReceipt,
 } from "../src/planning/fspm";
 
 function activity(
@@ -166,6 +167,134 @@ describe("observability schema evidence", () => {
     });
   });
 
+  it("publishes projection debt without deriving readiness from a stale retained plan", () => {
+    Object.assign(globalThis, {
+      FIND_MY_STRUCTURES: "myStructures",
+      FIND_HOSTILE_CREEPS: "hostileCreeps",
+      STRUCTURE_RAMPART: "rampart",
+    });
+    const room = {
+      controller: { level: 8 },
+      find: () => [],
+    } as unknown as Room;
+    Object.assign(Game, { rooms: { W1N1: room } });
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+      roomPlan: {
+        planId: "plan:W1N1:legacy",
+        deliverableId: "deliverable:W1N1:construction",
+        plannerRevision: 1,
+        projectionRevision: 7,
+        projectionFingerprint: "rpf1-0123456789abcdef",
+        version: 3,
+        horizonRcl: 3,
+        roomName: "W1N1",
+        generatedAt: 10,
+        generatedReason: "legacy fixture",
+        anchors: {
+          spawn: { name: "Spawn1", x: 25, y: 25 },
+          hub: { x: 26, y: 25 },
+          controller: null,
+          sources: [],
+        },
+        reservations: [],
+        structures: [],
+        roads: [],
+        roadGraph: { nodes: [], edges: [] },
+        defense: {
+          strategy: "pending-mincut",
+          protectedTiles: [{ x: 25, y: 25 }],
+          perimeter: [{ x: 24, y: 25 }],
+        },
+      },
+    };
+
+    const trace = publishTickTrace(emptyTraceInput());
+
+    expect(trace.settlement.plans).toEqual([
+      expect.objectContaining({
+        roomName: "W1N1",
+        plannerRevision: 1,
+        projectionRevision: 7,
+        projectionFingerprint: "rpf1-0123456789abcdef",
+        projectionUsability: {
+          usable: false,
+          status: "version_horizon_mismatch",
+          reason: expect.stringContaining("Expected room plan v4/RCL8"),
+        },
+        controllerLevel: 8,
+        horizonStatus: null,
+        realizationPercentage: null,
+        missingStructures: null,
+        nextMilestone: null,
+        defense: {
+          strategy: null,
+          protectedTiles: null,
+          perimeterPlanned: null,
+          perimeterBuilt: null,
+          perimeterAtTarget: null,
+          targetHits: null,
+          underAttack: false,
+          nextMissingTile: null,
+        },
+        energyTopology: {
+          status: "unavailable",
+          reason: expect.stringContaining("version_horizon_mismatch"),
+          sourceLinks: null,
+          controllerLinkPlanId: null,
+          coreLinkPlanId: null,
+        },
+      }),
+    ]);
+  });
+
+  it("publishes bounded settlement fault and retained-projection evidence", () => {
+    Memory.colonies.W2N2 = {
+      roomName: "W2N2",
+      discoveredAt: 1,
+      settlementProjectionFault: {
+        kind: "room-plan-generation",
+        status: "active",
+        firstTick: 1_200,
+        lastTick: 1_230,
+        attemptCount: 3,
+        retryDelayTicks: 20,
+        nextRetryTick: 1_250,
+        reason: "defended core exceeds perimeter cap",
+        remediation: "clear incompatible occupancy and regenerate",
+        retainedPlannerRevision: 1,
+        targetPlannerRevision: 2,
+        retainedProjectionRevision: 4,
+        retainedProjectionFingerprint: "rpf1-fedcba9876543210",
+      },
+    };
+
+    const trace = publishTickTrace(emptyTraceInput());
+
+    expect(trace.settlement.faults).toEqual([
+      {
+        roomName: "W2N2",
+        kind: "room-plan-generation",
+        status: "active",
+        firstTick: 1_200,
+        lastTick: 1_230,
+        attemptCount: 3,
+        retryDelayTicks: 20,
+        nextRetryTick: 1_250,
+        reason: "defended core exceeds perimeter cap",
+        remediation: "clear incompatible occupancy and regenerate",
+        retainedPlannerRevision: 1,
+        targetPlannerRevision: 2,
+        retainedProjectionRevision: 4,
+        retainedProjectionFingerprint: "rpf1-fedcba9876543210",
+        resolvedAtTick: null,
+        supersededByRevision: null,
+        supersededByFingerprint: null,
+      },
+    ]);
+  });
+
   it("reconciles the previous tick's complete publication cost without claiming it for the current pre-write total", () => {
     Memory.runtimeSupervisor = {
       version: 1,
@@ -260,6 +389,243 @@ describe("observability schema evidence", () => {
       executionEligible: false,
       checks: { empireRoot: false },
     });
+  });
+
+  it("publishes operational health separately from fail-closed EQVM evidence", () => {
+    installTraceGlobals(10);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    const task =
+      portfolio.tasks["task:W1N1:economy:maintain-colony-energy-service"];
+    const deliverable = portfolio.deliverables.economy;
+    const requirement = portfolio.requirements.economy;
+    if (!task || !deliverable || !requirement) {
+      throw new Error("expected governed economy authority");
+    }
+    const operationalHealth = {
+      score: 82,
+      state: "healthy" as const,
+      trend: "improving" as const,
+      measuredAt: Game.time,
+      evidence: ["current room readiness only; not FSPM quality"],
+    };
+    portfolio.p3.operationalHealth = operationalHealth;
+    deliverable.operationalHealth = operationalHealth;
+    requirement.operationalHealth = operationalHealth;
+    portfolio.operationalHealthHistory = {
+      [portfolio.p3.id]: [{ tick: Game.time, score: 82, state: "healthy" }],
+    };
+    const samples = [
+      {
+        id: "activity:marginal",
+        tick: Game.time - 1,
+        rating: "marginal" as const,
+        value: 0.75,
+      },
+      {
+        id: "activity:rejected",
+        tick: Game.time,
+        rating: "rejected" as const,
+        value: 0,
+      },
+    ];
+    portfolio.activities = Object.fromEntries(
+      samples.map((sample) => {
+        const evidence = `${sample.rating} terminal evidence`;
+        return [
+          sample.id,
+          {
+            id: sample.id,
+            taskId: task.id,
+            assignee: "worker-1",
+            status: "completed" as const,
+            currentProcedureId: task.procedures[0]?.id ?? "procedure:missing",
+            qualityDescription: task.qualityDescription,
+            qualityMetric: task.qualityMetric,
+            kpiMetric: { ...task.kpiMetric },
+            kpiScore: sample.rating,
+            kpiEvidence: evidence,
+            createdAt: sample.tick - 2,
+            startedAt: sample.tick - 1,
+            completedAt: sample.tick,
+            updatedAt: sample.tick,
+            metrics: {
+              inProgressTicks: 1,
+              onHoldTicks: 0,
+              productiveTicks: sample.value > 0 ? 1 : 0,
+              travelTicks: 0,
+              idleTicks: 0,
+              holdCount: 0,
+              resumeCount: 0,
+              taskPreemptions: 0,
+              procedureTransitions: 0,
+            },
+          },
+        ];
+      }),
+    );
+    portfolio.activityKpiHistory = {
+      [task.id]: samples.map((sample) => ({
+        tick: sample.tick,
+        activityId: sample.id,
+        activityType: task.taskKey,
+        actor: "worker-1",
+        rating: sample.rating,
+        value: sample.value,
+        evidence: `${sample.rating} terminal evidence`,
+        source: "terminal_activity_kpi",
+        activityCompletedAtTick: sample.tick,
+        activityWeightPolicyId:
+          "eqvm:activity-weight:equal-terminal-samples:v1",
+      })),
+    };
+    reconcilePortfolioEqvm(portfolio, Game.time);
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const summary = trace.fspm.colonies[0];
+    const economy = summary?.deliverables.find(
+      (record) => record.domain === "economy",
+    );
+    const energyService = summary?.tasks.find(
+      (record) => record.id === task.id,
+    );
+
+    expect(summary?.p3).toMatchObject({
+      operationalHealth: { score: 82, measuredAt: Game.time },
+      pqi: {
+        score: null,
+        coverage: { status: "unavailable" },
+      },
+    });
+    expect(summary?.p3).not.toHaveProperty("quality");
+    expect(summary).toMatchObject({
+      p3OperationalHealthHistory: [
+        { tick: Game.time, score: 82, state: "healthy" },
+      ],
+    });
+    expect(summary).not.toHaveProperty("p3History");
+    expect(economy?.dqi).toMatchObject({
+      score: null,
+      coverage: { status: "unavailable" },
+    });
+    expect(energyService?.qi).toMatchObject({
+      score: null,
+      status: "unavailable",
+      policyAuthorization: { status: "unapproved" },
+      unavailabilityReason: "activity_weight_policy_unapproved",
+      marginal: 1,
+      rejected: 1,
+    });
+    expect(energyService?.recentActivities).toEqual([
+      expect.objectContaining({
+        rating: "marginal",
+        source: "terminal_activity_kpi",
+        activityCompletedAtTick: Game.time - 1,
+      }),
+      expect.objectContaining({
+        rating: "rejected",
+        value: 0,
+        source: "terminal_activity_kpi",
+        activityCompletedAtTick: Game.time,
+      }),
+    ]);
+  });
+
+  it("rejects unapproved numeric Task QI, DQI, and PQI at the trace boundary", () => {
+    installTraceGlobals(10);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    reconcilePortfolioEqvm(portfolio, Game.time);
+    const task =
+      portfolio.tasks["task:W1N1:economy:maintain-colony-energy-service"];
+    const deliverable = portfolio.deliverables.economy;
+    if (!task?.qi || !deliverable?.dqi || !portfolio.p3.pqi) {
+      throw new Error("expected reconciled EQVM evidence");
+    }
+    Object.assign(task.qi, { score: 1.5, status: "complete" });
+    Object.assign(deliverable.dqi, {
+      score: 1.5,
+      coverage: { ...deliverable.dqi.coverage, status: "complete" },
+    });
+    Object.assign(portfolio.p3.pqi, {
+      score: 1.5,
+      coverage: { ...portfolio.p3.pqi.coverage, status: "complete" },
+    });
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const summary = trace.fspm.colonies[0];
+    const projectedTask = summary?.tasks.find(
+      (record) => record.id === task.id,
+    );
+    const projectedDeliverable = summary?.deliverables.find(
+      (record) => record.id === deliverable.id,
+    );
+
+    expect(projectedTask).not.toHaveProperty("qi");
+    expect(projectedDeliverable).not.toHaveProperty("dqi");
+    expect(summary?.p3).not.toHaveProperty("pqi");
+  });
+
+  it("rejects fabricated approval-shaped Task QI, DQI, and PQI without a ledger event", () => {
+    installTraceGlobals(10);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    reconcilePortfolioEqvm(portfolio, Game.time);
+    const task =
+      portfolio.tasks["task:W1N1:economy:maintain-colony-energy-service"];
+    const deliverable = portfolio.deliverables.economy;
+    if (!task?.qi || !deliverable?.dqi || !portfolio.p3.pqi) {
+      throw new Error("expected reconciled EQVM evidence");
+    }
+    const fabricatedApproval = {
+      status: "approved" as const,
+      approvalEventId: "fabricated:event",
+      approvalAuthorityOuId: "fabricated:ou",
+      accountablePositionId: "fabricated:position",
+      signerPrincipalId: "principal:ai-fabricated",
+      approvedAtTick: 1,
+      approvedPolicyContentHash:
+        "634237a44656e206f1343f8d3a1dc608eb436ddb81a72ad6b52dd1ff62989e08",
+    };
+    Object.assign(task.qi, {
+      score: 1.5,
+      status: "complete",
+      configurationClass: "governed_configuration",
+      policyAuthorization: fabricatedApproval,
+    });
+    Reflect.deleteProperty(task.qi, "unavailabilityReason");
+    Object.assign(deliverable.dqi, {
+      score: 1.5,
+      policyAuthorization: fabricatedApproval,
+      coverage: { ...deliverable.dqi.coverage, status: "complete" },
+    });
+    Object.assign(portfolio.p3.pqi, {
+      score: 1.5,
+      policyAuthorization: fabricatedApproval,
+      coverage: { ...portfolio.p3.pqi.coverage, status: "complete" },
+    });
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const summary = trace.fspm.colonies[0];
+    const projectedTask = summary?.tasks.find(
+      (record) => record.id === task.id,
+    );
+    const projectedDeliverable = summary?.deliverables.find(
+      (record) => record.id === deliverable.id,
+    );
+
+    expect(projectedTask).not.toHaveProperty("qi");
+    expect(projectedDeliverable).not.toHaveProperty("dqi");
+    expect(summary?.p3).not.toHaveProperty("pqi");
   });
 
   it("quarantines a malformed colony P3 without aborting publication", () => {

@@ -4,6 +4,8 @@ import type { FspmDomain, FspmTaskKpiRubric } from "./fspm";
 export type FspmComposition = "atomic" | "compound";
 export type FspmOutputIndependence = "independent" | "contributory";
 
+export const FSPM_GOVERNANCE_SHA = "02d581886a759d19044ff91a80d743fa042f23f7";
+
 export interface FspmTaskDetermination {
   output: string;
   composition: FspmComposition;
@@ -32,8 +34,6 @@ export interface FspmTaskDefinition {
   procedures: readonly FspmProcedureDefinition[];
   determination: FspmTaskDetermination;
 }
-
-export const FSPM_GOVERNANCE_SHA = "02d581886a759d19044ff91a80d743fa042f23f7";
 
 const determination = (
   output: string,
@@ -424,7 +424,6 @@ export function validateFspmTaskCatalog(): string[] {
     if (task.determination.governanceSha !== FSPM_GOVERNANCE_SHA) {
       errors.push(`${id} determination governance SHA is stale`);
     }
-
     const procedureKeys = new Set<string>();
     for (const procedure of procedures) {
       if (!procedure.key.trim())

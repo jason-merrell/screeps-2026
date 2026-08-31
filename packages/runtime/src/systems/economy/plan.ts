@@ -2,23 +2,65 @@ import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
 import { compareConstructionTargets } from "../../planning/construction-priority";
 import type { FspmActivityRecord } from "../../planning/fspm";
+import { isDevelopmentEvidenceStructure } from "../../planning/room-development";
+import { usableRoomPlanProjection } from "../../planning/room-plan-projection";
 import type { WorldSnapshot } from "../../runtime/context";
 import { capabilitiesOf } from "../../workforce/capabilities";
+import {
+  creepMeetsSourceProducerBody,
+  creepRoadBaggageParts,
+  creepRoadCarryCapacity,
+  creepSourceProducerSurplus,
+  sourceProducerBodyForCapacity,
+} from "../spawning/workforce";
 import {
   plannedSourceRouteLength,
   requiredCarryParts,
   reserveTransportCapacity,
   shouldActivateSourceBuffers,
 } from "./logistics";
-import { assignRecoveryHarvesters, assignSourceProducers } from "./source-allocation";
+import {
+  assessMatureLinkTopology,
+  matureSourceLinkRouting,
+} from "./mature-energy";
+import { infrastructureRepairThreshold } from "./repair-policy";
+import {
+  assignRecoveryHarvesters,
+  assignSourceProducers,
+} from "./source-allocation";
 
 const PEACETIME_TOWER_RESERVE = 400;
+const STRATEGIC_REPAIR_TYPES: ReadonlySet<StructureConstant> = new Set([
+  "spawn",
+  "extension",
+  "tower",
+  "storage",
+  "terminal",
+  "link",
+  "lab",
+  "factory",
+  "observer",
+  "powerSpawn",
+  "nuker",
+  "extractor",
+]);
+
+function operationalRoomPlan(roomName: string) {
+  const projection = usableRoomPlanProjection(
+    Memory.colonies[roomName],
+    roomName,
+  );
+  return projection.usable ? projection.plan : undefined;
+}
 
 export type EnergyMode = "collect" | "deliver";
+export type EnergyDeliveryService = "reproduction" | "tower";
+export type InfrastructureWorkService = "build" | "repair";
 
 interface BufferedSource {
   source: Source;
   container: StructureContainer;
+  link?: StructureLink;
   sourceIndex: number;
 }
 
@@ -29,6 +71,7 @@ interface ActivityWithTarget extends FspmActivityRecord {
 declare global {
   interface CreepMemory {
     energyMode?: EnergyMode;
+    matureEnergyPurpose?: "controller-link";
   }
 }
 
@@ -47,7 +90,11 @@ export function sourceBufferLogisticsActive(
   workforceCount: number,
   sourceCount: number,
 ): boolean {
-  return shouldActivateSourceBuffers(controllerLevel, workforceCount, sourceCount);
+  return shouldActivateSourceBuffers(
+    controllerLevel,
+    workforceCount,
+    sourceCount,
+  );
 }
 
 export function shouldDeferRoutineBootstrapRepair(
@@ -58,6 +105,20 @@ export function shouldDeferRoutineBootstrapRepair(
     controllerLevel === 1 &&
     (structureType === "road" || structureType === "container")
   );
+}
+
+/** Defensive continuity outranks reproduction only while a visible threat exists. */
+export function energyDeliveryServiceOrder(
+  underAttack: boolean,
+): readonly EnergyDeliveryService[] {
+  return underAttack ? ["tower", "reproduction"] : ["reproduction", "tower"];
+}
+
+/** Active defense repairs outrank new construction; peacetime preserves growth. */
+export function infrastructureWorkServiceOrder(
+  underAttack: boolean,
+): readonly InfrastructureWorkService[] {
+  return underAttack ? ["repair", "build"] : ["build", "repair"];
 }
 
 function energyTrace(
@@ -109,38 +170,140 @@ function defenseTrace(roomName: string) {
   });
 }
 
-function needsBootstrapRepair(
+function needsInfrastructureRepair(
   structure: AnyStructure,
   controllerLevel: number | undefined,
+  underAttack: boolean,
 ): boolean {
   if (!("hits" in structure) || !("hitsMax" in structure)) return false;
-  if (shouldDeferRoutineBootstrapRepair(controllerLevel, structure.structureType)) return false;
-
-  if (structure.structureType === STRUCTURE_RAMPART) {
-    return structure.hits < Math.min(10_000, structure.hitsMax);
-  }
-
+  if (
+    shouldDeferRoutineBootstrapRepair(controllerLevel, structure.structureType)
+  )
+    return false;
   return (
-    [
-      STRUCTURE_SPAWN,
-      STRUCTURE_EXTENSION,
-      STRUCTURE_TOWER,
-      STRUCTURE_CONTAINER,
-      STRUCTURE_ROAD,
-    ] as StructureConstant[]
-  ).includes(structure.structureType) && structure.hits < structure.hitsMax * 0.5;
+    structure.hits <
+    infrastructureRepairThreshold(
+      structure.structureType,
+      structure.hitsMax,
+      controllerLevel,
+      underAttack,
+    )
+  );
 }
 
-function towerNeedsReserve(tower: StructureTower, underAttack: boolean): boolean {
+export interface InfrastructureRepairSelectionContext {
+  readonly controllerLevel: number | undefined;
+  readonly underAttack: boolean;
+  readonly perimeter: readonly { readonly x: number; readonly y: number }[];
+  readonly hostiles: readonly {
+    readonly pos: { readonly x: number; readonly y: number };
+  }[];
+  readonly origin: { readonly x: number; readonly y: number };
+}
+
+interface ScoredRepairTarget {
+  readonly structure: AnyStructure;
+  readonly threatClass: number;
+  readonly targetRatio: number;
+  readonly hostileRange: number;
+  readonly workerRange: number;
+}
+
+function chebyshevRange(
+  left: { readonly x: number; readonly y: number },
+  right: { readonly x: number; readonly y: number },
+): number {
+  return Math.max(Math.abs(left.x - right.x), Math.abs(left.y - right.y));
+}
+
+/**
+ * Select owned/neutral repair evidence deterministically. During an attack the
+ * planned perimeter is restored first, strategic assets second, and routine
+ * roads/containers last; condition and hostile exposure break ties before
+ * worker convenience.
+ */
+export function selectInfrastructureRepairTarget(
+  structures: readonly AnyStructure[],
+  context: InfrastructureRepairSelectionContext,
+): AnyStructure | null {
+  const perimeter = new Set(
+    context.perimeter.map((point) => `${point.x}:${point.y}`),
+  );
+  const scored = structures.flatMap((structure): ScoredRepairTarget[] => {
+    if (
+      !isDevelopmentEvidenceStructure(structure) ||
+      !needsInfrastructureRepair(
+        structure,
+        context.controllerLevel,
+        context.underAttack,
+      ) ||
+      !("hits" in structure) ||
+      !("hitsMax" in structure)
+    ) {
+      return [];
+    }
+    const target = infrastructureRepairThreshold(
+      structure.structureType,
+      structure.hitsMax,
+      context.controllerLevel,
+      context.underAttack,
+    );
+    if (target <= 0) return [];
+    const onPerimeter =
+      structure.structureType === "rampart" &&
+      perimeter.has(`${structure.pos.x}:${structure.pos.y}`);
+    const routine =
+      structure.structureType === "road" ||
+      structure.structureType === "container";
+    const strategic = STRATEGIC_REPAIR_TYPES.has(structure.structureType);
+    const threatClass = onPerimeter ? 0 : strategic ? 1 : routine ? 3 : 2;
+    const hostileRange = context.hostiles.reduce(
+      (nearest, hostile) =>
+        Math.min(nearest, chebyshevRange(structure.pos, hostile.pos)),
+      Number.POSITIVE_INFINITY,
+    );
+    return [
+      {
+        structure,
+        threatClass,
+        targetRatio: structure.hits / target,
+        hostileRange,
+        workerRange: chebyshevRange(context.origin, structure.pos),
+      },
+    ];
+  });
+
+  scored.sort((left, right) => {
+    if (context.underAttack) {
+      const threatPriority = left.threatClass - right.threatClass;
+      if (threatPriority !== 0) return threatPriority;
+    }
+    return (
+      left.targetRatio - right.targetRatio ||
+      left.threatClass - right.threatClass ||
+      left.hostileRange - right.hostileRange ||
+      left.workerRange - right.workerRange ||
+      left.structure.id.localeCompare(right.structure.id)
+    );
+  });
+  return scored[0]?.structure ?? null;
+}
+
+function towerNeedsReserve(
+  tower: StructureTower,
+  underAttack: boolean,
+): boolean {
   const capacity = tower.store.getCapacity(RESOURCE_ENERGY);
   if (capacity === null) return false;
 
-  const target = underAttack ? capacity : Math.min(PEACETIME_TOWER_RESERVE, capacity);
+  const target = underAttack
+    ? capacity
+    : Math.min(PEACETIME_TOWER_RESERVE, capacity);
   return tower.store.getUsedCapacity(RESOURCE_ENERGY) < target;
 }
 
 function bufferedSources(room: Room): BufferedSource[] {
-  const plan = Memory.colonies[room.name]?.roomPlan;
+  const plan = operationalRoomPlan(room.name);
   if (!plan) return [];
 
   const controllerLevel = room.controller?.level ?? 0;
@@ -155,6 +318,12 @@ function bufferedSources(room: Room): BufferedSource[] {
     return [];
   }
 
+  const sourceLinkBySource = new Map(
+    matureSourceLinkRouting(room, plan)
+      .filter((status) => status.operational)
+      .map((status) => [status.sourceId, status.link] as const),
+  );
+
   const buffered: BufferedSource[] = [];
   for (const [sourceIndex, anchor] of plan.anchors.sources.entries()) {
     const source = Game.getObjectById(anchor.sourceId as Id<Source>);
@@ -166,12 +335,73 @@ function bufferedSources(room: Room): BufferedSource[] {
         (structure): structure is StructureContainer =>
           structure.structureType === STRUCTURE_CONTAINER,
       );
-    if (container) buffered.push({ source, container, sourceIndex });
+    if (container) {
+      const link = sourceLinkBySource.get(anchor.sourceId);
+      buffered.push({
+        source,
+        container,
+        sourceIndex,
+        ...(link ? { link } : {}),
+      });
+    }
   }
   return buffered;
 }
 
-function preferredProducerSourceId(roomName: string, creepName: string): string | undefined {
+function builtControllerLink(room: Room): StructureLink | undefined {
+  const plan = operationalRoomPlan(room.name);
+  if (!plan) return undefined;
+  const role = assessMatureLinkTopology(plan).roles?.controllerPlanId;
+  if (!role) return undefined;
+  const planned = plan.structures.find(
+    (structure) => structure.id === role && structure.structureType === "link",
+  );
+  if (!planned) return undefined;
+  const links = room
+    .lookForAt(LOOK_STRUCTURES, planned.x, planned.y)
+    .filter(
+      (structure): structure is StructureLink =>
+        structure.structureType === STRUCTURE_LINK && structure.my,
+    );
+  return links.length === 1 ? links[0] : undefined;
+}
+
+function controllerLinkCollectors(
+  world: WorldSnapshot,
+  producers: ReadonlyMap<string, BufferedSource>,
+  transporters: ReadonlyMap<string, BufferedSource>,
+  recovery: ReadonlyMap<string, Source>,
+): Map<string, StructureLink> {
+  const assignments = new Map<string, StructureLink>();
+  for (const room of world.rooms) {
+    const link = builtControllerLink(room);
+    if (!link || link.store.getUsedCapacity(RESOURCE_ENERGY) <= 0) continue;
+    const candidate = world.creeps
+      .filter(
+        (creep) =>
+          !creep.spawning &&
+          creep.room.name === room.name &&
+          !producers.has(creep.name) &&
+          !transporters.has(creep.name) &&
+          !recovery.has(creep.name) &&
+          creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0 &&
+          creep.getActiveBodyparts(WORK) > 0 &&
+          creep.getActiveBodyparts(CARRY) > 0,
+      )
+      .sort(
+        (left, right) =>
+          left.pos.getRangeTo(link) - right.pos.getRangeTo(link) ||
+          left.name.localeCompare(right.name),
+      )[0];
+    if (candidate) assignments.set(candidate.name, link);
+  }
+  return assignments;
+}
+
+function preferredProducerSourceId(
+  roomName: string,
+  creepName: string,
+): string | undefined {
   const portfolio = Memory.colonies[roomName]?.fspm;
   if (!portfolio?.activities) return undefined;
 
@@ -183,9 +413,10 @@ function preferredProducerSourceId(roomName: string, creepName: string): string 
         candidate.taskId === taskId &&
         candidate.status !== "completed",
     )
-    .sort((left, right) => right.updatedAt - left.updatedAt || right.createdAt - left.createdAt)[0] as
-    | ActivityWithTarget
-    | undefined;
+    .sort(
+      (left, right) =>
+        right.updatedAt - left.updatedAt || right.createdAt - left.createdAt,
+    )[0] as ActivityWithTarget | undefined;
 
   return activity?.currentTargetKey;
 }
@@ -199,23 +430,36 @@ function producerAssignments(
   for (const room of world.rooms) {
     const buffered = bufferedByRoom.get(room.name) ?? [];
     if (buffered.length === 0) continue;
+    const producerBody = sourceProducerBodyForCapacity(
+      room.energyCapacityAvailable,
+    );
 
     const candidates = world.creeps
       .filter((creep) => {
         if (creep.spawning || creep.room.name !== room.name) return false;
         const capabilities = capabilitiesOf(creep);
-        return capabilities.has("harvest") && capabilities.has("haul");
+        return (
+          capabilities.has("harvest") &&
+          capabilities.has("haul") &&
+          creepMeetsSourceProducerBody(creep, producerBody)
+        );
       })
       .map((creep) => ({
         name: creep.name,
+        surplusParts: creepSourceProducerSurplus(creep, producerBody),
         work: creep.getActiveBodyparts(WORK),
         preferredSourceId: preferredProducerSourceId(room.name, creep.name),
         rangeBySource: Object.fromEntries(
-          buffered.map((node) => [node.source.id, creep.pos.getRangeTo(node.source)]),
+          buffered.map((node) => [
+            node.source.id,
+            creep.pos.getRangeTo(node.source),
+          ]),
         ),
       }));
 
-    const nodeBySourceId = new Map(buffered.map((node) => [node.source.id, node]));
+    const nodeBySourceId = new Map(
+      buffered.map((node) => [node.source.id, node]),
+    );
     const selected = assignSourceProducers(
       buffered.map((node) => node.source.id),
       candidates,
@@ -238,41 +482,58 @@ function transporterAssignments(
   const assignments = new Map<string, BufferedSource>();
 
   for (const room of world.rooms) {
-    const buffered = bufferedByRoom.get(room.name) ?? [];
+    const buffered = (bufferedByRoom.get(room.name) ?? []).filter(
+      (node) => !node.link,
+    );
     if (buffered.length === 0) continue;
 
-    const plan = Memory.colonies[room.name]?.roomPlan;
+    const plan = operationalRoomPlan(room.name);
     if (!plan) continue;
 
     const candidates = world.creeps
       .filter((creep) => {
-        if (creep.spawning || creep.room.name !== room.name || producers.has(creep.name)) {
+        if (
+          creep.spawning ||
+          creep.room.name !== room.name ||
+          producers.has(creep.name)
+        ) {
           return false;
         }
-        return capabilitiesOf(creep).has("haul");
+        return (
+          capabilitiesOf(creep).has("haul") && creepRoadCarryCapacity(creep) > 0
+        );
       })
       .sort((a, b) => a.name.localeCompare(b.name));
 
     const producerByContainer = new Map(
-      [...producers.entries()].map(([creepName, node]) => [node.container.id, Game.creeps[creepName]]),
+      [...producers.entries()].map(([creepName, node]) => [
+        node.container.id,
+        Game.creeps[creepName],
+      ]),
     );
     const reservations = reserveTransportCapacity(
       buffered.flatMap((node) => {
         const producer = producerByContainer.get(node.container.id);
         if (!producer) return [];
-        return [{
-          id: node.container.id,
-          requiredCarry: requiredCarryParts(
-            plannedSourceRouteLength(plan, node.sourceIndex),
-            producer.getActiveBodyparts(WORK) * HARVEST_POWER,
-          ),
-        }];
+        return [
+          {
+            id: node.container.id,
+            requiredCarry: requiredCarryParts(
+              plannedSourceRouteLength(plan, node.sourceIndex),
+              producer.getActiveBodyparts(WORK) * HARVEST_POWER,
+            ),
+          },
+        ];
       }),
       candidates.map((creep) => ({
+        baggage: creepRoadBaggageParts(creep),
         name: creep.name,
-        carry: creep.getActiveBodyparts(CARRY),
+        carry: creepRoadCarryCapacity(creep),
         rangeByNode: Object.fromEntries(
-          buffered.map((node) => [node.container.id, creep.pos.getRangeTo(node.container)]),
+          buffered.map((node) => [
+            node.container.id,
+            creep.pos.getRangeTo(node.container),
+          ]),
         ),
       })),
     );
@@ -300,7 +561,9 @@ function recoveryAssignments(
     const buffered = bufferedByRoom.get(room.name) ?? [];
     if (
       buffered.length === 0 ||
-      buffered.some((node) => node.container.store.getUsedCapacity(RESOURCE_ENERGY) > 0)
+      buffered.some(
+        (node) => node.container.store.getUsedCapacity(RESOURCE_ENERGY) > 0,
+      )
     ) {
       continue;
     }
@@ -312,31 +575,43 @@ function recoveryAssignments(
       if (!creep) continue;
       assignedProducerWork.set(
         node.source.id,
-        (assignedProducerWork.get(node.source.id) ?? 0) + creep.getActiveBodyparts(WORK),
+        (assignedProducerWork.get(node.source.id) ?? 0) +
+          creep.getActiveBodyparts(WORK),
       );
     }
 
     const candidates = world.creeps
       .filter((creep) => {
-        if (creep.spawning || creep.room.name !== room.name || producers.has(creep.name)) return false;
+        if (
+          creep.spawning ||
+          creep.room.name !== room.name ||
+          producers.has(creep.name)
+        )
+          return false;
         const capabilities = capabilitiesOf(creep);
         const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
         const capacity = creep.store.getCapacity(RESOURCE_ENERGY) ?? energy;
         return (
           capabilities.has("harvest") &&
           capabilities.has("haul") &&
-          resolveEnergyMode(creep.memory.energyMode, energy, capacity) === "collect"
+          resolveEnergyMode(creep.memory.energyMode, energy, capacity) ===
+            "collect"
         );
       })
       .map((creep) => ({
         name: creep.name,
         work: creep.getActiveBodyparts(WORK),
         rangeBySource: Object.fromEntries(
-          buffered.map((node) => [node.source.id, creep.pos.getRangeTo(node.source)]),
+          buffered.map((node) => [
+            node.source.id,
+            creep.pos.getRangeTo(node.source),
+          ]),
         ),
       }));
 
-    const sourceById = new Map(buffered.map((node) => [node.source.id, node.source]));
+    const sourceById = new Map(
+      buffered.map((node) => [node.source.id, node.source]),
+    );
     const selected = assignRecoveryHarvesters(
       buffered.map((node) => ({
         id: node.source.id,
@@ -362,6 +637,12 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
   const producers = producerAssignments(world, bufferedByRoom);
   const transporters = transporterAssignments(world, bufferedByRoom, producers);
   const recovery = recoveryAssignments(world, bufferedByRoom, producers);
+  const controllerCollectors = controllerLinkCollectors(
+    world,
+    producers,
+    transporters,
+    recovery,
+  );
 
   for (const creep of world.creeps) {
     if (creep.spawning) continue;
@@ -369,12 +650,20 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
     const roomName = creep.room.name;
     const spatial = world.spatial.byRoom[roomName];
     if (!spatial) continue;
+    const underAttack = spatial.hostiles.length > 0;
 
     const capabilities = capabilitiesOf(creep);
     const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
     const capacity = creep.store.getCapacity(RESOURCE_ENERGY) ?? energy;
-    let energyMode = resolveEnergyMode(creep.memory.energyMode, energy, capacity);
+    let energyMode = resolveEnergyMode(
+      creep.memory.energyMode,
+      energy,
+      capacity,
+    );
     creep.memory.energyMode = energyMode;
+    if (creep.memory.matureEnergyPurpose === "controller-link" && energy <= 0) {
+      delete creep.memory.matureEnergyPurpose;
+    }
 
     const roomBuffers = bufferedByRoom.get(roomName) ?? [];
     const producer = producers.get(creep.name);
@@ -397,15 +686,54 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
         continue;
       }
 
-      if (energy > 0 && producer.container.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+      const producerBuffer =
+        producer.link &&
+        producer.link.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+          ? producer.link
+          : producer.container;
+      if (
+        energy > 0 &&
+        producerBuffer.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+      ) {
         intents.push({
           type: "transfer",
           creepName: creep.name,
-          targetId: producer.container.id,
+          targetId: producerBuffer.id,
           resource: RESOURCE_ENERGY,
           priority: 1075,
-          reason: "buffer completed producer load at the source edge",
+          reason:
+            producerBuffer.structureType === STRUCTURE_LINK
+              ? "inject completed producer load into the governed source link"
+              : "buffer completed producer load at the source edge",
           trace: energyTrace(roomName, "buffer-source-energy"),
+        });
+        continue;
+      }
+    }
+
+    const controllerCollector = controllerCollectors.get(creep.name);
+    if (
+      controllerCollector &&
+      energyMode === "collect" &&
+      energy <= 0 &&
+      capacity > 0
+    ) {
+      const amount = Math.min(
+        capacity,
+        controllerCollector.store.getUsedCapacity(RESOURCE_ENERGY),
+      );
+      if (amount > 0) {
+        creep.memory.matureEnergyPurpose = "controller-link";
+        intents.push({
+          type: "withdraw",
+          creepName: creep.name,
+          targetId: controllerCollector.id,
+          resource: RESOURCE_ENERGY,
+          amount,
+          priority: 925,
+          reason:
+            "collect the governed controller-link load for local controller service",
+          trace: energyTrace(roomName, "withdraw-buffered-energy"),
         });
         continue;
       }
@@ -434,7 +762,8 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
       const recoverySource = recovery.get(creep.name);
       if (surplusTransport) {
         const spawn = spatial.myStructures.find(
-          (structure): structure is StructureSpawn => structure.structureType === STRUCTURE_SPAWN,
+          (structure): structure is StructureSpawn =>
+            structure.structureType === STRUCTURE_SPAWN,
         );
         if (spawn) {
           intents.push({
@@ -456,7 +785,7 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
           creepName: creep.name,
           targetId: assigned.container.id,
           range: 1,
-          priority: 1025,
+          priority: 150,
           reason: "stage at assigned source buffer while awaiting production",
           trace: energyTrace(roomName, "stage-source-transport"),
         });
@@ -506,9 +835,25 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
             structure.structureType === STRUCTURE_EXTENSION) &&
           structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0,
       );
-      const reproductionTarget = world.spatial.nearest(creep.pos, reproductionTargets);
+      const reproductionTarget = world.spatial.nearest(
+        creep.pos,
+        reproductionTargets,
+      );
 
-      if (reproductionTarget) {
+      const towers = spatial.myStructures.filter(
+        (structure): structure is StructureTower =>
+          structure.structureType === STRUCTURE_TOWER &&
+          towerNeedsReserve(structure as StructureTower, underAttack),
+      );
+      const tower = world.spatial.nearest(creep.pos, towers);
+      const selectedService = energyDeliveryServiceOrder(underAttack).find(
+        (service) =>
+          service === "tower"
+            ? tower !== undefined
+            : reproductionTarget !== undefined,
+      );
+
+      if (selectedService === "reproduction" && reproductionTarget) {
         intents.push({
           type: "transfer",
           creepName: creep.name,
@@ -521,21 +866,13 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
         continue;
       }
 
-      const underAttack = spatial.hostiles.length > 0;
-      const towers = spatial.myStructures.filter(
-        (structure): structure is StructureTower =>
-          structure.structureType === STRUCTURE_TOWER &&
-          towerNeedsReserve(structure as StructureTower, underAttack),
-      );
-      const tower = world.spatial.nearest(creep.pos, towers);
-
-      if (tower) {
+      if (selectedService === "tower" && tower) {
         intents.push({
           type: "transfer",
           creepName: creep.name,
           targetId: tower.id,
           resource: RESOURCE_ENERGY,
-          priority: underAttack ? 925 : 800,
+          priority: underAttack ? 1_100 : 800,
           reason: underAttack
             ? "fill defensive tower during active threat"
             : "maintain bounded peacetime tower reserve",
@@ -545,55 +882,88 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
       }
     }
 
-    if (energyMode === "deliver" && energy > 0 && capabilities.has("build")) {
-      const roomPlan = Memory.colonies[roomName]?.roomPlan;
-      const site = spatial.constructionSites
-        .map((candidate) => ({
-          site: candidate,
-          target: {
-            id: candidate.id,
-            x: candidate.pos.x,
-            y: candidate.pos.y,
-            structureType: candidate.structureType,
-            range: creep.pos.getRangeTo(candidate),
-          },
-        }))
-        .sort((left, right) => compareConstructionTargets(roomPlan, left.target, right.target))[0]
-        ?.site;
-      if (site) {
+    if (energyMode === "deliver" && energy > 0) {
+      if (
+        creep.memory.matureEnergyPurpose === "controller-link" &&
+        capabilities.has("upgrade") &&
+        creep.room.controller?.my
+      ) {
+        intents.push({
+          type: "upgrade",
+          creepName: creep.name,
+          controllerId: creep.room.controller.id,
+          priority: 750,
+          reason:
+            "convert the governed controller-link load into controller progress",
+          trace: controllerTrace(roomName),
+        });
+        continue;
+      }
+
+      const roomPlan = operationalRoomPlan(roomName);
+      const site = capabilities.has("build")
+        ? spatial.constructionSites
+            .map((candidate) => ({
+              site: candidate,
+              target: {
+                id: candidate.id,
+                x: candidate.pos.x,
+                y: candidate.pos.y,
+                structureType: candidate.structureType,
+                range: creep.pos.getRangeTo(candidate),
+              },
+            }))
+            .sort((left, right) =>
+              compareConstructionTargets(roomPlan, left.target, right.target, {
+                underAttack,
+              }),
+            )[0]?.site
+        : undefined;
+      const controllerLevel = creep.room.controller?.level;
+      const repairTarget = capabilities.has("repair")
+        ? selectInfrastructureRepairTarget(spatial.structures, {
+            controllerLevel,
+            underAttack,
+            perimeter: roomPlan?.defense.perimeter ?? [],
+            hostiles: spatial.hostiles,
+            origin: creep.pos,
+          })
+        : null;
+      const selectedService = infrastructureWorkServiceOrder(underAttack).find(
+        (service) =>
+          service === "repair" ? repairTarget !== null : site !== undefined,
+      );
+
+      if (selectedService === "repair" && repairTarget) {
+        intents.push({
+          type: "repair",
+          creepName: creep.name,
+          targetId: repairTarget.id,
+          priority: underAttack ? 900 : 500,
+          reason: underAttack
+            ? "restore the defensive envelope before expanding infrastructure"
+            : "spend delivery-cycle surplus restoring governed colony infrastructure",
+          trace: constructionTrace(
+            roomName,
+            "maintain-infrastructure-condition",
+            "repair-infrastructure",
+          ),
+        });
+        continue;
+      }
+
+      if (selectedService === "build" && site) {
         intents.push({
           type: "build",
           creepName: creep.name,
           targetId: site.id,
           priority: 700,
-          reason: "spend delivery-cycle surplus on the highest-value planned infrastructure",
+          reason:
+            "spend delivery-cycle surplus on the highest-value planned infrastructure",
           trace: constructionTrace(
             roomName,
             "realize-planned-infrastructure",
             "build-planned-infrastructure",
-          ),
-        });
-        continue;
-      }
-    }
-
-    if (energyMode === "deliver" && energy > 0 && capabilities.has("repair")) {
-      const controllerLevel = creep.room.controller?.level;
-      const repairTargets = spatial.structures.filter((structure) =>
-        needsBootstrapRepair(structure, controllerLevel),
-      );
-      const repairTarget = world.spatial.nearest(creep.pos, repairTargets);
-      if (repairTarget) {
-        intents.push({
-          type: "repair",
-          creepName: creep.name,
-          targetId: repairTarget.id,
-          priority: 500,
-          reason: "spend delivery-cycle surplus restoring bootstrap infrastructure",
-          trace: constructionTrace(
-            roomName,
-            "maintain-infrastructure-condition",
-            "repair-infrastructure",
           ),
         });
         continue;
@@ -611,7 +981,8 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
         creepName: creep.name,
         controllerId: creep.room.controller.id,
         priority: 100,
-        reason: "finish delivery cycle by investing surplus energy in controller progression",
+        reason:
+          "finish delivery cycle by investing surplus energy in controller progression",
         trace: controllerTrace(roomName),
       });
       continue;
@@ -619,7 +990,8 @@ export function planEconomy(world: WorldSnapshot): Intent[] {
 
     if (surplusTransport) {
       const spawn = spatial.myStructures.find(
-        (structure): structure is StructureSpawn => structure.structureType === STRUCTURE_SPAWN,
+        (structure): structure is StructureSpawn =>
+          structure.structureType === STRUCTURE_SPAWN,
       );
       if (spawn) {
         intents.push({

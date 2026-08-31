@@ -2,7 +2,8 @@ export type Intent =
   | CreepIntent
   | SpawnIntent
   | CreateConstructionSiteIntent
-  | TowerAttackIntent;
+  | TowerAttackIntent
+  | LinkTransferIntent;
 export type CreepIntent =
   | MoveIntent
   | HarvestIntent
@@ -52,14 +53,33 @@ export interface HarvestIntent extends CreepIntentBase {
 
 export interface WithdrawIntent extends CreepIntentBase {
   type: "withdraw";
-  targetId: Id<StructureContainer | Tombstone | Ruin>;
+  targetId: Id<
+    | StructureContainer
+    | StructureStorage
+    | StructureTerminal
+    | StructureLink
+    | Tombstone
+    | Ruin
+  >;
   resource: ResourceConstant;
+  /** Exact reservation used by planners that coordinate shared stores. */
+  amount?: number;
 }
 
 export interface TransferIntent extends CreepIntentBase {
   type: "transfer";
-  targetId: Id<StructureSpawn | StructureExtension | StructureTower | StructureContainer>;
+  targetId: Id<
+    | StructureSpawn
+    | StructureExtension
+    | StructureTower
+    | StructureContainer
+    | StructureStorage
+    | StructureTerminal
+    | StructureLink
+  >;
   resource: ResourceConstant;
+  /** Exact reservation used by planners that coordinate shared stores. */
+  amount?: number;
 }
 
 export interface BuildIntent extends CreepIntentBase {
@@ -96,4 +116,12 @@ export interface TowerAttackIntent extends IntentBase {
   type: "towerAttack";
   towerId: Id<StructureTower>;
   targetId: Id<Creep>;
+}
+
+export interface LinkTransferIntent extends IntentBase {
+  type: "linkTransfer";
+  linkId: Id<StructureLink>;
+  targetLinkId: Id<StructureLink>;
+  /** Required so projected sink capacity is identical to the execution intent. */
+  amount: number;
 }

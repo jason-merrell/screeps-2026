@@ -47,6 +47,120 @@ describe("Memory migration", () => {
     });
   });
 
+  it("preserves linkage but withholds epoch identity from an incomplete v8 room projection", () => {
+    Object.assign(globalThis, {
+      Memory: {
+        version: 8,
+        colonies: {
+          W1N1: {
+            roomName: "W1N1",
+            discoveredAt: 1,
+            roomPlan: {
+              planId: "plan:W1N1:construction:room-plan:v4",
+              deliverableId: "deliverable:W1N1:construction",
+              version: 4,
+              horizonRcl: 8,
+              roomName: "W1N1",
+              generatedAt: 90,
+              generatedReason: "pre-epoch projection",
+              anchors: {
+                spawn: { name: "Spawn1", x: 25, y: 25 },
+                hub: { x: 26, y: 25 },
+                controller: null,
+                sources: [],
+              },
+              reservations: [],
+              structures: [],
+              roads: [],
+              roadGraph: { nodes: [], edges: [] },
+              defense: {
+                strategy: "terrain-mincut-v1",
+                protectedTiles: [{ x: 25, y: 25 }],
+                perimeter: [{ x: 24, y: 25 }],
+              },
+            },
+          },
+        },
+        runtimeSupervisor: { version: 1, phases: {} },
+      },
+    });
+
+    migrateMemory();
+
+    expect(Memory.version).toBe(MEMORY_VERSION);
+    expect(Memory.colonies.W1N1?.roomPlan).toMatchObject({
+      planId: "plan:W1N1:construction:room-plan:v4",
+      deliverableId: "deliverable:W1N1:construction",
+    });
+    expect(Memory.colonies.W1N1?.roomPlan).not.toHaveProperty(
+      "plannerRevision",
+    );
+    expect(Memory.colonies.W1N1?.roomPlan).not.toHaveProperty(
+      "projectionRevision",
+    );
+    expect(Memory.colonies.W1N1?.roomPlan).not.toHaveProperty(
+      "projectionFingerprint",
+    );
+  });
+
+  it("migrates v9 synthetic quality without promoting it into EQVM evidence", () => {
+    activateApprovedColonyGovernance("W1N1");
+    const portfolio = ensureColonyPortfolio("W1N1");
+    const task = ensureTask("W1N1", "economy", TASK_KEY);
+    const requirement = portfolio.requirements.economy;
+    const deliverable = portfolio.deliverables.economy;
+    if (!requirement || !deliverable) throw new Error("expected authority");
+
+    const syntheticHealth = {
+      score: 100,
+      state: "healthy" as const,
+      trend: "stable" as const,
+      measuredAt: 99,
+      evidence: ["room readiness incorrectly labeled quality"],
+    };
+    portfolio.p3.quality = syntheticHealth;
+    requirement.quality = syntheticHealth;
+    deliverable.quality = syntheticHealth;
+    portfolio.qualityHistory = {
+      [portfolio.p3.id]: [{ tick: 99, score: 100, state: "healthy" as const }],
+    };
+    portfolio.activityKpiHistory = {
+      [task.id]: [
+        {
+          tick: 99,
+          activityId: "legacy-unverified",
+          activityType: task.taskKey,
+          actor: "worker-1",
+          rating: "satisfactory",
+          value: 1,
+          evidence: "legacy sample without terminal verification metadata",
+        },
+      ],
+    };
+    (task as unknown as { qi: unknown }).qi = {
+      score: 1,
+      measuredAt: 99,
+    };
+    Memory.version = 9;
+
+    migrateMemory();
+
+    expect(Memory.version).toBe(10);
+    expect(portfolio.p3.quality).toBeUndefined();
+    expect(requirement.quality).toBeUndefined();
+    expect(deliverable.quality).toBeUndefined();
+    expect(portfolio.qualityHistory).toEqual({});
+    expect(portfolio.operationalHealthHistory).toEqual({});
+    expect(portfolio.activityKpiHistory).toEqual({});
+    expect(task.qi).toBeUndefined();
+    expect(task).not.toHaveProperty("activityKpiAggregation");
+    expect(portfolio.authorityLedgerAnchors).toEqual({
+      deliverableReceipts: { count: 0, headHash: null },
+      deliverableReceiptDecisions: { count: 0, headHash: null },
+      authorityLifecycle: { count: 0, headHash: null },
+    });
+  });
+
   it("resets contaminated v4 evidence and quarantines the unapproved legacy spine", () => {
     activateApprovedColonyGovernance("W1N1");
     const task = ensureTask("W1N1", "economy", TASK_KEY);
@@ -105,7 +219,7 @@ describe("Memory migration", () => {
         },
       ],
     };
-    task.qi = {
+    (task as unknown as { qi: unknown }).qi = {
       score: 50,
       measuredAt: 99,
       ratedActivities: 1,
@@ -125,7 +239,7 @@ describe("Memory migration", () => {
     migrateMemory();
 
     expect(Memory.version).toBe(MEMORY_VERSION);
-    expect(Memory.version).toBe(8);
+    expect(Memory.version).toBe(MEMORY_VERSION);
     expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
     expect(Memory.empireFspm?.p3).toMatchObject({
       id: "portfolio:empire:operations",
@@ -185,7 +299,7 @@ describe("Memory migration", () => {
 
     migrateMemory();
 
-    expect(Memory.version).toBe(8);
+    expect(Memory.version).toBe(MEMORY_VERSION);
     expect(portfolio.activityEvents).toEqual([]);
     expect(portfolio.activityEventSequence).toBe(0);
     expect(portfolio.authorityQuarantine?.at(-1)).toMatchObject({
