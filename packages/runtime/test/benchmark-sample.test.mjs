@@ -16,7 +16,9 @@ const artifact = {
     startedAt: "2026-08-25T20:00:00.000Z",
     completedAt: "2026-08-25T20:00:10.000Z",
     status: "progressing",
-    transitions: { rcl2: { sample: 2, collectedAt: "2026-08-25T20:00:10.000Z" } },
+    transitions: {
+      rcl2: { sample: 2, collectedAt: "2026-08-25T20:00:10.000Z" },
+    },
     delta: {
       rcl: 1,
       controllerProgress: 24,
@@ -43,7 +45,14 @@ const artifact = {
         workforce: { target: 5, total: 5 },
         structures: { constructionSites: 6, extensionSites: 5, extensions: 0 },
       },
-      evaluation: { status: "progressing" },
+      evaluation: {
+        status: "progressing",
+        activityExpectation: {
+          classification: "work_required",
+          acceptableInactivity: false,
+          blockers: ["construction demand is present"],
+        },
+      },
     },
   },
 };
@@ -79,7 +88,9 @@ const headlessArtifact = {
 
 describe("benchmark samples", () => {
   it("builds stable identity and longitudinal metrics from the actual PTR state shape", () => {
-    const result = buildExperimentBenchmark(artifact, { runtimeSha: "366fa1bed2aa9ec3d57de23d06906acf4edcb725" });
+    const result = buildExperimentBenchmark(artifact, {
+      runtimeSha: "366fa1bed2aa9ec3d57de23d06906acf4edcb725",
+    });
 
     expect(result?.sampleKey).toBe("ptr-experiment:5416836682");
     expect(result?.benchmarkName).toBe("bootstrap-rcl3");
@@ -96,6 +107,9 @@ describe("benchmark samples", () => {
       finalConstructionSites: 6,
       finalExtensionSites: 5,
       finalExtensions: 0,
+      finalActivityClassification: "work_required",
+      finalAcceptableInactivity: false,
+      finalActivityBlockers: ["construction demand is present"],
       controllerProgressDelta: 24,
       harvestedDelta: 32,
       controllerSpendDelta: 20,
@@ -131,7 +145,9 @@ describe("benchmark samples", () => {
 
   it("is idempotent for the same immutable request artifact", () => {
     const first = buildExperimentBenchmark(artifact, { runtimeSha: "366fa1b" });
-    const second = buildExperimentBenchmark(structuredClone(artifact), { runtimeSha: "366fa1b" });
+    const second = buildExperimentBenchmark(structuredClone(artifact), {
+      runtimeSha: "366fa1b",
+    });
 
     expect(second).toEqual(first);
   });

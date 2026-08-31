@@ -17,7 +17,14 @@ const stableRcl3State = () => ({
   shard: "shard3",
   room: "W39S23",
   worldStatus: "normal",
-  controller: { level: 3, progress: 0, progressTotal: 0, safeMode: null, owned: true },
+  controller: {
+    level: 3,
+    progress: 0,
+    progressTotal: 0,
+    ticksToDowngrade: 10_000,
+    safeMode: null,
+    owned: true,
+  },
   spawn: { name: "Spawn1", energy: 300, capacity: 300, spawning: null },
   workforce: {
     target: 5,
@@ -26,6 +33,16 @@ const stableRcl3State = () => ({
     spawning: 0,
     carriedEnergy: 100,
     carryCapacity: 250,
+    activeWorkParts: 5,
+    activeCarryParts: 5,
+    knownTtl: 5,
+    members: Array.from({ length: 5 }, () => ({
+      spawning: false,
+      ticksToLive: 1_000,
+      workParts: 1,
+      carryParts: 1,
+      moveParts: 1,
+    })),
   },
   energy: {
     sourceCount: 2,
@@ -35,6 +52,11 @@ const stableRcl3State = () => ({
     creepSpendTotal: 800,
     constructionSpendTotal: 500,
     controllerSpendTotal: 300,
+    reserveEnergy: 10_000,
+    sources: [
+      { capacity: 3_000, accessibleTiles: 3, connectedToSpawn: true },
+      { capacity: 3_000, accessibleTiles: 3, connectedToSpawn: true },
+    ],
   },
   structures: {
     extensions: 10,
@@ -43,6 +65,7 @@ const stableRcl3State = () => ({
     roads: 10,
     ramparts: 2,
     towerEnergy: 400,
+    towerCapacity: 1_000,
     constructionSites: 0,
     extensionSites: 0,
     towerSites: 0,
@@ -61,6 +84,74 @@ describe("bootstrap replay", () => {
     expect(state.workforce).toMatchObject({ target: 3, total: 3, alive: 2, spawning: 1 });
     expect(state.workforce.carriedEnergy).toBe(92);
     expect(state.spawn).toMatchObject({ energy: 8, capacity: 300 });
+  });
+
+  it("derives body, replacement, and terrain-connectivity evidence instead of trusting counts", () => {
+    const terrain = Array.from({ length: 2_500 }, () => "0");
+    for (let y = 0; y < 50; y += 1) terrain[y * 50 + 15] = "1";
+    const state = projectBootstrapState({
+      gameTime: 1_000,
+      roomSnapshots: {
+        W1N1: {
+          shard: "shard3",
+          terrain: {
+            body: { terrain: [{ terrain: terrain.join("") }] },
+          },
+          overview: { body: { totals: {} } },
+          objects: {
+            body: {
+              objects: [
+                {
+                  type: "controller",
+                  user: "me",
+                  level: 8,
+                  downgradeTime: 151_000,
+                },
+                {
+                  type: "spawn",
+                  user: "me",
+                  name: "Spawn1",
+                  x: 20,
+                  y: 25,
+                  energy: 300,
+                  energyCapacity: 300,
+                },
+                {
+                  type: "source",
+                  x: 10,
+                  y: 25,
+                  energy: 3_000,
+                  energyCapacity: 3_000,
+                },
+                {
+                  type: "creep",
+                  user: "me",
+                  ageTime: 2_000,
+                  spawning: false,
+                  body: [
+                    { type: "work", hits: 100 },
+                    { type: "carry", hits: 100 },
+                    { type: "move", hits: 100 },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(state.controller.ticksToDowngrade).toBe(150_000);
+    expect(state.workforce).toMatchObject({
+      activeWorkParts: 1,
+      activeCarryParts: 1,
+      knownTtl: 1,
+    });
+    expect(state.workforce.members[0]).toMatchObject({ ticksToLive: 1_000 });
+    expect(state.energy.sources[0]).toMatchObject({
+      accessibleTiles: 8,
+      connectedToSpawn: false,
+    });
   });
 
   it("recognizes the observed PTR colony as self-reproducing but not yet RCL2", async () => {

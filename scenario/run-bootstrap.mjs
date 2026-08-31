@@ -2,6 +2,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 
+import { scenarioExitCode } from "./verdict-policy.mjs";
+
 const require = createRequire(import.meta.url);
 const { ScreepsServer, TerrainMatrix } = require("screeps-server-mockup");
 const mockupPackage = require("screeps-server-mockup/package.json");
@@ -11,11 +13,16 @@ const ROOM_NAME = "W0N0";
 const SOURCE_ENERGY = 3000;
 const SPAWN_START_ENERGY = 300;
 const MAX_ENGINE_TICKS = Number(process.env.BOOTSTRAP_TICK_BUDGET || 400);
-const runRoot = path.resolve("scenario", ".bootstrap-runtime", `${process.pid}`);
+const runRoot = path.resolve(
+  "scenario",
+  ".bootstrap-runtime",
+  `${process.pid}`,
+);
 const serverPath = path.join(runRoot, "server");
 const logdir = path.join(runRoot, "logs");
 const port = 25000 + (process.pid % 1000);
 let server;
+let exitCode = 1;
 
 if (!resultPath) throw new Error("SCENARIO_RESULT_PATH is required");
 
@@ -23,7 +30,11 @@ function createTerrain() {
   const terrain = new TerrainMatrix();
   for (let y = 0; y < 50; y += 1) {
     for (let x = 0; x < 50; x += 1) {
-      terrain.set(x, y, x === 0 || y === 0 || x === 49 || y === 49 ? "wall" : "plain");
+      terrain.set(
+        x,
+        y,
+        x === 0 || y === 0 || x === 49 || y === 49 ? "wall" : "plain",
+      );
     }
   }
   return terrain;
@@ -47,7 +58,9 @@ function snapshot(objects) {
     spawnEnergy: spawn?.store?.energy ?? null,
     workers: liveWorkers.length,
     creeps: creeps.length,
-    constructionSites: objects.filter((object) => object.type === "constructionSite").length,
+    constructionSites: objects.filter(
+      (object) => object.type === "constructionSite",
+    ).length,
     extensions: objects.filter((object) => object.type === "extension").length,
   };
 }
@@ -58,7 +71,9 @@ try {
 
   const bundle = await readFile("scenario/dist/bootstrap-main.js", "utf8");
   server = new ScreepsServer({ path: serverPath, logdir, port });
-  server.on("error", (message) => console.error(`[bootstrap-headless] ${message}`));
+  server.on("error", (message) =>
+    console.error(`[bootstrap-headless] ${message}`),
+  );
 
   await server.world.stubWorld();
   const { db } = await server.world.load();
@@ -156,7 +171,9 @@ try {
   const result = {
     name: "bootstrap",
     status: passed ? "passed" : "failed",
-    error: passed ? null : `RCL2 not reached within ${MAX_ENGINE_TICKS} engine ticks`,
+    error: passed
+      ? null
+      : `RCL2 not reached within ${MAX_ENGINE_TICKS} engine ticks`,
     engine: {
       serverMockup: mockupPackage.version,
       node: process.version,
@@ -166,7 +183,12 @@ try {
       room: ROOM_NAME,
       fixture: "bootstrap-v1",
       source: { x: 10, y: 25, energy: SOURCE_ENERGY },
-      spawn: { name: "BootstrapSpawn", x: 20, y: 25, energy: SPAWN_START_ENERGY },
+      spawn: {
+        name: "BootstrapSpawn",
+        x: 20,
+        y: 25,
+        energy: SPAWN_START_ENERGY,
+      },
       controller: { x: 35, y: 25, initialLevel: 1 },
     },
     tickBudget: MAX_ENGINE_TICKS,
@@ -178,6 +200,7 @@ try {
     consoleEvents,
   };
   await writeResult(result);
+  exitCode = scenarioExitCode(result.status);
   console.log(
     `[bootstrap-headless] ${result.status}; ticks=${ticksObserved}; milestones=${JSON.stringify(milestones)}`,
   );
@@ -185,11 +208,13 @@ try {
   await writeResult({
     name: "bootstrap",
     status: "infrastructure-failed",
-    error: error instanceof Error ? error.stack ?? error.message : String(error),
+    error:
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
   });
+  exitCode = scenarioExitCode("infrastructure-failed");
   console.error("[bootstrap-headless] infrastructure failure", error);
 } finally {
   if (server) server.stop();
   await rm(runRoot, { recursive: true, force: true }).catch(() => {});
-  process.exit(0);
+  process.exit(exitCode);
 }

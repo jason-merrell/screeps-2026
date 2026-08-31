@@ -129,7 +129,8 @@ describe("FSPM Activity memory migration", () => {
     migrateMemory();
 
     expect(Memory.version).toBe(MEMORY_VERSION);
-    expect(Memory.version).toBe(6);
+    expect(Memory.version).toBe(7);
+    expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
     expect(Memory.empireFspm?.p3).toMatchObject({
       id: "portfolio:empire:operations",
       parentP3Id: null,
@@ -148,9 +149,13 @@ describe("FSPM Activity memory migration", () => {
     expect(task?.procedures).toEqual([]);
     expect(portfolio?.activities).toEqual({});
     expect(portfolio?.activityKpiHistory).toEqual({});
-    expect((portfolio as typeof portfolio & { activityEvents?: unknown[] })?.activityEvents).toEqual([]);
     expect(
-      (portfolio as typeof portfolio & { activityEventSequence?: number })?.activityEventSequence,
+      (portfolio as typeof portfolio & { activityEvents?: unknown[] })
+        ?.activityEvents,
+    ).toEqual([]);
+    expect(
+      (portfolio as typeof portfolio & { activityEventSequence?: number })
+        ?.activityEventSequence,
     ).toBe(0);
   });
 });

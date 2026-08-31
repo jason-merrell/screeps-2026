@@ -1,42 +1,44 @@
 # Screeps Architecture RFC: FSPM-Aligned Autonomous Control
 
-Status: proposed
+Status: accepted, partial conformance profile
 
 > Execution semantics are governed by `docs/adr-fspm-activity-execution.md`. In particular, a Task is a durable work definition, Procedures are the steps inside that Task, an Activity is a persistent execution instance of exactly one Task, and intents are low-level execution mechanics. The older tick-scale Activity interpretation is superseded.
 
 ## Why this RFC exists
 
-The goal is not to rename Screeps concepts after FSPM. The goal is to borrow the governance properties that make FSPM useful: explicit traceability, durable evidence, roll-up, quality measurement, accountable ownership, and controlled execution.
+The goal is not to rename Screeps concepts after FSPM. The goal is a documented Screeps-domain implementation of the canonical governance properties: explicit authority, traceability, durable evidence, EQVM roll-up, accountable ownership, and controlled execution.
 
 The current runtime already has the right low-level shape:
 
 `perceive -> planners -> arbitration -> execution -> trace`
 
-The missing layer is durable strategic intent above tick-level intents, plus a durable evidence spine that can explain why work exists and whether it is succeeding.
+The execution kernel now has durable Task, Procedure, Activity, Intent, and outcome evidence. The versioned conformance profile in `docs/fspm-conformance.json` is authoritative about what remains incomplete. In particular, approved Corporate Requirements and Deliverables, OU/ARCI authority, complete EQVM roll-up, continuously managed Portfolio decisions, and issue/risk/stakeholder governance are not yet conformant.
 
 ## Governance source model
 
-The authoritative FSPM operational hierarchy is:
+The authoritative hierarchy for this continuously managed Screeps scope is:
 
-`Contract -> Requirement -> Deliverable -> Task -> Activity`
+`P3 Portfolio -> Corporate Requirement -> Corporate Deliverable -> Task -> Activity`
 
 A Task owns one or more Procedures that define how its work is performed. An Activity instantiates one Task and carries the execution lifecycle. Intents execute the current Procedure but are not themselves FSPM Activities.
 
-Execution proceeds downward through that hierarchy. Evidence and quality flow back upward:
+Authority proceeds downward through that hierarchy. Execution evidence and EQVM quality flow back upward through the governed measurement hierarchy:
 
-`Activity evidence -> Task quality -> Deliverable quality -> Requirement satisfaction -> Contract health`
+`Activity KPI -> Task QI -> Deliverable Quality Index -> Portfolio/P3 Quality Index`
+
+Requirement satisfaction is separately demonstrated against the approved obligation and its linked Deliverable receipts. It is not a substitute name for DQI or PQI.
 
 For Screeps, the important lesson is:
 
 > Every material Activity should be explainable upward to a durable Task and every completed Activity should produce quality evidence that can roll back upward.
 
-## Proposed Screeps traceability spine
+## Screeps traceability spine
 
 FSPM concept | Screeps concept | Persistence
 ---|---|---
-Contract | Colony objective / operating contract | durable
-Requirement | Machine-checkable condition or invariant | durable
-Deliverable | Durable outcome with acceptance criteria | durable
+P3 Portfolio | Continuously managed empire or colony scope | durable
+Corporate Requirement | Approved binding Screeps obligation | durable + append-only approval history
+Corporate Deliverable | Product, service, or result with acceptance receipt | durable
 Task | Stable work definition with quality and procedures | durable
 Procedure | Ordered/eligible execution step inside a Task | durable definition
 Activity | One execution instance of exactly one Task | durable while open + bounded history
@@ -54,7 +56,7 @@ Example:
 
 A creep is not part of the governance spine. It is a resource temporarily assigned to an Activity.
 
-## Proposed runtime layers
+## Runtime layers
 
 ### 1. Perception
 
@@ -75,17 +77,17 @@ Stores facts that remain useful beyond one tick:
 - failure/recovery history
 - last-known remote-room state
 
-### 3. Contracts
+### 3. P3 Portfolios
 
-A Contract is the durable top-level operating objective for a colony or bounded strategic scope. Contracts do not generate Game API calls directly.
+A Portfolio is the durable P3 authority for a continuously managed empire or colony scope. It exists only where multiple components require continuous prioritization and rebalancing. Portfolios do not generate Game API calls directly.
 
 ### 4. Requirements
 
-Machine-checkable conditions derived from the Contract. Requirements express what must be true, not how to make it true.
+Approved binding obligations derived from an authoritative trigger and human Accountable approval. Requirements express what is authorized and why, not how to perform it. The current generated domain placeholders are explicitly non-conformant scaffolding until #184 is complete.
 
 ### 5. Deliverables
 
-Durable accepted outcomes that satisfy Requirements. A Deliverable owns acceptance criteria, health, accountable planner/system, active plan revision, evidence window, and terminal state.
+Durable products, services, or results that satisfy Requirements. A Deliverable owns its output, Quality Description, Quality Metric, receipt validation, weight, one human Accountable, active plan revision, evidence window, and lifecycle state.
 
 ### 6. Plans, Tasks, and Procedures
 
@@ -117,7 +119,7 @@ Arbitration remains the atomic authority boundary for mutually conflicting tick 
 
 Every accepted/rejected intent should carry trace identifiers back to:
 
-`intent -> procedure -> activity -> task -> deliverable -> requirement -> contract`
+`intent -> procedure -> activity -> task -> deliverable -> requirement -> P3`
 
 Arbitration may reject an intent without erasing or replacing the Activity it serves.
 
@@ -127,7 +129,7 @@ Current home: `intents/execute.ts`
 
 Execution performs narrow Game API mutations. It does not decide strategy.
 
-Actors are replaceable resources. A dead creep invalidates an assignment, not a Contract, Requirement, Deliverable, or Task definition.
+Actors are replaceable resources. A dead creep invalidates an Activity assignment, not its P3, Requirement, Deliverable, Task, or Activity identity.
 
 ### 10. Evidence and roll-up
 
@@ -137,27 +139,29 @@ The Task defines Quality Description, Quality Metric, and KPI Metric before exec
 
 In-progress travel and successful tick-level commands are evidence, but they do not independently earn Activity KPI credit.
 
-Quality spine:
+Canonical quality spine:
 
-`Intent evidence -> completed Activity KPI -> Task quality -> Deliverable quality -> Requirement satisfaction -> Contract health`
+`Intent evidence -> Accountable-validated Activity KPI -> Task QI -> Task-Weight-adjusted DQI -> Deliverable-Weight-adjusted P3/PQI`
+
+The current room operational-health measurements are diagnostics, not EQVM. They must remain separately named and cannot earn DQI or P3/PQI credit.
 
 Behavioral-coherence evidence should additionally expose Activity tenure, Procedure tenure, holds/resumes, Task preemptions, productive ticks, required travel ticks, idle/reorientation ticks, time to completion, Activity Continuity Ratio, and Task Preemption Rate.
 
-## FSPM parity principles
+## FSPM conformance principles
 
 ### Traceability
 
 Nothing material should exist without an upward trace.
 
-An Activity with no Task is suspicious. A Task with no Deliverable is suspicious. A Deliverable with no Requirement is suspicious. A Requirement with no Contract is suspicious.
+An Activity with no active Task is invalid. A Task with no active Deliverable is invalid. A Deliverable with no approved Requirement is invalid. A Requirement with no active P3 is invalid. Missing, retired, or mismatched ancestry fails closed at the authority boundary.
 
 ### Roll-up
 
-Higher-level health is derived from lower-level evidence rather than manually asserted.
+Canonical quality is derived from accepted lower-level evidence through the governed EQVM weights and formulas; operational health remains a separate diagnostic product.
 
 ### Accountable ownership
 
-Each durable Deliverable has exactly one accountable system/planner, while many resources may be responsible for execution.
+Canonical AI-native FSPM requires exactly one human Accountable for every P3 component. Creeps and runtime systems may be Responsible AI Performers; they are never Accountable. This authority model remains an explicit gap under #164.
 
 ### Just Enough Information
 
@@ -178,7 +182,7 @@ Do not rely on individual planners or actors to remember policy.
 
 ## Relationship to Overmind-style architecture
 
-The proposed model preserves hierarchical orchestration and specialized planners while making strategic intent, execution instances, evidence, and authority boundaries explicit and auditable.
+The model preserves hierarchical orchestration and specialized planners while making strategic intent, execution instances, evidence, and authority boundaries explicit and auditable.
 
 ## Screeps Lab target view
 
@@ -186,7 +190,7 @@ Lab should eventually answer:
 
 1. What is happening?
 2. Why is it happening?
-3. What Contract/Requirement/Deliverable/Task does it serve?
+3. What P3/Requirement/Deliverable/Task does it serve?
 4. Which Procedure is executing?
 5. Is the Activity staying coherent?
 6. Did the completed Activity satisfy its KPI?
@@ -194,7 +198,7 @@ Lab should eventually answer:
 Example:
 
 ```text
-Contract: Establish and stabilize W39S23
+P3: portfolio:colony:W39S23
 Requirement: Maintain healthy colony energy operations
 Deliverable: Stable bootstrap economy
 Task: Sustain colony energy operations
@@ -209,28 +213,29 @@ Continuity: 0.61
 KPI: pending until completion
 ```
 
-## Migration sequence
+## Conformance sequence
 
-1. Correct Task lifecycle semantics and stop treating absent tick demand as Task completion.
-2. Add Procedure identity to Task definitions and intent traces.
-3. Introduce persistent Activity records with bounded history.
-4. Move KPI scoring from individual commands to Activity completion.
-5. Add Activity continuity and preemption telemetry without changing scheduler behavior.
-6. Observe live colony behavior and establish a baseline.
-7. Only then alter assignment/focus policy from measured evidence.
+1. Keep the machine-readable conformance profile synchronized with the pinned governance SHA.
+2. Enforce exact active P3-to-Procedure ancestry before an intent can create or resume an Activity.
+3. Replace planner-created Requirement and Deliverable placeholders with approved governed records.
+4. Implement OU/ARCI authority with one human Accountable and explicit Responsible AI Performer identity.
+5. Complete inherited Activity scheduling and schema semantics.
+6. Separate operational health from canonical EQVM and implement Activity KPI to Task QI to DQI to P3/PQI receipts.
+7. Add durable acknowledgment, gap detection, and as-of history before bounded runtime evidence is evicted.
+8. Implement continuously managed Portfolio decisions and Issue, Risk, and Stakeholder registers.
 
-No rewrite is required. Existing planners can continue producing the same intents while trace and lifecycle semantics are corrected underneath them.
-
-## Immediate decision
-
-Do not advance room acquisition or expansion work. The immediate architecture goal is truthful Task/Procedure/Activity execution and behavioral-coherence evidence.
+No rewrite is required. Existing planners can continue producing the same intents while authority, records, quality, and portfolio behavior are hardened underneath them. Capability expansion must not bypass those gates.
 
 ## Source notes
 
-The governing record definitions are the current authoritative documents in `Namauu/governance-docs`:
+The pinned authority is `Namauu/governance-docs@02d581886a759d19044ff91a80d743fa042f23f7`. The reviewed source set includes:
 
+- `execution/data/p3.md`
+- `execution/data/corporate-requirements.md`
+- `execution/data/corporate-deliverables.md`
 - `execution/data/tasks.md`
 - `execution/data/activities.md`
 - `structure/eqvm.md`
+- `structure/fspm-framework.md`
 
-The execution-specific decision is captured in `docs/adr-fspm-activity-execution.md`.
+The execution-specific decision is captured in `docs/adr-fspm-activity-execution.md`. `docs/fspm-conformance.json` is the machine-checkable implementation map; it must be validated rather than inferring parity from this narrative.

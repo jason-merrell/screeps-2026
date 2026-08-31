@@ -222,9 +222,22 @@ try {
   console.log(`Supabase collection run ${started.collectionRunId} started for ${ref.room}/${ref.shard}.`);
 
   for (let index = 0; index < sampleCount; index += 1) {
-    const [objects, overview, worldStatus, observabilityResponse] = await Promise.all([
+    const [
+      objects,
+      overview,
+      terrain,
+      gameTimeResponse,
+      worldStatus,
+      observabilityResponse,
+    ] = await Promise.all([
       requestJson("/api/game/room-objects", { room: ref.room, shard: ref.shard }),
       requestJson("/api/game/room-overview", { room: ref.room, shard: ref.shard, interval: 8 }),
+      requestJson("/api/game/room-terrain", {
+        room: ref.room,
+        shard: ref.shard,
+        encoded: 1,
+      }),
+      requestJson("/api/game/time", { shard: ref.shard }),
       requestJson("/api/user/world-status"),
       requestJson("/api/user/memory-segment", {
         segment: OBSERVABILITY_SEGMENT,
@@ -234,6 +247,8 @@ try {
 
     requireOk("PTR room objects", objects);
     requireOk("PTR room overview", overview);
+    requireOk("PTR room terrain", terrain);
+    requireOk("PTR game time", gameTimeResponse);
     requireOk("PTR world status sample", worldStatus);
 
     const collectedAt = new Date().toISOString();
@@ -248,11 +263,13 @@ try {
       },
       collectedAt,
       target: "ptr",
+      gameTime: gameTimeResponse.body?.time ?? gameTimeResponse.body,
       worldStatus,
       roomSnapshots: {
         [ref.room]: {
           shard: ref.shard,
           overview,
+          terrain,
           objects,
         },
       },

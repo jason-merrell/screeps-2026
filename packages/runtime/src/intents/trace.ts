@@ -1,7 +1,5 @@
 import {
-  ensureDomainHierarchy,
-  ensureProcedure,
-  ensureTask,
+  ensureFspmTraceLineage,
   type FspmDomain,
 } from "../planning/fspm";
 import type { IntentTrace } from "./types";
@@ -36,27 +34,14 @@ function legacyProcedureKey(activity: string): string {
 }
 
 export function createIntentTrace(input: IntentTraceInput): IntentTrace {
-  const { portfolio, requirement, deliverable } = ensureDomainHierarchy(
-    input.roomName,
-    input.domain,
-  );
-  const task = ensureTask(input.roomName, input.domain, input.task);
   const procedureKey =
     input.procedure ??
     (input.activity ? legacyProcedureKey(input.activity) : "execute-task");
-  const procedure = ensureProcedure(
-    input.roomName,
-    input.domain,
-    input.task,
+  return ensureFspmTraceLineage({
+    roomName: input.roomName,
+    domain: input.domain,
+    taskKey: input.task,
     procedureKey,
-  );
-
-  return {
-    p3Id: portfolio.p3.id,
-    requirementId: requirement.id,
-    deliverableId: deliverable.id,
-    taskId: task.id,
-    procedureId: procedure.id,
     ...(input.workKey ? { workKey: input.workKey } : {}),
-  };
+  });
 }

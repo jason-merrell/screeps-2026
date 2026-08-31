@@ -10,8 +10,12 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   return <div data-slot="card-header" className={cn("flex flex-col gap-1.5 p-6", className)} {...props} />;
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="card-title" className={cn("font-semibold leading-none tracking-tight", className)} {...props} />;
+type CardTitleProps = React.ComponentProps<"div"> & {
+  as?: "div" | "h2" | "h3";
+};
+
+function CardTitle({ as: Component = "div", className, ...props }: CardTitleProps) {
+  return <Component data-slot="card-title" className={cn("font-semibold leading-none tracking-tight", className)} {...props} />;
 }
 
 function CardDescription({ className, ...props }: React.ComponentProps<"div">) {

@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityExecutionObservation } from "../../src/intents/execute";
-import { createIntentTrace, infrastructureWorkKey } from "../../src/intents/trace";
-import type { BuildIntent, CreateConstructionSiteIntent } from "../../src/intents/types";
+import {
+  createIntentTrace,
+  infrastructureWorkKey,
+} from "../../src/intents/trace";
+import type {
+  BuildIntent,
+  CreateConstructionSiteIntent,
+} from "../../src/intents/types";
 import {
   bindFspmActivities,
   fspmActivityEvents,
@@ -24,6 +30,8 @@ function builder(): Creep {
   return {
     name: "builder-1",
     spawning: false,
+    room: { name: ROOM },
+    pos: { roomName: ROOM },
     memory: {},
     store: {
       getUsedCapacity: () => 50,
@@ -51,8 +59,12 @@ function installGlobals(): void {
       spawns: {},
       rooms: {
         [ROOM]: {
+          name: ROOM,
+          controller: { my: true },
           lookForAt: () =>
-            built ? [{ structureType: "extension" } as unknown as Structure] : [],
+            built
+              ? [{ structureType: "extension" } as unknown as Structure]
+              : [],
         },
       },
       getObjectById: (id: string) => objectById.get(id) ?? null,
@@ -173,10 +185,18 @@ describe("FSPM construction recovery", () => {
         procedureTransitions: 3,
       },
     });
-    expect(portfolio.activityKpiHistory?.[firstSite.trace?.taskId ?? ""]).toHaveLength(1);
+    expect(
+      portfolio.activityKpiHistory?.[firstSite.trace?.taskId ?? ""],
+    ).toHaveLength(1);
 
-    const events = fspmActivityEvents(portfolio).filter((event) => event.activityId === activityId);
-    expect(events.filter((event) => event.type === "activity_reassigned")).toHaveLength(3);
-    expect(events.filter((event) => event.type === "activity_completed")).toHaveLength(1);
+    const events = fspmActivityEvents(portfolio).filter(
+      (event) => event.activityId === activityId,
+    );
+    expect(
+      events.filter((event) => event.type === "activity_reassigned"),
+    ).toHaveLength(3);
+    expect(
+      events.filter((event) => event.type === "activity_completed"),
+    ).toHaveLength(1);
   });
 });

@@ -15,7 +15,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 type OperatorPageProps = {
-  searchParams: Promise<{ queued?: string; error?: string; wake?: string }>;
+  searchParams: Promise<{ queued?: string; error?: string; wake?: string; view?: string }>;
 };
 
 type CommandEvent = {
@@ -79,6 +79,18 @@ function workerRunId(claimedBy: string | null) {
 
 export default async function OperatorPage({ searchParams }: OperatorPageProps) {
   const params = await searchParams;
+  const activeView = params.view === "queue" || params.view === "history"
+    ? params.view
+    : params.queued
+      ? "history"
+      : "queue";
+  const tabHref = (view: "queue" | "history") => {
+    const query = new URLSearchParams({ view });
+    if (params.queued) query.set("queued", params.queued);
+    if (params.error) query.set("error", params.error);
+    if (params.wake) query.set("wake", params.wake);
+    return `/operator?${query.toString()}`;
+  };
   const supabase = await createClient();
   const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
   const claims = claimsData?.claims;
@@ -123,7 +135,7 @@ export default async function OperatorPage({ searchParams }: OperatorPageProps) 
         <CardHeader className="border-b border-white/8 pb-5">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <div>
-              <CardTitle className="text-xl">Queue snapshot</CardTitle>
+              <CardTitle as="h2" className="text-xl">Queue snapshot</CardTitle>
               <CardDescription className="mt-1">Capture a fresh observability snapshot from a supported target.</CardDescription>
             </div>
             <Badge variant="outline" className="w-fit font-mono text-[0.68rem] uppercase tracking-[0.14em] text-muted-foreground">snapshot · v1</Badge>
@@ -151,6 +163,12 @@ export default async function OperatorPage({ searchParams }: OperatorPageProps) 
               {params.error === "enqueue" ? (
                 <div role="alert" className="rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-300">
                   The snapshot command could not be queued. No execution was started.
+                </div>
+              ) : null}
+
+              {params.error === "validation" ? (
+                <div role="alert" className="rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-300">
+                  Target, shard, and room must form a valid explicit snapshot scope. No command was queued.
                 </div>
               ) : null}
 
@@ -213,7 +231,7 @@ export default async function OperatorPage({ searchParams }: OperatorPageProps) 
         </details>
 
         <Card className="lab-panel rounded-2xl border-white/8 bg-card/65">
-          <CardHeader className="pb-3"><CardDescription className="text-[0.68rem] uppercase tracking-[0.18em]">Execution boundary</CardDescription><CardTitle className="text-lg">What happens next</CardTitle></CardHeader>
+          <CardHeader className="pb-3"><CardDescription className="text-[0.68rem] uppercase tracking-[0.18em]">Execution boundary</CardDescription><CardTitle as="h2" className="text-lg">What happens next</CardTitle></CardHeader>
           <CardContent className="text-sm leading-6 text-muted-foreground">The browser only requests. Supabase records authority. A trusted GitHub worker claims and executes. History is the audit trail.</CardContent>
         </Card>
       </div>
@@ -224,7 +242,7 @@ export default async function OperatorPage({ searchParams }: OperatorPageProps) 
     <Card className="lab-panel rounded-2xl border-white/8 bg-card/65">
       <CardHeader className="border-b border-white/8 pb-5">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-          <div><CardDescription className="text-[0.68rem] uppercase tracking-[0.18em]">Command ledger</CardDescription><CardTitle className="mt-1 text-xl">Recent activity</CardTitle><CardDescription className="mt-1">Expand a command only when you need its lifecycle or execution metadata.</CardDescription></div>
+          <div><CardDescription className="text-[0.68rem] uppercase tracking-[0.18em]">Command ledger</CardDescription><CardTitle as="h2" className="mt-1 text-xl">Recent activity</CardTitle><CardDescription className="mt-1">Expand a command only when you need its lifecycle or execution metadata.</CardDescription></div>
           <Badge variant="outline" className="w-fit text-muted-foreground">{recentCommands.length} recent</Badge>
         </div>
       </CardHeader>
@@ -301,10 +319,10 @@ export default async function OperatorPage({ searchParams }: OperatorPageProps) 
 
       <Tabs
         ariaLabel="Operator views"
-        defaultTab={params.queued ? "history" : "queue"}
+        activeTab={activeView}
         tabs={[
-          { id: "queue", label: "Queue", hint: "request work", content: queueView },
-          { id: "history", label: "History", hint: "audit lifecycle", content: historyView },
+          { id: "queue", label: "Queue", hint: "request work", href: tabHref("queue"), content: queueView },
+          { id: "history", label: "History", hint: "audit lifecycle", href: tabHref("history"), content: historyView },
         ]}
       />
     </LabShell>

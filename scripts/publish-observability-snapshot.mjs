@@ -307,6 +307,7 @@ const sanitizeRuntimeTrace = (value) => {
   const intents = value.intents && typeof value.intents === "object" ? value.intents : {};
   return {
     version: 1,
+    runtimeSha: boundedString(value.runtimeSha, 80),
     tick: Number.isInteger(value.tick) ? value.tick : null,
     cpu:
       value.cpu && typeof value.cpu === "object"

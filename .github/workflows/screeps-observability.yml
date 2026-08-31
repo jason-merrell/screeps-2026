@@ -30,7 +30,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .node-version
 
       - name: Validate atomic snapshot request
         id: request
@@ -164,6 +164,8 @@ jobs:
           SNAPSHOT_ID: ${{ steps.publish.outputs.snapshot_id }}
         run: |
           set -euo pipefail
+          # Markdown backticks are intentionally literal.
+          # shellcheck disable=SC2016
           printf -v BODY '%s\n✅ completed `%s`\nrequest: `%s`\ntelemetry: `supabase`\nsnapshot: `%s`\ncommand-ledger: `supabase`\nrun: %s/%s/actions/runs/%s' \
             "$MARKER" "$COMMAND" "$REQUEST_ID" "$SNAPSHOT_ID" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/5/comments" -f body="$BODY" >/dev/null
@@ -180,7 +182,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .node-version
 
       - name: Mint short-lived Supabase control-plane identity
         shell: bash

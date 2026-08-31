@@ -11,8 +11,21 @@ The architecture treats Screeps as a persistent, tick-driven, CPU-budgeted contr
 - Execution is the single boundary that calls mutation-oriented Screeps APIs.
 - Creeps are modeled by **capabilities derived from body parts**, not permanent roles.
 - `Memory` is durable, versioned state; transient caches should remain disposable.
-- CPU bucket state is part of the tick context and can drive future planning policy.
+- CPU bucket state drives deterministic survival/mandatory/deferrable phase policy, bounded cadence, and deadline headroom.
 - No process kernel, manager tree, or enterprise-style abstraction until the game earns one.
+
+## FSPM conformance
+
+The runtime implements a strong NTI FSPM execution slice, but it does not claim full framework parity yet. Its Task, Procedure, Activity, Intent, outcome, and completion-only KPI lineage is governed against `Namauu/governance-docs@02d581886a759d19044ff91a80d743fa042f23f7`.
+
+The machine-checkable profile at `docs/fspm-conformance.json` maps canonical fields and invariants to `implemented`, `adapted`, `not_implemented`, or `not_applicable`. It is the authoritative statement of parity; narrative documentation and UI labels may not overrule it.
+
+```bash
+node scripts/validate-fspm-conformance.mjs
+pnpm report:fspm
+```
+
+The current blockers are approved Corporate Requirement and Deliverable records, OU/ARCI authority, complete EQVM roll-up, continuously governed Portfolio decisions, durable history acknowledgment, and Issue/Risk/Stakeholder registers.
 
 ## Tick flow
 
@@ -26,6 +39,8 @@ WorldSnapshot
 Planning systems
   ↓
 Proposed intents
+  ↓
+Fail-closed FSPM authority validation
   ↓
 Arbitration
   ↓
@@ -53,10 +68,10 @@ Turborepo owns task ordering and cache boundaries. Vercel Remote Cache is used b
 
 ## Development
 
-Requires Node.js 22+ and pnpm.
+Requires Node.js 22.18.0 (pinned in `.node-version`) and pnpm 10.15.0.
 
 ```bash
-pnpm install --frozen-lockfile=false
+pnpm install --frozen-lockfile
 pnpm check
 pnpm build
 ```
@@ -71,6 +86,10 @@ pnpm scenario:headless
 ```
 
 The production Screeps bundle is emitted to `packages/runtime/dist/main.js`.
+
+Runtime pressure and fault-containment semantics are specified in
+[`docs/adr-runtime-supervisor.md`](docs/adr-runtime-supervisor.md); its open
+scale and fairness gates remain tracked in issue #186.
 
 ## Runtime structure
 

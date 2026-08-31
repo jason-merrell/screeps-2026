@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityExecutionObservation } from "../../src/intents/execute";
-import { createIntentTrace, infrastructureWorkKey } from "../../src/intents/trace";
+import {
+  createIntentTrace,
+  infrastructureWorkKey,
+} from "../../src/intents/trace";
 import type {
   BuildIntent,
   CreateConstructionSiteIntent,
@@ -25,6 +28,8 @@ function installGlobals(): void {
   const builder = {
     name: "builder-1",
     spawning: false,
+    room: { name: ROOM },
+    pos: { roomName: ROOM },
     memory: {},
     store: {
       getUsedCapacity: () => 50,
@@ -36,6 +41,16 @@ function installGlobals(): void {
     Game: {
       time: 100,
       creeps: { "builder-1": builder },
+      spawns: {
+        Spawn1: {
+          name: "Spawn1",
+          room: { name: ROOM },
+          pos: { roomName: ROOM },
+        },
+      },
+      rooms: {
+        [ROOM]: { name: ROOM, controller: { my: true } },
+      },
       getObjectById: () => ({
         id: "site-1",
         pos: { x: 20, y: 21, roomName: ROOM },
@@ -137,7 +152,9 @@ describe("FSPM system Activity lifecycle", () => {
       metrics: { productiveTicks: 1, holdCount: 1 },
     });
     expect(portfolio.activities?.[activityId]?.kpiScore).toBeUndefined();
-    expect(portfolio.activityKpiHistory?.[site.trace?.taskId ?? ""]).toBeUndefined();
+    expect(
+      portfolio.activityKpiHistory?.[site.trace?.taskId ?? ""],
+    ).toBeUndefined();
 
     Game.time = 101;
     const build = buildIntent();
@@ -157,10 +174,14 @@ describe("FSPM system Activity lifecycle", () => {
       },
     });
 
-    const events = fspmActivityEvents(portfolio).filter((event) => event.activityId === activityId);
+    const events = fspmActivityEvents(portfolio).filter(
+      (event) => event.activityId === activityId,
+    );
     expect(events.map((event) => event.type)).toContain("activity_reassigned");
     expect(events.map((event) => event.type)).toContain("activity_resumed");
-    expect(events.map((event) => event.type)).not.toContain("activity_completed");
+    expect(events.map((event) => event.type)).not.toContain(
+      "activity_completed",
+    );
   });
 
   it("keeps staffing In Progress until the spawned creep becomes viable", () => {
@@ -193,7 +214,9 @@ describe("FSPM system Activity lifecycle", () => {
     });
     expect(portfolio.activities?.[activityId]?.completedAt).toBeUndefined();
     expect(portfolio.activities?.[activityId]?.kpiScore).toBeUndefined();
-    expect(portfolio.activityKpiHistory?.[spawn.trace?.taskId ?? ""]).toBeUndefined();
+    expect(
+      portfolio.activityKpiHistory?.[spawn.trace?.taskId ?? ""],
+    ).toBeUndefined();
 
     Game.time = 101;
     reconcileFspmActivityEvidence([]);
@@ -211,13 +234,20 @@ describe("FSPM system Activity lifecycle", () => {
       completedAt: 102,
       kpiScore: "satisfactory",
     });
-    expect(portfolio.activityKpiHistory?.[spawn.trace?.taskId ?? ""]).toHaveLength(1);
+    expect(
+      portfolio.activityKpiHistory?.[spawn.trace?.taskId ?? ""],
+    ).toHaveLength(1);
     expect(
       fspmActivityEvents(portfolio)
         .filter((event) => event.activityId === activityId)
         .map((event) => event.type),
     ).toEqual(
-      expect.arrayContaining(["activity_opened", "activity_started", "activity_completed", "kpi_scored"]),
+      expect.arrayContaining([
+        "activity_opened",
+        "activity_started",
+        "activity_completed",
+        "kpi_scored",
+      ]),
     );
   });
 });

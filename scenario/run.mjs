@@ -1,7 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+
+import { isolatedScenarioEnvironment } from "./child-environment.mjs";
+import { runDiagnosticChild } from "./diagnostic-child.mjs";
+import { scenarioExitCode, scenarioSuiteStatus } from "./verdict-policy.mjs";
 
 const execFileAsync = promisify(execFile);
 const requested = (process.env.SCREEPS_SCENARIO || "head-on").toLowerCase();
@@ -9,9 +13,13 @@ const requestId = process.env.SCREEPS_REQUEST_ID || "manual";
 const command = process.env.SCREEPS_COMMAND || `/scenario name=${requested}`;
 const supported = new Set(["head-on", "funnel", "crossing", "traffic-suite"]);
 
-if (!supported.has(requested)) throw new Error(`Unsupported scenario request '${requested}'`);
+if (!supported.has(requested))
+  throw new Error(`Unsupported scenario request '${requested}'`);
 
-const names = requested === "traffic-suite" ? ["head-on", "funnel", "crossing"] : [requested];
+const names =
+  requested === "traffic-suite"
+    ? ["head-on", "funnel", "crossing"]
+    : [requested];
 const resultDir = path.resolve("scenario", ".results", requestId);
 await rm(resultDir, { recursive: true, force: true });
 await mkdir(resultDir, { recursive: true });
@@ -20,17 +28,25 @@ const results = [];
 for (const name of names) {
   const resultPath = path.join(resultDir, `${name}.json`);
   console.log(`[scenario] running ${name}`);
-  const { stdout, stderr } = await execFileAsync(process.execPath, ["scenario/run-one.mjs", name], {
-    env: { ...process.env, SCENARIO_RESULT_PATH: resultPath },
-    timeout: 180_000,
-    maxBuffer: 4 * 1024 * 1024,
-  });
-  if (stdout.trim()) process.stdout.write(stdout);
-  if (stderr.trim()) process.stderr.write(stderr);
-  results.push(JSON.parse(await readFile(resultPath, "utf8")));
+  results.push(
+    await runDiagnosticChild({
+      execFileAsync,
+      file: process.execPath,
+      args: ["scenario/run-one.mjs", name],
+      options: {
+        env: isolatedScenarioEnvironment({
+          SCENARIO_RESULT_PATH: resultPath,
+        }),
+        timeout: 180_000,
+        maxBuffer: 4 * 1024 * 1024,
+      },
+      resultPath,
+      resultName: name,
+    }),
+  );
 }
 
-const status = results.every((result) => result.status === "passed") ? "passed" : "failed";
+const status = scenarioSuiteStatus(results);
 const artifact = {
   request: {
     id: requestId,
@@ -47,7 +63,11 @@ const artifact = {
 };
 
 await mkdir("artifacts", { recursive: true });
-await writeFile("artifacts/screeps-insights.json", `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+await writeFile(
+  "artifacts/screeps-insights.json",
+  `${JSON.stringify(artifact, null, 2)}\n`,
+  "utf8",
+);
 
 for (const result of results) {
   const metrics = result.finalState?.metrics;
@@ -58,3 +78,4 @@ for (const result of results) {
 console.log(`[scenario] request ${requested}: ${status}`);
 
 await rm(resultDir, { recursive: true, force: true }).catch(() => {});
+process.exitCode = scenarioExitCode(status);

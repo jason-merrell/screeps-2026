@@ -1,5 +1,20 @@
 import { createClient } from "@supabase/supabase-js";
 
+import {
+  buildControlPlaneProvenance,
+  findCorrelatedExperiment,
+  mapBenchmarkSample,
+  type BenchmarkRow,
+  type ExperimentEvidenceRow,
+  type SnapshotEvidence,
+} from "@/lib/data-trust";
+
+export type {
+  BenchmarkMetrics,
+  BenchmarkSample,
+  ControlPlaneProvenance,
+} from "@/lib/data-trust";
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://nflcqzcqpodnfkzjarwv.supabase.co";
 const supabaseKey =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
@@ -123,6 +138,7 @@ export type FspmColonySummary = {
 };
 export type RuntimeTrace = {
   tick?: number | null;
+  runtimeSha?: string | null;
   fspm?: {
     rootP3?: FspmPortfolioP3 | null;
     colonies?: FspmColonySummary[];
@@ -143,28 +159,7 @@ export type Snapshot = {
   roomPlan?: RoomPlan | null;
   runtimeTrace?: RuntimeTrace | null;
 };
-export type Experiment = {
-  experiment_key: string;
-  name: string;
-  runtime_sha: string | null;
-  completed_at: string | null;
-  status: string;
-};
-export type BenchmarkMetrics = {
-  perception: number;
-  economy: number;
-  arbitration: number;
-  execution: number;
-  observability: number;
-};
-
-export const benchmarkFallback: BenchmarkMetrics = {
-  perception: 0.036,
-  economy: 0.165,
-  arbitration: 0.018,
-  execution: 0.76,
-  observability: 0.033,
-};
+export type Experiment = ExperimentEvidenceRow;
 
 function normalizeFspmAuthority(snapshot: Snapshot | null): Snapshot | null {
   for (const colony of snapshot?.runtimeTrace?.fspm?.colonies ?? []) {
@@ -195,24 +190,91 @@ function normalizeFspmAuthority(snapshot: Snapshot | null): Snapshot | null {
 
 export async function loadControlPlane() {
   const [snapshotResult, experimentsResult, benchmarkResult] = await Promise.all([
-    supabase.from("observability_snapshots").select("payload,captured_at").order("captured_at", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("experiments").select("experiment_key,name,runtime_sha,completed_at,status").eq("status", "succeeded").order("completed_at", { ascending: false }).limit(12),
-    supabase.from("benchmark_samples").select("metrics,captured_at").order("captured_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase
+      .from("observability_snapshots")
+      .select("id,colony_id,payload,captured_at,source_request_id")
+      .not("captured_at", "is", null)
+      .order("captured_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("experiments")
+      .select("experiment_key,name,target,shard,room_name,runtime_sha,completed_at,status,result")
+      .eq("status", "succeeded")
+      .not("completed_at", "is", null)
+      .order("completed_at", { ascending: false, nullsFirst: false })
+      .order("experiment_key", { ascending: false })
+      .limit(12),
+    supabase
+      .from("benchmark_samples")
+      .select("id,sample_key,colony_id,benchmark_name,runtime_sha,captured_at,metrics,source,source_ref,inserted_at,colony:colonies(target,shard,room_name)")
+      .not("captured_at", "is", null)
+      .order("captured_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
+  const snapshotRow = snapshotResult.data as {
+    id: number;
+    colony_id: string | null;
+    payload: Snapshot;
+    captured_at: string | null;
+    source_request_id: string | null;
+  } | null;
   const snapshot = normalizeFspmAuthority(
-    (snapshotResult.data?.payload as Snapshot | undefined) ?? null,
+    snapshotRow?.payload ?? null,
   );
   const experiments = (experimentsResult.data as Experiment[] | null) ?? [];
-  const metrics = {
-    ...benchmarkFallback,
-    ...((benchmarkResult.data?.metrics as Partial<BenchmarkMetrics> | undefined) ?? {}),
-  };
+  const benchmarkRow = (benchmarkResult.data as BenchmarkRow | null) ?? null;
+  let correlatedExperiment = findCorrelatedExperiment(benchmarkRow, experiments);
+  let correlationQueryError: { code?: string } | null = null;
+  if (benchmarkRow?.sample_key && !correlatedExperiment && !experimentsResult.error) {
+    const correlationResult = await supabase
+      .from("experiments")
+      .select("experiment_key,name,target,shard,room_name,runtime_sha,completed_at,status,result")
+      .eq("status", "succeeded")
+      .eq("experiment_key", benchmarkRow.sample_key)
+      .maybeSingle();
+    correlatedExperiment = (correlationResult.data as Experiment | null) ?? null;
+    correlationQueryError = correlationResult.error;
+  }
+  const benchmark = mapBenchmarkSample(benchmarkRow, correlatedExperiment);
+  const snapshotEvidence: SnapshotEvidence | null = snapshotRow
+    ? {
+        capturedAt: snapshotRow.captured_at,
+        sourceRequestId: snapshotRow.source_request_id,
+        colonyId: snapshotRow.colony_id,
+        target: snapshot?.target ?? null,
+        shard: snapshot?.shard ?? null,
+        room: snapshot?.room ?? null,
+        runtimeTick:
+          typeof snapshot?.runtimeTrace?.tick === "number"
+            ? snapshot.runtimeTrace.tick
+            : null,
+        runtimeSha: snapshot?.runtimeTrace?.runtimeSha ?? null,
+        hasFspm: Boolean(snapshot?.runtimeTrace?.fspm),
+      }
+    : null;
+  const errorCode = (error: { code?: string } | null) =>
+    error ? (error.code || "query_failed") : null;
+  const provenance = buildControlPlaneProvenance({
+    snapshot: snapshotEvidence,
+    experiments,
+    benchmark,
+    correlatedExperiment,
+    errors: {
+      snapshot: errorCode(snapshotResult.error),
+      experiments: errorCode(experimentsResult.error ?? correlationQueryError),
+      benchmark: errorCode(benchmarkResult.error),
+    },
+  });
 
   return {
     snapshot,
-    experiments,
-    metrics,
-    sourceHealthy: !snapshotResult.error && !benchmarkResult.error,
+    experiments: experiments.slice(0, 12),
+    benchmark,
+    provenance,
   };
 }

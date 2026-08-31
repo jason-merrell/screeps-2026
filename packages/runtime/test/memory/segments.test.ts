@@ -3,9 +3,9 @@ import {
   FSPM_ACTIVITY_MEMORY_LIMIT,
   FSPM_ACTIVITY_TRACE_LIMIT,
   FSPM_EVENT_TRACE_LIMIT,
+  fitObservabilityPayload,
   OBSERVABILITY_SEGMENT,
   OBSERVABILITY_SEGMENT_TARGET_CHARS,
-  fitObservabilityPayload,
   pruneFspmActivityHistory,
   writeObservabilitySegment,
 } from "../../src/memory/segments";
@@ -98,7 +98,9 @@ function oversizedTrace(): string {
               evidence: "e".repeat(300),
             })),
           })),
-          activities: Array.from({ length: 100 }, (_, index) => activity(index)),
+          activities: Array.from({ length: 100 }, (_, index) =>
+            activity(index),
+          ),
           activityEvents: Array.from({ length: 200 }, (_, index) => ({
             id: `event-${index}`,
             sequence: index,
@@ -211,9 +213,17 @@ describe("RawMemory observability retention", () => {
     const retainedIds = new Set(retained.map((row: { id: string }) => row.id));
 
     expect(retained).toHaveLength(FSPM_ACTIVITY_TRACE_LIMIT);
-    expect(retained.filter((row: { status: string }) => row.status === "in_progress")).toHaveLength(3);
-    expect(retained.filter((row: { status: string }) => row.status === "on_hold")).toHaveLength(37);
-    expect(retained.filter((row: { status: string }) => row.status === "completed")).toHaveLength(0);
+    expect(
+      retained.filter(
+        (row: { status: string }) => row.status === "in_progress",
+      ),
+    ).toHaveLength(3);
+    expect(
+      retained.filter((row: { status: string }) => row.status === "on_hold"),
+    ).toHaveLength(37);
+    expect(
+      retained.filter((row: { status: string }) => row.status === "completed"),
+    ).toHaveLength(0);
 
     for (let index = 0; index < 3; index += 1) {
       expect(retainedIds.has(`activity-${1_000 + index}`)).toBe(true);
@@ -244,14 +254,22 @@ describe("RawMemory observability retention", () => {
     const parsed = JSON.parse(fitted);
     const colony = parsed.fspm.colonies[0];
 
-    expect(fitted.length).toBeLessThanOrEqual(OBSERVABILITY_SEGMENT_TARGET_CHARS);
+    expect(fitted.length).toBeLessThanOrEqual(
+      OBSERVABILITY_SEGMENT_TARGET_CHARS,
+    );
     expect(parsed.transport.omittedActivities).toBeGreaterThanOrEqual(60);
-    expect(parsed.transport.omittedCompletedActivities).toBe(parsed.transport.omittedActivities);
+    expect(parsed.transport.omittedCompletedActivities).toBe(
+      parsed.transport.omittedActivities,
+    );
     expect(parsed.transport.omittedEvents).toBeGreaterThanOrEqual(184);
 
     if (colony) {
-      expect(colony.activities.length).toBeLessThanOrEqual(FSPM_ACTIVITY_TRACE_LIMIT);
-      expect(colony.activityEvents.length).toBeLessThanOrEqual(FSPM_EVENT_TRACE_LIMIT);
+      expect(colony.activities.length).toBeLessThanOrEqual(
+        FSPM_ACTIVITY_TRACE_LIMIT,
+      );
+      expect(colony.activityEvents.length).toBeLessThanOrEqual(
+        FSPM_EVENT_TRACE_LIMIT,
+      );
       if (parsed.transport.compacted) {
         expect(colony.activities.length).toBeLessThanOrEqual(24);
         expect(colony.activityEvents.length).toBeLessThanOrEqual(8);
@@ -267,7 +285,46 @@ describe("RawMemory observability retention", () => {
     expect(writeObservabilitySegment(oversizedTrace())).toBe(true);
     const payload = RawMemory.segments[OBSERVABILITY_SEGMENT];
     expect(payload).toBeDefined();
-    expect(payload?.length).toBeLessThanOrEqual(OBSERVABILITY_SEGMENT_TARGET_CHARS);
+    expect(payload?.length).toBeLessThanOrEqual(
+      OBSERVABILITY_SEGMENT_TARGET_CHARS,
+    );
     expect(() => JSON.parse(payload ?? "")).not.toThrow();
+  });
+
+  it("preserves FSPM integrity evidence through the minimal transport path", () => {
+    const integrity = {
+      authoritative: false,
+      total: 1,
+      byCode: { empire_p3_missing: 1 },
+      sampleLimit: 4,
+      omittedSamples: 0,
+      samples: [
+        {
+          code: "empire_p3_missing",
+          scope: "empire",
+          reason: "bounded test evidence",
+        },
+      ],
+    };
+    const source = JSON.stringify({
+      version: 1,
+      tick: 12345,
+      cpu: {},
+      settlement: { plans: [] },
+      fspm: { rootP3: null, integrity, colonies: [], assignments: [] },
+      spatial: {},
+      movement: {},
+      intents: {},
+      unboundedDiagnostic: "x".repeat(OBSERVABILITY_SEGMENT_TARGET_CHARS * 2),
+    });
+
+    const fitted = fitObservabilityPayload(source);
+    const parsed = JSON.parse(fitted);
+
+    expect(parsed.transport.truncated).toBe(true);
+    expect(parsed.fspm.integrity).toEqual(integrity);
+    expect(fitted.length).toBeLessThanOrEqual(
+      OBSERVABILITY_SEGMENT_TARGET_CHARS,
+    );
   });
 });

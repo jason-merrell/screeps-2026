@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createIntentTrace } from "../../src/intents/trace";
 import { migrateMemory } from "../../src/memory/migrate";
 import {
-  ensureDomainHierarchy,
   type ColonyFspmPortfolio,
+  ensureDomainHierarchy,
 } from "../../src/planning/fspm";
 
 function installFreshColony(): void {
@@ -113,7 +113,10 @@ describe("FSPM colony P3 authority", () => {
 
   it("initializes new colony work under subordinate Portfolio authority without a synthetic contract", () => {
     migrateMemory();
-    const { portfolio, requirement } = ensureDomainHierarchy("W1N1", "spawning");
+    const { portfolio, requirement } = ensureDomainHierarchy(
+      "W1N1",
+      "spawning",
+    );
 
     expect(Memory.empireFspm?.p3).toMatchObject({
       id: "portfolio:empire:operations",
@@ -149,13 +152,16 @@ describe("FSPM colony P3 authority", () => {
 
   it("migrates and retires legacy Service Program authority without rewriting Activity identity", () => {
     installLegacyColony();
-    const before = structuredClone(Memory.colonies.W1N1?.fspm?.activities?.["activity:legacy"]);
+    const before = structuredClone(
+      Memory.colonies.W1N1?.fspm?.activities?.["activity:legacy"],
+    );
 
     migrateMemory();
     const portfolio = Memory.colonies.W1N1?.fspm;
     if (!portfolio) throw new Error("expected migrated colony portfolio");
 
-    expect(Memory.version).toBe(6);
+    expect(Memory.version).toBe(7);
+    expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
     expect(portfolio.p3).toMatchObject({
       id: "portfolio:colony:W1N1",
       type: "portfolio",
@@ -165,7 +171,10 @@ describe("FSPM colony P3 authority", () => {
       startTick: 100,
       status: "active",
     });
-    expect(portfolio.program).toMatchObject({ status: "retired", retiredAt: 500 });
+    expect(portfolio.program).toMatchObject({
+      status: "retired",
+      retiredAt: 500,
+    });
     expect(portfolio.contract).toMatchObject({
       id: "contract:colony:W1N1",
       status: "retired",

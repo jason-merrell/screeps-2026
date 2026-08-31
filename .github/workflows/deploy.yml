@@ -30,7 +30,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
 
       - name: Set up Turborepo Remote Cache
         continue-on-error: true
@@ -61,7 +61,7 @@ jobs:
           include-imports: false
 
       - name: Install runtime workspace dependencies
-        run: pnpm install --filter . --filter @screeps/runtime --frozen-lockfile=false
+        run: pnpm install --filter . --filter @screeps/runtime --frozen-lockfile
 
       - name: Check runtime
         run: |

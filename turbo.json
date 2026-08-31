@@ -2,6 +2,8 @@
   "$schema": "https://turborepo.com/schema.json",
   "ui": "stream",
   "globalPassThroughEnv": [
+    "ACTIONS_*",
+    "BENCHMARK_*",
     "GITHUB_*",
     "SCREEPS_*",
     "SCENARIO_*",
@@ -9,26 +11,20 @@
   ],
   "tasks": {
     "build": {
-      "outputs": [
-        "dist/**",
-        ".vercel/output/**"
-      ]
+      "outputs": ["dist/**", ".vercel/output/**"]
     },
     "@screeps/scenario#build": {
-      "dependsOn": [
-        "@screeps/runtime#build"
-      ],
-      "outputs": [
-        "dist/**"
-      ]
+      "dependsOn": ["@screeps/runtime#build"],
+      "outputs": ["dist/**"]
+    },
+    "@screeps/lab#build": {
+      "outputs": [".next/**", "!.next/cache/**"]
     },
     "lint": {},
     "typecheck": {},
     "test": {},
     "scenario": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false
     }
   }
