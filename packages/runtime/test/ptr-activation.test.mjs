@@ -11,8 +11,12 @@ describe("PTR runtime activation", () => {
   it("activates PTR and verifies the resulting world status", async () => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ ok: 1, result: { nModified: 0 } }))
-      .mockResolvedValueOnce(jsonResponse({ ok: 1, status: "normal" }));
+      .mockResolvedValueOnce(
+        jsonResponse({ ok: 1, error: null, result: { nModified: 0 } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ ok: 1, error: null, status: "normal" }),
+      );
 
     await expect(
       activatePtrRuntime({
@@ -44,6 +48,17 @@ describe("PTR runtime activation", () => {
     await expect(
       activatePtrRuntime({ token: "test-token", fetchImpl }),
     ).rejects.toThrow("PTR activation failed (403)");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a contradictory activation acknowledgement with an error", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ ok: 1, error: "not ptr" }));
+
+    await expect(
+      activatePtrRuntime({ token: "test-token", fetchImpl }),
+    ).rejects.toThrow("PTR activation failed (200)");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
@@ -90,6 +105,19 @@ describe("PTR runtime activation", () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse({ ok: 1, result: { nModified: 0 } }))
       .mockResolvedValueOnce(jsonResponse({ status: "normal" }));
+
+    await expect(
+      activatePtrRuntime({ token: "test-token", fetchImpl }),
+    ).rejects.toThrow("PTR world status failed (200)");
+  });
+
+  it("rejects a contradictory normal world status with an error", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ ok: 1 }))
+      .mockResolvedValueOnce(
+        jsonResponse({ ok: 1, status: "normal", error: "stale" }),
+      );
 
     await expect(
       activatePtrRuntime({ token: "test-token", fetchImpl }),

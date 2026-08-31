@@ -9,7 +9,13 @@ const parseResponseBody = async (response, label) => {
 };
 
 const assertSuccessfulResponse = (response, body, label) => {
-  if (!response.ok || body?.ok !== 1) {
+  const hasExplicitError =
+    body !== null &&
+    typeof body === "object" &&
+    Object.hasOwn(body, "error") &&
+    body.error !== null &&
+    body.error !== "";
+  if (!response.ok || body?.ok !== 1 || hasExplicitError) {
     throw new Error(`${label} failed (${response.status})`);
   }
 };
