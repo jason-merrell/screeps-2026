@@ -1,31 +1,65 @@
 # Screeps insights bridge
 
-The insights bridge gives ChatGPT an on-demand, read-only view of operational Screeps world data without exposing `SCREEPS_TOKEN` in chat or GitHub.
+The insights bridge gives the operator an on-demand, read-only view of Screeps
+without exposing `SCREEPS_TOKEN` in chat, issue comments, or uploaded artifacts.
+Issue #5 is the persistent command endpoint.
 
-## Trigger
+## World collection
 
-Issue #5 is the persistent bridge trigger.
-
-Comment:
+World is the default target:
 
 ```text
 /collect
+/collect room=W1N1
+/collect room=W1N1 shard=shard3
 ```
 
-To inspect a specific room before ownership or vision:
+The collector reads world status, start-room state, owned rooms, account stats,
+branch activation, and per-room status, overview, terrain, and objects. World
+collection retains its legacy token behavior and does not depend on
+`/api/auth/me`.
+
+## PTR runtime preflight
+
+PTR inspection is intentionally atomic and requires both room and shard:
 
 ```text
-/collect W1N1
+/collect target=ptr room=E52N38 shard=shard3
 ```
 
-Only comments from the repository owner are allowed to start the job. The workflow can also be run manually with an optional room input.
+The resulting `runtimeReadiness` record checks:
 
-## Authentication
+- normal PTR world status;
+- one unambiguous active branch matching the configured deployment branch;
+- positive CPU allocation on the requested shard and an operational account;
+- the exact requested room is listed and its controller is owned by that
+  account;
+- the shard game clock and durable Memory schema are readable;
+- Segment 99 reports the expected executing runtime build SHA, Memory schema,
+  valid CPU metrics, and a fresh tick;
+- the requested room's development evaluator ran on that trace tick.
 
-The workflow reuses the existing `SCREEPS_TOKEN` from Infisical `/deploy` through GitHub OIDC. The token is injected only into the workflow process and is never written to the artifact.
+The status is `ready`, `blocked`, or `unverified`. This is an execution
+preflight, not release closure: `releaseClosure` is always `false`. A fresh
+self-reported build SHA proves which build is executing; it is not independent
+byte verification and does not prove that construction or maturity outcomes
+have occurred. Those require post-deployment snapshot evidence.
 
-## Snapshot
+## Authentication and privacy
 
-The collector requests operational endpoints such as world status, start room, rooms, branches, stats, and per-room status, overview, encoded terrain, and room objects. Individual Screeps requests fail softly so a narrowly scoped token produces a partial snapshot instead of losing the entire diagnostic run.
+GitHub Actions obtains `SCREEPS_TOKEN` from Infisical `/deploy` through OIDC.
+The token exists only in the workflow process. Account responses are reduced to
+CPU and operational-state evidence. Branch responses are reduced to branch name
+and activation flags on both World and PTR; module source, account identifiers,
+and opaque branch metadata are not copied into readiness evidence.
 
-The result is uploaded as `screeps-insights-<run-id>` with a seven-day retention period.
+## Artifacts
+
+Each immutable issue-comment request produces
+`screeps-insights-request-<comment-id>` with seven-day retention and a matching
+completion receipt on issue #5. Manual workflow dispatch supports `world` and
+`ptr`; PTR dispatch also requires an explicit room and shard and may supply an
+expected runtime SHA.
+
+See [insights-protocol.md](./insights-protocol.md) for the complete command and
+idempotency contract.
