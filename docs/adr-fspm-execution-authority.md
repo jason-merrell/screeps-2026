@@ -78,7 +78,7 @@ Memory v8 quarantines the complete pre-package Requirement, Deliverable, Task, A
 - malformed Empire and colony containers survive production maintenance for quarantine but cannot implicitly become active authority;
 - a legacy contract-only trace remains decodable but cannot authorize current work.
 
-The native production-main gate independently proves both malformed-root boundaries for 12 engine ticks. Every post-activation Segment 99 publication must be fresh, strictly increasing, correlated to `lastPublication`, built from the exact candidate SHA, and carry bounded `empire_p3_missing` or `colony_p3_missing` evidence. Both modes require zero authorized work, zero fabricated Activity evidence, zero engine side effects, and continued authority/arbitration/execution completion after the contained maintenance failure.
+The native production-main gate independently proves both malformed-root boundaries for 12 engine ticks. Every post-activation Segment 99 publication must be fresh, strictly increasing, correlated to `lastPublication`, built from the exact candidate SHA, and carry bounded `empire_p3_missing` or `colony_p3_missing` evidence. Both modes require zero authorized work, zero fabricated Activity evidence, zero engine side effects, and continued authority/arbitration/execution completion after the contained governance-activation and maintenance failures. Deferrable settlement or construction may be skipped only with the supervisor's explicit cadence/admission reason; a skip is never accepted as an unqualified success.
 
 ## Out of scope
 

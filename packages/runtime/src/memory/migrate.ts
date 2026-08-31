@@ -207,7 +207,9 @@ export function migrateMemory(): void {
         deliverableReceiptDecisions: { count: 0, headHash: null },
         authorityLifecycle: { count: 0, headHash: null },
       };
-      delete portfolio.p3.quality;
+      if (portfolio.p3 && typeof portfolio.p3 === "object") {
+        delete portfolio.p3.quality;
+      }
       delete portfolio.governanceBinding;
     }
     memory.version = 8;

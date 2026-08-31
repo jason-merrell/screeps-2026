@@ -27,6 +27,7 @@ const expectAnyMalformedAuthority =
 const roomName = "W0N0";
 const segmentId = 99;
 const initialSpawnEnergy = 300;
+const expectedMemoryVersion = 8;
 const runRoot = path.resolve(
   "scenario",
   ".production-main-smoke",
@@ -323,7 +324,8 @@ try {
   );
   const downstreamPhaseNames = ["fspm_authority", "arbitration", "execution"];
   const malformedFailureContained =
-    failedTracePhases.some((phase) => phase?.name === "fspm_maintenance") &&
+    JSON.stringify(failedTracePhases.map((phase) => phase?.name).sort()) ===
+      JSON.stringify(["fspm_governance", "fspm_maintenance"]) &&
     failedTracePhases.every(
       (phase) => !downstreamPhaseNames.includes(phase?.name),
     );
@@ -336,9 +338,17 @@ try {
     },
     {
       name: "production memory migration completed",
-      passed: finalMemory?.version === 7,
-      actual: finalMemory?.version ?? null,
-      expected: 7,
+      passed:
+        finalMemory?.version === expectedMemoryVersion &&
+        finalTrace?.memoryVersion === expectedMemoryVersion,
+      actual: {
+        memory: finalMemory?.version ?? null,
+        trace: finalTrace?.memoryVersion ?? null,
+      },
+      expected: {
+        memory: expectedMemoryVersion,
+        trace: expectedMemoryVersion,
+      },
     },
     {
       name: "owned colony was perceived and persisted",
@@ -387,7 +397,7 @@ try {
     },
     {
       name: expectAnyMalformedAuthority
-        ? "malformed authority failures are contained before downstream execution"
+        ? "malformed governance failures are contained before downstream execution"
         : expectMaintenanceFault
           ? "fault is contained to FSPM maintenance"
           : "no supervised runtime phase reported failed status",
@@ -400,7 +410,10 @@ try {
       actual: failedTracePhases,
       expected: expectAnyMalformedAuthority
         ? {
-            includes: { name: "fspm_maintenance", status: "failed" },
+            includes: [
+              { name: "fspm_governance", status: "failed" },
+              { name: "fspm_maintenance", status: "failed" },
+            ],
             excludes: downstreamPhaseNames,
           }
         : expectMaintenanceFault

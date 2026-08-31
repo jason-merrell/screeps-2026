@@ -6,6 +6,8 @@ const CORE_PHASE_STATUS = {
   execution: "completed",
   activity_evidence: "completed",
 };
+const DEFERRABLE_PHASE_STATUS = ["completed", "skipped"];
+const VALID_SKIP_REASONS = new Set(["cadence", "admission"]);
 
 function phaseStatus(trace) {
   return Object.fromEntries(
@@ -16,32 +18,35 @@ function phaseStatus(trace) {
 }
 
 function expectedPhaseStatus(mode) {
+  const malformed =
+    mode === "malformed-fspm-authority" ||
+    mode === "malformed-colony-authority";
   if (mode === "fspm-maintenance-fault") {
     return {
       ...CORE_PHASE_STATUS,
+      fspm_governance: "completed",
       spawning: "completed",
-      settlement: "completed",
-      construction: "completed",
+      settlement: DEFERRABLE_PHASE_STATUS,
+      construction: DEFERRABLE_PHASE_STATUS,
       fspm_maintenance: "failed",
     };
   }
-  if (
-    mode === "malformed-fspm-authority" ||
-    mode === "malformed-colony-authority"
-  ) {
+  if (malformed) {
     return {
       ...CORE_PHASE_STATUS,
-      spawning: "failed",
-      settlement: "failed",
-      construction: "completed",
+      fspm_governance: "failed",
+      spawning: "completed",
+      settlement: DEFERRABLE_PHASE_STATUS,
+      construction: DEFERRABLE_PHASE_STATUS,
       fspm_maintenance: "failed",
     };
   }
   return {
     ...CORE_PHASE_STATUS,
+    fspm_governance: "completed",
     spawning: "completed",
-    settlement: "completed",
-    construction: "completed",
+    settlement: DEFERRABLE_PHASE_STATUS,
+    construction: DEFERRABLE_PHASE_STATUS,
     fspm_maintenance: "completed",
   };
 }
@@ -52,7 +57,7 @@ function expectedFailedPhases(mode) {
     mode === "malformed-fspm-authority" ||
     mode === "malformed-colony-authority"
   ) {
-    return ["fspm_maintenance", "settlement", "spawning"];
+    return ["fspm_governance", "fspm_maintenance"];
   }
   return [];
 }
@@ -89,14 +94,35 @@ function publicationErrors(observation, input) {
     );
   }
 
+  const phaseRecords = Array.isArray(trace?.runtime?.phases)
+    ? trace.runtime.phases
+    : [];
   const actualStatus = phaseStatus(trace);
   for (const [name, expected] of Object.entries(
     expectedPhaseStatus(input.mode),
   )) {
-    if (actualStatus[name] !== expected) {
+    const allowed = Array.isArray(expected) ? expected : [expected];
+    if (!allowed.includes(actualStatus[name])) {
       errors.push(
-        `phase ${name} is ${String(actualStatus[name])}; expected ${expected}`,
+        `phase ${name} is ${String(actualStatus[name])}; expected ${allowed.join(" or ")}`,
       );
+    }
+    if (actualStatus[name] === "skipped") {
+      const record = phaseRecords.find((phase) => phase?.name === name);
+      if (
+        record?.class !== "deferrable" ||
+        !VALID_SKIP_REASONS.has(record?.skipReason)
+      ) {
+        errors.push(
+          `phase ${name} skipped without a governed deferrable cadence/admission reason`,
+        );
+      }
+      if (record?.error !== null) {
+        errors.push(`phase ${name} skipped while reporting an error`);
+      }
+      if (record?.cpu !== 0) {
+        errors.push(`phase ${name} skipped with nonzero CPU`);
+      }
     }
   }
   const failed = Object.entries(actualStatus)

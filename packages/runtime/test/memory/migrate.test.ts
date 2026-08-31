@@ -195,6 +195,58 @@ describe("Memory migration", () => {
     });
   });
 
+  it("migrates a v7 colony with a missing P3 without fabricating authority", () => {
+    Object.assign(globalThis, {
+      Memory: {
+        version: 7,
+        colonies: {
+          W1N1: {
+            roomName: "W1N1",
+            discoveredAt: 1,
+            fspm: {
+              requirements: {},
+              deliverables: {},
+              tasks: {},
+              activities: {},
+              qualityHistory: {},
+              activityKpiHistory: {},
+            },
+          },
+        },
+        empireFspm: {
+          p3: {
+            id: "portfolio:empire:operations",
+            type: "portfolio",
+            subType: "ou_portfolio",
+            name: "EMPIRE-PORTFOLIO-Empire Operations",
+            description: "Governed Empire authority",
+            parentP3Id: null,
+            temporalBasis: "game_tick",
+            startTick: 1,
+            status: "active",
+            statusReason: "governed Empire authority",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+        runtimeSupervisor: { version: 1, phases: {} },
+      },
+    });
+
+    expect(() => migrateMemory()).not.toThrow();
+
+    const portfolio = Memory.colonies.W1N1?.fspm;
+    expect(Memory.version).toBe(MEMORY_VERSION);
+    expect(portfolio).toBeDefined();
+    expect(Object.hasOwn(portfolio ?? {}, "p3")).toBe(false);
+    expect(portfolio?.requirements).toEqual({});
+    expect(portfolio?.authorityLedgerAnchors).toEqual({
+      deliverableReceipts: { count: 0, headHash: null },
+      deliverableReceiptDecisions: { count: 0, headHash: null },
+      authorityLifecycle: { count: 0, headHash: null },
+    });
+  });
+
   it("preserves a malformed existing Empire container for governed quarantine", () => {
     Object.assign(globalThis, {
       Memory: {

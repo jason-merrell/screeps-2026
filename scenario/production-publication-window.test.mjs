@@ -8,10 +8,11 @@ function phases(mode) {
     mode === "malformed-fspm-authority" ||
     mode === "malformed-colony-authority";
   const statuses = {
+    fspm_governance: malformed ? "failed" : "completed",
     defense: "completed",
-    spawning: malformed ? "failed" : "completed",
+    spawning: "completed",
     economy: "completed",
-    settlement: malformed ? "failed" : "completed",
+    settlement: "completed",
     construction: "completed",
     fspm_maintenance: mode === "normal" ? "completed" : "failed",
     fspm_authority: "completed",
@@ -19,7 +20,16 @@ function phases(mode) {
     execution: "completed",
     activity_evidence: "completed",
   };
-  return Object.entries(statuses).map(([name, status]) => ({ name, status }));
+  return Object.entries(statuses).map(([name, status]) => ({
+    name,
+    class: ["settlement", "construction"].includes(name)
+      ? "deferrable"
+      : "mandatory",
+    status,
+    skipReason: null,
+    cpu: 1,
+    error: null,
+  }));
 }
 
 function trace(tick, mode = "normal") {
@@ -215,4 +225,87 @@ describe("production Segment 99 publication window", () => {
       expect.arrayContaining([expect.objectContaining({ index: 7 })]),
     );
   });
+
+  it("accepts a deferrable phase skipped for a governed admission reason", () => {
+    const observations = healthyWindow();
+    const settlement = observations[6].trace.runtime.phases.find(
+      (phase) => phase.name === "settlement",
+    );
+    settlement.status = "skipped";
+    settlement.skipReason = "admission";
+    settlement.cpu = 0;
+
+    const result = evaluateProductionPublicationWindow({
+      ticks: 12,
+      mode: "normal",
+      expectedRuntimeSha: SHA,
+      observations,
+    });
+
+    expect(result.passed).toBe(true);
+  });
+
+  it("rejects an unexplained deferrable skip", () => {
+    const observations = healthyWindow();
+    observations[6].trace.runtime.phases.find(
+      (phase) => phase.name === "settlement",
+    ).status = "skipped";
+
+    const result = evaluateProductionPublicationWindow({
+      ticks: 12,
+      mode: "normal",
+      expectedRuntimeSha: SHA,
+      observations,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.invalidObservations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          index: 7,
+          errors: expect.arrayContaining([
+            "phase settlement skipped without a governed deferrable cadence/admission reason",
+          ]),
+        }),
+      ]),
+    );
+  });
+
+  it.each([
+    [
+      "error",
+      "unexpected failure",
+      "phase settlement skipped while reporting an error",
+    ],
+    ["cpu", 0.25, "phase settlement skipped with nonzero CPU"],
+  ])(
+    "rejects a deferrable skip carrying %s work evidence",
+    (field, value, expectedError) => {
+      const observations = healthyWindow();
+      const settlement = observations[6].trace.runtime.phases.find(
+        (phase) => phase.name === "settlement",
+      );
+      settlement.status = "skipped";
+      settlement.skipReason = "admission";
+      settlement.cpu = 0;
+      settlement[field] = value;
+
+      const result = evaluateProductionPublicationWindow({
+        ticks: 12,
+        mode: "normal",
+        expectedRuntimeSha: SHA,
+        observations,
+      });
+
+      expect(result.passed).toBe(false);
+      expect(result.invalidObservations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            index: 7,
+            errors: expect.arrayContaining([expectedError]),
+          }),
+        ]),
+      );
+    },
+  );
 });
