@@ -20,6 +20,7 @@ import {
 } from "./planning/activity-lifecycle";
 import { enforceRoutineControllerProgress } from "./planning/controller-policy";
 import {
+  activateApprovedColonyGovernance,
   type AuthorizedFspmIntentBatch,
   authorizedFspmIntents,
   createFspmAuthorityDenialSummary,
@@ -69,6 +70,16 @@ export const loop = (): void => {
     getUsed: () => Game.cpu.getUsed(),
     scopeUnits: world.rooms.length,
   });
+  const governanceReady = supervisor.run(
+    "fspm_governance",
+    () => {
+      for (const room of world.rooms) {
+        activateApprovedColonyGovernance(room.name);
+      }
+      return true;
+    },
+    () => false,
+  );
 
   const plannerByIntent = new Map<Intent, PlannerName>();
   const runPlanner = (
@@ -76,7 +87,11 @@ export const loop = (): void => {
     planner: () => Intent[],
   ): PlannerRunTrace => {
     const start = Game.cpu.getUsed();
-    const intents = supervisor.run(name, planner, () => []);
+    const intents = supervisor.run(
+      name,
+      () => (governanceReady ? planner() : []),
+      () => [],
+    );
     const cpu = Game.cpu.getUsed() - start;
     for (const intent of intents) plannerByIntent.set(intent, name);
     return { name, cpu, intents };
@@ -103,6 +118,7 @@ export const loop = (): void => {
       supervisor.run(
         "settlement",
         () => {
+          if (!governanceReady) return;
           ensureSettlementPlans(world);
           normalizeFreshRoomPlans();
           ensureRoomPlanOwnership();
@@ -173,14 +189,15 @@ export const loop = (): void => {
   const executionCpu = Game.cpu.getUsed() - phaseStart;
   const assignments = supervisor.run(
     "activity_evidence",
-    () =>
-      reconcileFspmActivityEvidence({
+    () => {
+      return reconcileFspmActivityEvidence({
         observations: execution.activities,
         proposed: authorizedProposals,
         accepted: arbitration.accepted,
         rejected: arbitration.rejected,
         creeps: world.creeps,
-      }),
+      });
+    },
     () => [],
   );
 

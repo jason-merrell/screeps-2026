@@ -14,6 +14,7 @@ import {
   reconcileFspmActivityEvidence,
 } from "../../src/planning/activity-lifecycle";
 import {
+  activateApprovedColonyGovernance,
   ensureColonyPortfolio,
   ensureProcedure,
   ensureTask,
@@ -151,7 +152,10 @@ function activities() {
 }
 
 describe("FSPM Activity lifecycle", () => {
-  beforeEach(() => installGlobals());
+  beforeEach(() => {
+    installGlobals();
+    activateApprovedColonyGovernance("W1N1");
+  });
 
   it("keeps concrete targets out of governed Procedure identity", () => {
     const first = createIntentTrace({

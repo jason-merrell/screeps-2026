@@ -5,7 +5,10 @@ import {
   bindFspmActivities,
   fspmActivityEvents,
 } from "../../src/planning/activity-lifecycle";
-import { ensureColonyPortfolio } from "../../src/planning/fspm";
+import {
+  activateApprovedColonyGovernance,
+  ensureColonyPortfolio,
+} from "../../src/planning/fspm";
 
 vi.stubGlobal("RESOURCE_ENERGY", "energy");
 vi.stubGlobal("STRUCTURE_RAMPART", "rampart");
@@ -39,7 +42,10 @@ function installGlobals(): void {
 }
 
 describe("FSPM Activity state sequence", () => {
-  beforeEach(() => installGlobals());
+  beforeEach(() => {
+    installGlobals();
+    activateApprovedColonyGovernance("W1N1");
+  });
 
   it("records creation before commencement and finishes binding In Progress", () => {
     const intent: HarvestIntent = {

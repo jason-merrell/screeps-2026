@@ -15,7 +15,9 @@ export type {
   ControlPlaneProvenance,
 } from "@/lib/data-trust";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://nflcqzcqpodnfkzjarwv.supabase.co";
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  "https://nflcqzcqpodnfkzjarwv.supabase.co";
 const supabaseKey =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   "sb_publishable_2g6FV2odRFonTpEDZ0rzSw_0MaZSAUt";
@@ -41,7 +43,11 @@ export type RoomPlan = {
 export type FspmStatus = "active" | "completed" | "cancelled" | "retired";
 export type FspmQualityState = "healthy" | "watch" | "degraded";
 export type FspmTrend = "new" | "improving" | "stable" | "declining";
-export type FspmKpiRating = "exceptional" | "satisfactory" | "unsatisfactory" | "in_progress";
+export type FspmKpiRating =
+  | "exceptional"
+  | "satisfactory"
+  | "unsatisfactory"
+  | "in_progress";
 export type FspmQuality = {
   score: number;
   state: FspmQualityState;
@@ -70,10 +76,55 @@ export type FspmRequirement = FspmRecord & {
   p3Id?: string;
   contractId?: string;
   domain?: string;
+  revision?: number;
+  strategicPriority?: "SELL" | "STAFF" | "SERVE";
+  requirementSource?: string | null;
+  originatingAuthority?: string | null;
+  applicableOuId?: string;
+  approvalAuthorityOuId?: string;
+  approval?: boolean;
+  approvedBy?: string;
+  dateApproved?: string;
+  approvalEventId?: string;
+  activationStatus?: "valid" | "missing" | "invalid";
 };
 export type FspmDeliverable = FspmRecord & {
+  p3Id?: string;
   requirementId?: string;
   domain?: string;
+  revision?: number;
+  category?: "corporate";
+  deliverableType?: "product" | "service" | "result";
+  output?: string;
+  qualityDescription?: string;
+  qualityMetric?: string;
+  siblingWeightBasisPoints?: number;
+  expectedSiblingWeightBasisPoints?: number;
+  weightStatus?: "valid" | "invalid";
+  taskWeightBasisPoints?: number;
+  receiptValidation?: {
+    evidenceForm: string;
+    storageLocation: string;
+    captureResponsibility: string;
+  };
+  servicePrincipalAcceptance?: {
+    model: "terminal_activity_kpi_threshold";
+    acceptedKpiRatings: ["exceptional", "satisfactory"];
+    canonicalHumanAcceptance: false;
+  };
+  receiptContractStatus?: "valid" | "invalid";
+  servicePrincipalAcceptanceStatus?: "valid" | "invalid";
+  receiptEvidenceStatus?: "pending" | "missing" | "validated" | "invalid";
+  receiptAcceptanceStatus?:
+    | "pending"
+    | "missing"
+    | "accepted"
+    | "rejected"
+    | "disputed"
+    | "invalid";
+  /** Compatibility field for snapshots published before governed receipt telemetry. */
+  receiptStatus?: "missing" | "validated" | "invalid";
+  childDeliverableIds?: string[];
 };
 export type FspmTaskKpiMetric = {
   metric: string;
@@ -98,12 +149,19 @@ export type FspmActivityKpi = {
   rating: FspmKpiRating;
   value: number | null;
   evidence: string;
-  outcome?: { metric: string; actual: number; target: number; unit: string; utilization: number };
+  outcome?: {
+    metric: string;
+    actual: number;
+    target: number;
+    unit: string;
+    utilization: number;
+  };
 };
 export type FspmTask = FspmRecord & {
   deliverableId?: string;
   domain?: string;
   taskKey?: string;
+  taskWeightBasisPoints?: number;
   kpiMetric?: FspmTaskKpiMetric;
   qi?: FspmTaskQi;
   recentActivities?: FspmActivityKpi[];
@@ -130,6 +188,35 @@ export type FspmColonySummary = {
   legacyProgram?: FspmProgram | null;
   legacyContract?: FspmRecord | null;
   program?: FspmProgram | null;
+  governance?: {
+    packageId: string;
+    packageRevision: number;
+    packageHash: string;
+    governanceSha: string;
+    effectiveDate: string;
+    importedAtTick: number;
+    signerPrincipalId: string;
+    accountablePositionId: string;
+    approvalEvents: number;
+    receiptEvidenceEvents?: number;
+    receiptDecisionEvents?: number;
+    deliverableWeightBasisPoints: number;
+    approvalModel?: "source_control_service_principal";
+    canonicalHumanApproval?: false;
+    checks?: {
+      empireRoot?: boolean;
+      packageProjection: boolean;
+      approvalLedger: boolean;
+      ancestry: boolean;
+      relationships: boolean;
+      exactWeights: boolean;
+      receiptContracts: boolean;
+      acceptancePolicies?: boolean;
+      receiptLedgers?: boolean;
+    };
+    valid: boolean;
+    executionEligible?: boolean;
+  } | null;
   requirements: FspmRequirement[];
   deliverables: FspmDeliverable[];
   tasks: FspmTask[];
@@ -150,7 +237,11 @@ export type Snapshot = {
   shard?: string;
   room?: string;
   colony?: {
-    controller?: { level?: number | null; progress?: number | null; progressTotal?: number | null } | null;
+    controller?: {
+      level?: number | null;
+      progress?: number | null;
+      progressTotal?: number | null;
+    } | null;
     energy?: { available?: number | null; capacity?: number | null } | null;
     creeps?: number | null;
     structures?: Array<Point & { type?: string | null }>;
@@ -189,32 +280,37 @@ function normalizeFspmAuthority(snapshot: Snapshot | null): Snapshot | null {
 }
 
 export async function loadControlPlane() {
-  const [snapshotResult, experimentsResult, benchmarkResult] = await Promise.all([
-    supabase
-      .from("observability_snapshots")
-      .select("id,colony_id,payload,captured_at,source_request_id")
-      .not("captured_at", "is", null)
-      .order("captured_at", { ascending: false, nullsFirst: false })
-      .order("id", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("experiments")
-      .select("experiment_key,name,target,shard,room_name,runtime_sha,completed_at,status,result")
-      .eq("status", "succeeded")
-      .not("completed_at", "is", null)
-      .order("completed_at", { ascending: false, nullsFirst: false })
-      .order("experiment_key", { ascending: false })
-      .limit(12),
-    supabase
-      .from("benchmark_samples")
-      .select("id,sample_key,colony_id,benchmark_name,runtime_sha,captured_at,metrics,source,source_ref,inserted_at,colony:colonies(target,shard,room_name)")
-      .not("captured_at", "is", null)
-      .order("captured_at", { ascending: false, nullsFirst: false })
-      .order("id", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  const [snapshotResult, experimentsResult, benchmarkResult] =
+    await Promise.all([
+      supabase
+        .from("observability_snapshots")
+        .select("id,colony_id,payload,captured_at,source_request_id")
+        .not("captured_at", "is", null)
+        .order("captured_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("experiments")
+        .select(
+          "experiment_key,name,target,shard,room_name,runtime_sha,completed_at,status,result",
+        )
+        .eq("status", "succeeded")
+        .not("completed_at", "is", null)
+        .order("completed_at", { ascending: false, nullsFirst: false })
+        .order("experiment_key", { ascending: false })
+        .limit(12),
+      supabase
+        .from("benchmark_samples")
+        .select(
+          "id,sample_key,colony_id,benchmark_name,runtime_sha,captured_at,metrics,source,source_ref,inserted_at,colony:colonies(target,shard,room_name)",
+        )
+        .not("captured_at", "is", null)
+        .order("captured_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
   const snapshotRow = snapshotResult.data as {
     id: number;
@@ -223,21 +319,29 @@ export async function loadControlPlane() {
     captured_at: string | null;
     source_request_id: string | null;
   } | null;
-  const snapshot = normalizeFspmAuthority(
-    snapshotRow?.payload ?? null,
-  );
+  const snapshot = normalizeFspmAuthority(snapshotRow?.payload ?? null);
   const experiments = (experimentsResult.data as Experiment[] | null) ?? [];
   const benchmarkRow = (benchmarkResult.data as BenchmarkRow | null) ?? null;
-  let correlatedExperiment = findCorrelatedExperiment(benchmarkRow, experiments);
+  let correlatedExperiment = findCorrelatedExperiment(
+    benchmarkRow,
+    experiments,
+  );
   let correlationQueryError: { code?: string } | null = null;
-  if (benchmarkRow?.sample_key && !correlatedExperiment && !experimentsResult.error) {
+  if (
+    benchmarkRow?.sample_key &&
+    !correlatedExperiment &&
+    !experimentsResult.error
+  ) {
     const correlationResult = await supabase
       .from("experiments")
-      .select("experiment_key,name,target,shard,room_name,runtime_sha,completed_at,status,result")
+      .select(
+        "experiment_key,name,target,shard,room_name,runtime_sha,completed_at,status,result",
+      )
       .eq("status", "succeeded")
       .eq("experiment_key", benchmarkRow.sample_key)
       .maybeSingle();
-    correlatedExperiment = (correlationResult.data as Experiment | null) ?? null;
+    correlatedExperiment =
+      (correlationResult.data as Experiment | null) ?? null;
     correlationQueryError = correlationResult.error;
   }
   const benchmark = mapBenchmarkSample(benchmarkRow, correlatedExperiment);
@@ -258,7 +362,7 @@ export async function loadControlPlane() {
       }
     : null;
   const errorCode = (error: { code?: string } | null) =>
-    error ? (error.code || "query_failed") : null;
+    error ? error.code || "query_failed" : null;
   const provenance = buildControlPlaneProvenance({
     snapshot: snapshotEvidence,
     experiments,

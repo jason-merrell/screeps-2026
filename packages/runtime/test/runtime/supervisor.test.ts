@@ -85,7 +85,11 @@ describe("runtime supervisor", () => {
       });
       if (name === "construction") {
         for (const phase of ["defense", "spawning", "economy"] as const) {
-          supervisor.run(phase, () => [], () => []);
+          supervisor.run(
+            phase,
+            () => [],
+            () => [],
+          );
         }
       }
 
@@ -168,7 +172,11 @@ describe("runtime supervisor", () => {
     });
 
     for (const phase of ["defense", "spawning", "economy"] as const) {
-      supervisor.run(phase, () => [], () => []);
+      supervisor.run(
+        phase,
+        () => [],
+        () => [],
+      );
     }
 
     expect(supervisor.run("construction", operation, () => [])).toEqual([
@@ -196,7 +204,11 @@ describe("runtime supervisor", () => {
       getUsed: () => used,
     });
     for (const phase of ["defense", "spawning", "economy"] as const) {
-      supervisor.run(phase, () => [], () => []);
+      supervisor.run(
+        phase,
+        () => [],
+        () => [],
+      );
     }
     used = 1;
     const operation = vi.fn(() => ["construction"]);
@@ -270,8 +282,17 @@ describe("runtime supervisor", () => {
         getUsed: () => used,
         scopeUnits,
       });
-      for (const phase of ["defense", "spawning", "economy"] as const) {
-        supervisor.run(phase, () => [], () => []);
+      for (const phase of [
+        "fspm_governance",
+        "defense",
+        "spawning",
+        "economy",
+      ] as const) {
+        supervisor.run(
+          phase,
+          () => [],
+          () => [],
+        );
       }
       const operation = vi.fn(() => {
         used += 0.5;
@@ -282,12 +303,12 @@ describe("runtime supervisor", () => {
     const single = make(1);
     const empire = make(8);
 
-    expect(single.supervisor.run("settlement", single.operation, () => [])).toEqual([
-      "settlement",
-    ]);
-    expect(empire.supervisor.run("settlement", empire.operation, () => [])).toEqual(
-      [],
-    );
+    expect(
+      single.supervisor.run("settlement", single.operation, () => []),
+    ).toEqual(["settlement"]);
+    expect(
+      empire.supervisor.run("settlement", empire.operation, () => []),
+    ).toEqual([]);
     expect(single.supervisor.trace().scopeUnits).toBe(1);
     expect(empire.supervisor.trace().scopeUnits).toBe(8);
   });
@@ -319,9 +340,10 @@ describe("runtime supervisor", () => {
       getUsed: () => 0,
     });
 
-    expect(
-      supervisor.orderDeferrable(["settlement", "construction"]),
-    ).toEqual(["construction", "settlement"]);
+    expect(supervisor.orderDeferrable(["settlement", "construction"])).toEqual([
+      "construction",
+      "settlement",
+    ]);
   });
 
   it("always gives a never-run deferrable lane priority over finite debt", () => {
@@ -342,9 +364,10 @@ describe("runtime supervisor", () => {
       getUsed: () => 0,
     });
 
-    expect(
-      supervisor.orderDeferrable(["settlement", "construction"]),
-    ).toEqual(["construction", "settlement"]);
+    expect(supervisor.orderDeferrable(["settlement", "construction"])).toEqual([
+      "construction",
+      "settlement",
+    ]);
   });
 
   it("exports bounded nearest-rank CPU percentiles", () => {

@@ -9,6 +9,7 @@ import type {
 } from "../../src/intents/types";
 import { bindFspmActivities } from "../../src/planning/activity-lifecycle";
 import {
+  activateApprovedColonyGovernance,
   authorizedFspmIntents,
   type ColonyFspmPortfolio,
   createFspmAuthoritySnapshot,
@@ -19,7 +20,10 @@ import {
   resolveActiveFspmAuthority,
   validateFspmIntentAuthority,
 } from "../../src/planning/fspm";
-import { FSPM_GOVERNANCE_SHA } from "../../src/planning/fspm-catalog";
+import {
+  FSPM_GOVERNANCE_SHA,
+  fspmProcedureDefinition,
+} from "../../src/planning/fspm-catalog";
 
 vi.stubGlobal("RESOURCE_ENERGY", "energy");
 vi.stubGlobal("STRUCTURE_RAMPART", "rampart");
@@ -97,7 +101,10 @@ function denialCode(intent: HarvestIntent): FspmAuthorityDenialCode {
 }
 
 describe("FSPM execution authority invariant", () => {
-  beforeEach(() => installGlobals());
+  beforeEach(() => {
+    installGlobals();
+    activateApprovedColonyGovernance(ROOM);
+  });
 
   it("authorizes and binds the exact active canonical lineage", () => {
     expect(FSPM_GOVERNANCE_SHA).toBe(GOVERNANCE_SHA);
@@ -230,7 +237,9 @@ describe("FSPM execution authority invariant", () => {
       requirement.status = status;
       requirement.statusReason = `operator set Requirement ${status}`;
 
-      reconcileFspmLifecycle([intent]);
+      expect(() => reconcileFspmLifecycle([intent])).toThrow(
+        /Cannot reconcile invalid FSPM governance/i,
+      );
 
       expect(requirement).toMatchObject({
         status,
@@ -431,6 +440,36 @@ describe("FSPM execution authority invariant", () => {
     expect(portfolio().activities).toEqual({});
   });
 
+  it("keeps Procedure capability immutable while a same-tick snapshot is live", () => {
+    const intent = canonicalIntent();
+    intent.trace = createIntentTrace({
+      roomName: ROOM,
+      domain: "economy",
+      task: TASK_KEY,
+      procedure: "fund-workforce-energy",
+    });
+    const snapshot = createFspmAuthoritySnapshot();
+    const definition = fspmProcedureDefinition(
+      "economy",
+      TASK_KEY,
+      "fund-workforce-energy",
+    );
+    if (!definition) throw new Error("expected Procedure definition");
+
+    expect(snapshot.resolveIntent(intent)).toMatchObject({
+      authorized: false,
+      code: "intent_type_mismatch",
+    });
+    expect(() =>
+      (definition.allowedIntentTypes as Intent["type"][]).push("harvest"),
+    ).toThrow(TypeError);
+    expect(definition.allowedIntentTypes).toEqual(["transfer"]);
+    expect(snapshot.resolveIntent(intent)).toMatchObject({
+      authorized: false,
+      code: "intent_type_mismatch",
+    });
+  });
+
   it("revalidates the full intent during binding after proposal authorization", () => {
     const intent = canonicalIntent();
     const batch = authorizedFspmIntents([intent]);
@@ -524,6 +563,28 @@ describe("FSPM execution authority invariant", () => {
       },
     },
     {
+      label: "Empire Portfolio temporal basis",
+      mutate: (current: ColonyFspmPortfolio, intent: HarvestIntent) => {
+        if (!Memory.empireFspm) throw new Error("expected Empire Portfolio");
+        Memory.empireFspm.p3.temporalBasis = "wall_clock" as never;
+        return { current, intent };
+      },
+    },
+    {
+      label: "colony Portfolio blank name",
+      mutate: (current: ColonyFspmPortfolio, intent: HarvestIntent) => {
+        current.p3.name = "";
+        return { current, intent };
+      },
+    },
+    {
+      label: "colony Portfolio invalid start tick",
+      mutate: (current: ColonyFspmPortfolio, intent: HarvestIntent) => {
+        current.p3.startTick = Number.NaN;
+        return { current, intent };
+      },
+    },
+    {
       label: "Requirement",
       mutate: (current: ColonyFspmPortfolio, intent: HarvestIntent) => {
         const requirement = current.requirements.economy;
@@ -571,7 +632,9 @@ describe("FSPM execution authority invariant", () => {
       mutate(portfolio(), intent);
       const before = structuredClone(Memory);
 
-      expect(() => canonicalIntent()).toThrow(/identity is not canonical/);
+      expect(() => canonicalIntent()).toThrow(
+        /identity is not canonical|Task definition is not canonical/,
+      );
       expect(Memory).toEqual(before);
     },
   );
@@ -628,10 +691,10 @@ describe("FSPM execution authority invariant", () => {
     expect(batch.snapshot).toBe(snapshot);
     expect(snapshot.stats).toEqual({
       colonies: 1,
-      requirements: 1,
-      deliverables: 1,
-      tasks: 1,
-      procedures: 7,
+      requirements: 4,
+      deliverables: 4,
+      tasks: 6,
+      procedures: 19,
     });
     expect(batch.accepted).toHaveLength(64);
     bindFspmActivities(batch.accepted, snapshot);
@@ -738,6 +801,7 @@ describe("FSPM execution authority invariant", () => {
 
   it("invalidates the tick index for an in-place identity mutation in a non-requested colony", () => {
     Memory.colonies.W9N9 = { roomName: "W9N9", discoveredAt: 1 };
+    activateApprovedColonyGovernance("W9N9");
     createIntentTrace({
       roomName: "W9N9",
       domain: "economy",
@@ -753,7 +817,7 @@ describe("FSPM execution authority invariant", () => {
     const before = structuredClone(Memory);
 
     expect(() => canonicalIntent()).toThrow(
-      /Task identity is not canonical|globally indexed authority changed outside/i,
+      /Task (?:identity|definition) is not canonical|globally indexed authority changed outside/i,
     );
     expect(Memory).toEqual(before);
   });
@@ -807,7 +871,7 @@ describe("FSPM execution authority invariant", () => {
       const before = structuredClone(Memory);
 
       expect(() => canonicalIntent()).toThrow(
-        /exact canonical Procedure set|Procedure identity is not canonical/i,
+        /Task definition is not canonical|exact canonical Procedure set|Procedure identity is not canonical/i,
       );
       expect(Memory).toEqual(before);
     },
@@ -1226,6 +1290,7 @@ describe("FSPM execution authority invariant", () => {
 
   it("invalidates an execution snapshot after a foreign-colony authority mutation", () => {
     Memory.colonies.W9N9 = { roomName: "W9N9", discoveredAt: 1 };
+    activateApprovedColonyGovernance("W9N9");
     const foreignTrace = createIntentTrace({
       roomName: "W9N9",
       domain: "economy",
@@ -1269,6 +1334,7 @@ describe("FSPM execution authority invariant", () => {
 
   it("makes live authority identity and registry slots non-configurable", () => {
     Memory.colonies.W9N9 = { roomName: "W9N9", discoveredAt: 1 };
+    activateApprovedColonyGovernance("W9N9");
     const foreignTrace = createIntentTrace({
       roomName: "W9N9",
       domain: "economy",
@@ -1292,18 +1358,9 @@ describe("FSPM execution authority invariant", () => {
         value: undefined,
       });
     }).toThrow(TypeError);
-    const missingCanonicalTaskId =
-      "task:W9N9:spawning:maintain-workforce-capacity";
+    const missingCanonicalTaskId = "task:W9N9:economy:not-in-catalog";
     expect(foreignPortfolio.tasks[missingCanonicalTaskId]).toBeUndefined();
-    expect(
-      Object.getOwnPropertyDescriptor(
-        foreignPortfolio.tasks,
-        missingCanonicalTaskId,
-      ),
-    ).toMatchObject({ configurable: false, enumerable: true });
-    expect(() => {
-      delete foreignPortfolio.tasks[missingCanonicalTaskId];
-    }).toThrow(TypeError);
+    expect(Object.isExtensible(foreignPortfolio.tasks)).toBe(false);
     expect(() => {
       Object.defineProperty(foreignPortfolio.tasks, missingCanonicalTaskId, {
         configurable: true,
@@ -1317,6 +1374,7 @@ describe("FSPM execution authority invariant", () => {
 
   it("caches a corrupted-tick planner denial after one global revalidation", () => {
     Memory.colonies.W9N9 = { roomName: "W9N9", discoveredAt: 1 };
+    activateApprovedColonyGovernance("W9N9");
     const foreignTrace = createIntentTrace({
       roomName: "W9N9",
       domain: "economy",
@@ -1331,7 +1389,7 @@ describe("FSPM execution authority invariant", () => {
 
     for (let attempt = 0; attempt < 32; attempt += 1) {
       expect(() => canonicalIntent()).toThrow(
-        /Task identity is not canonical/i,
+        /Task (?:identity|definition) is not canonical/i,
       );
     }
 

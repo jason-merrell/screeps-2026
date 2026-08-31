@@ -1,6 +1,7 @@
 import type { CpuMode, TickBudget } from "./context";
 
 export type RuntimePhaseName =
+  | "fspm_governance"
   | "settlement"
   | "defense"
   | "spawning"
@@ -36,6 +37,13 @@ const everyTick: Record<CpuMode, number> = {
 };
 
 export const RUNTIME_PHASE_DEFINITIONS = {
+  fspm_governance: {
+    class: "mandatory",
+    cadence: everyTick,
+    cadenceOffset: 0,
+    softBudgetRatio: 0.04,
+    hardBudgetRatio: 0.1,
+  },
   settlement: {
     class: "deferrable",
     cadence: { critical: 25, constrained: 5, normal: 1, surplus: 1 },
@@ -172,6 +180,7 @@ export interface RuntimeDeadline {
 const CPU_SAMPLE_LIMIT = 128;
 const OBSERVABILITY_PUBLICATION_RESERVE_RATIO = 0.05;
 const ADMISSION_RESERVED_PHASES: RuntimePhaseName[] = [
+  "fspm_governance",
   "defense",
   "spawning",
   "economy",
@@ -319,8 +328,7 @@ export class RuntimeSupervisor {
       definition.class === "deferrable"
         ? roundCpu(
             ADMISSION_RESERVED_PHASES.filter(
-              (phase) =>
-                !this.#traces.some((trace) => trace.name === phase),
+              (phase) => !this.#traces.some((trace) => trace.name === phase),
             ).reduce((sum, phase) => {
               const reservedDefinition = RUNTIME_PHASE_DEFINITIONS[phase];
               const reservedSoft = roundCpu(
@@ -340,9 +348,7 @@ export class RuntimeSupervisor {
             }, this.#budget.limit * OBSERVABILITY_PUBLICATION_RESERVE_RATIO) +
               Math.min(
                 this.#budget.limit * 0.15,
-                Math.max(0, this.#scopeUnits - 1) *
-                  this.#budget.limit *
-                  0.01,
+                Math.max(0, this.#scopeUnits - 1) * this.#budget.limit * 0.01,
               ),
           )
         : 0;
@@ -453,7 +459,8 @@ export class RuntimeSupervisor {
     return [...names].sort((left, right) => {
       const score = (name: RuntimePhaseName): number => {
         const stats = this.#memory.phases[name];
-        const cadence = RUNTIME_PHASE_DEFINITIONS[name].cadence[this.#budget.mode];
+        const cadence =
+          RUNTIME_PHASE_DEFINITIONS[name].cadence[this.#budget.mode];
         const last = stats?.lastCompletedTick ?? stats?.lastRunTick;
         return last === undefined
           ? Number.POSITIVE_INFINITY
@@ -470,7 +477,7 @@ export class RuntimeSupervisor {
       const leftIndex = names.indexOf(left);
       const rightIndex = names.indexOf(right);
       return (
-        (leftIndex + this.#tick) % names.length -
+        ((leftIndex + this.#tick) % names.length) -
         ((rightIndex + this.#tick) % names.length)
       );
     });

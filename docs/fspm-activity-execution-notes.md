@@ -19,11 +19,14 @@ Implemented execution semantics:
 
 Known conformance blockers:
 
-- Corporate Requirements and Deliverables are generated scaffolding, not approved governed records.
-- OU and ARCI authority, including exactly one human Accountable, is absent.
+- Corporate Requirements and Deliverables are activated from an exact source-controlled package with append-only activation, receipt-evidence, receipt-decision, and retirement ledgers; approval and acceptance use a disclosed service-principal adaptation.
+- Receipt and decision append APIs are explicit and separately atomic; the production loop does not automatically reconcile terminal Activities into occurrence evidence. Bounded acknowledged archival must land under #194 before that path is enabled.
+- Canonical human Employee/Position/OU and ARCI authority, including exactly one human Accountable, is absent under #164.
+- General one-level child-Deliverable decomposition remains #176.
 - Planned Activity start/due semantics, inherited Task Description and Task Weight, and transition authority are incomplete.
 - Task QI is not yet rolled through Task Weight to DQI and Deliverable Weight to P3/PQI.
 - Room operational health is still represented in fields named as FSPM quality and must not be interpreted as EQVM.
 - Bounded runtime history has no durable collector acknowledgment or gap detector.
+- Receipt and decision ledgers have no bounded checkpoint/archive or durable ACK protocol; #194 tracks the required lossless design.
 
 `docs/fspm-conformance.json` is the authoritative machine-checkable map. This checkpoint must never be used alone to claim complete NTI FSPM parity.

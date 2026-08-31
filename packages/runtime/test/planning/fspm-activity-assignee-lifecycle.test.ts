@@ -5,6 +5,7 @@ import {
   fspmActivityEvents,
 } from "../../src/planning/activity-lifecycle";
 import {
+  activateApprovedColonyGovernance,
   ensureColonyPortfolio,
   ensureProcedure,
   ensureTask,
@@ -88,7 +89,10 @@ function activities() {
 }
 
 describe("FSPM Activity assignee lifecycle", () => {
-  beforeEach(() => installGlobals());
+  beforeEach(() => {
+    installGlobals();
+    activateApprovedColonyGovernance("W1N1");
+  });
 
   it("puts unfinished work On Hold when its assignee creep disappears without scoring KPI", () => {
     const work = intent("worker-1");

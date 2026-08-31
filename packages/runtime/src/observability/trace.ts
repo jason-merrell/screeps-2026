@@ -17,14 +17,28 @@ import type {
   ColonyDeliverable,
   ColonyRequirement,
   ColonyTask,
+  FspmDeliverableReceipt,
+  FspmDeliverableReceiptDecision,
   FspmActivityKpiSample,
   FspmActivityRecord,
   FspmAuthorityDenialSummary,
+  FspmGovernanceBinding,
   FspmQuality,
   FspmQualitySample,
   FspmStatus,
 } from "../planning/fspm";
-import { EMPIRE_PORTFOLIO_ID } from "../planning/fspm";
+import {
+  EMPIRE_PORTFOLIO_ID,
+  hasFspmPortfolioP3Shape,
+  validateColonyGovernanceAuthority,
+  validateDeliverableReceipt,
+  validateDeliverableReceiptDecisionRegistry,
+  validateDeliverableReceiptRegistry,
+} from "../planning/fspm";
+import {
+  deliverableTemplateForDomain,
+  FSPM_WEIGHT_BASIS_POINTS,
+} from "../planning/fspm-governance";
 import { runtimeBuildSha } from "../runtime/build-info";
 import type { RuntimeSupervisorTrace } from "../runtime/supervisor";
 import type { SpatialIndexMetrics } from "../world/spatial-index";
@@ -100,17 +114,53 @@ interface CompactRequirement extends CompactFspmRecord {
   p3Id: string;
   contractId?: string;
   domain: ColonyRequirement["domain"];
+  revision: number;
+  strategicPriority: ColonyRequirement["strategicPriority"];
+  requirementSource: string | null;
+  originatingAuthority: string | null;
+  applicableOuId: string;
+  approvalAuthorityOuId: string;
+  approval: boolean;
+  approvedBy: string;
+  dateApproved: string;
+  approvalEventId: string;
+  activationStatus: "valid" | "missing" | "invalid";
 }
 
 interface CompactDeliverable extends CompactFspmRecord {
+  p3Id: string;
   requirementId: string;
   domain: ColonyDeliverable["domain"];
+  revision: number;
+  category: ColonyDeliverable["category"];
+  deliverableType: ColonyDeliverable["deliverableType"];
+  output: string;
+  qualityDescription: string;
+  qualityMetric: string;
+  siblingWeightBasisPoints: number;
+  expectedSiblingWeightBasisPoints: number;
+  weightStatus: "valid" | "invalid";
+  taskWeightBasisPoints: number;
+  receiptValidation?: ColonyDeliverable["receiptValidation"];
+  servicePrincipalAcceptance?: ColonyDeliverable["servicePrincipalAcceptance"];
+  receiptContractStatus: "valid" | "invalid";
+  servicePrincipalAcceptanceStatus: "valid" | "invalid";
+  receiptEvidenceStatus: "pending" | "missing" | "validated" | "invalid";
+  receiptAcceptanceStatus:
+    | "pending"
+    | "missing"
+    | "accepted"
+    | "rejected"
+    | "disputed"
+    | "invalid";
+  childDeliverableIds: string[];
 }
 
 interface CompactTask extends CompactFspmRecord {
   deliverableId: string;
   domain: ColonyTask["domain"];
   taskKey: string;
+  taskWeightBasisPoints: number;
   qualityDescription: string;
   qualityMetric: string;
   kpiMetric: ColonyTask["kpiMetric"];
@@ -164,6 +214,35 @@ interface FspmTraceSummary {
   } | null;
   /** Legacy synthetic contract evidence. */
   contract: CompactFspmRecord | null;
+  governance: {
+    packageId: string;
+    packageRevision: number;
+    packageHash: string;
+    governanceSha: string;
+    effectiveDate: string;
+    importedAtTick: number;
+    signerPrincipalId: string;
+    accountablePositionId: string;
+    approvalEvents: number;
+    receiptEvidenceEvents: number;
+    receiptDecisionEvents: number;
+    deliverableWeightBasisPoints: number;
+    approvalModel: "source_control_service_principal";
+    canonicalHumanApproval: false;
+    checks: {
+      empireRoot: boolean;
+      packageProjection: boolean;
+      approvalLedger: boolean;
+      ancestry: boolean;
+      relationships: boolean;
+      exactWeights: boolean;
+      receiptContracts: boolean;
+      acceptancePolicies: boolean;
+      receiptLedgers: boolean;
+    };
+    valid: boolean;
+    executionEligible: boolean;
+  } | null;
   p3History: FspmQualitySample[];
   contractHistory: FspmQualitySample[];
   requirements: CompactRequirement[];
@@ -182,7 +261,8 @@ export type FspmIntegrityCode =
   | "colony_p3_missing"
   | "colony_p3_malformed"
   | "colony_p3_noncanonical"
-  | "colony_p3_inactive";
+  | "colony_p3_inactive"
+  | "colony_governance_invalid";
 
 export interface FspmIntegritySample {
   code: FspmIntegrityCode;
@@ -273,6 +353,15 @@ export interface PublishTickTraceInput {
 const SAMPLE_LIMIT = 24;
 const EVENT_LIMIT = 96;
 const FSPM_INTEGRITY_SAMPLE_LIMIT = 4;
+const FSPM_ASSIGNMENT_STATES = new Set<FspmAssignmentState>([
+  "executing",
+  "traveling",
+  "waiting_intentional",
+  "on_hold",
+  "planner_unassigned",
+  "arbitration_lost",
+  "blocked",
+]);
 const roundCpu = (value: number): number => Math.round(value * 1000) / 1000;
 
 type JsonRecord = Record<string, unknown>;
@@ -280,6 +369,44 @@ type JsonRecord = Record<string, unknown>;
 function jsonRecord(value: unknown): JsonRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
+    : null;
+}
+
+function compactReceiptValidation(
+  value: unknown,
+): ColonyDeliverable["receiptValidation"] | null {
+  const record = jsonRecord(value);
+  return record &&
+    (record.evidenceForm === "system_generated_confirmation" ||
+      record.evidenceForm === "logged_system_record") &&
+    typeof record.storageLocation === "string" &&
+    record.storageLocation.trim().length > 0 &&
+    typeof record.captureResponsibility === "string" &&
+    record.captureResponsibility.trim().length > 0
+    ? {
+        evidenceForm: record.evidenceForm,
+        storageLocation: record.storageLocation,
+        captureResponsibility: record.captureResponsibility,
+      }
+    : null;
+}
+
+function compactServicePrincipalAcceptance(
+  value: unknown,
+): ColonyDeliverable["servicePrincipalAcceptance"] | null {
+  const record = jsonRecord(value);
+  const ratings = record?.acceptedKpiRatings;
+  return record?.model === "terminal_activity_kpi_threshold" &&
+    record.canonicalHumanAcceptance === false &&
+    Array.isArray(ratings) &&
+    ratings.length === 2 &&
+    ratings[0] === "exceptional" &&
+    ratings[1] === "satisfactory"
+    ? {
+        model: "terminal_activity_kpi_threshold",
+        acceptedKpiRatings: ["exceptional", "satisfactory"],
+        canonicalHumanAcceptance: false,
+      }
     : null;
 }
 
@@ -292,9 +419,12 @@ function isFspmStatus(value: unknown): value is FspmStatus {
   );
 }
 
-function hasCompactPortfolioShape(
-  value: unknown,
-): value is Parameters<typeof compactPortfolioP3>[0] {
+function hasCompactFspmRecordShape(value: unknown): value is {
+  id: string;
+  title: string;
+  status: FspmStatus;
+  quality?: FspmQuality;
+} {
   const record = jsonRecord(value);
   if (!record) return false;
   const quality = record.quality;
@@ -316,14 +446,252 @@ function hasCompactPortfolioShape(
 
   return (
     typeof record.id === "string" &&
-    record.type === "portfolio" &&
-    record.subType === "ou_portfolio" &&
-    typeof record.name === "string" &&
-    typeof record.description === "string" &&
-    (record.parentP3Id === null || typeof record.parentP3Id === "string") &&
-    record.temporalBasis === "game_tick" &&
-    typeof record.startTick === "number" &&
-    Number.isFinite(record.startTick) &&
+    typeof record.title === "string" &&
+    isFspmStatus(record.status) &&
+    qualityValid
+  );
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isFspmDomain(value: unknown): value is ColonyRequirement["domain"] {
+  return (
+    value === "economy" ||
+    value === "spawning" ||
+    value === "construction" ||
+    value === "defense"
+  );
+}
+
+function hasCompactRequirementShape(
+  value: unknown,
+): value is ColonyRequirement {
+  const record = jsonRecord(value);
+  return Boolean(
+    record &&
+      typeof record.p3Id === "string" &&
+      (record.contractId === undefined ||
+        typeof record.contractId === "string") &&
+      isFspmDomain(record.domain) &&
+      isFiniteNumber(record.revision) &&
+      (record.strategicPriority === "SELL" ||
+        record.strategicPriority === "STAFF" ||
+        record.strategicPriority === "SERVE") &&
+      (record.requirementSource === undefined ||
+        typeof record.requirementSource === "string") &&
+      (record.originatingAuthority === undefined ||
+        typeof record.originatingAuthority === "string") &&
+      typeof record.applicableOuId === "string" &&
+      typeof record.approvalAuthorityOuId === "string" &&
+      typeof record.approval === "boolean" &&
+      typeof record.approvedBy === "string" &&
+      typeof record.dateApproved === "string" &&
+      typeof record.approvalEventId === "string" &&
+      hasCompactFspmRecordShape(record),
+  );
+}
+
+function hasCompactDeliverableShape(
+  value: unknown,
+): value is ColonyDeliverable {
+  const record = jsonRecord(value);
+  return Boolean(
+    record &&
+      typeof record.p3Id === "string" &&
+      typeof record.requirementId === "string" &&
+      isFspmDomain(record.domain) &&
+      isFiniteNumber(record.revision) &&
+      (record.category === "corporate" ||
+        record.category === "service_program") &&
+      (record.deliverableType === "product" ||
+        record.deliverableType === "service" ||
+        record.deliverableType === "result") &&
+      typeof record.output === "string" &&
+      typeof record.qualityDescription === "string" &&
+      typeof record.qualityMetric === "string" &&
+      isFiniteNumber(record.siblingWeightBasisPoints) &&
+      hasCompactFspmRecordShape(record),
+  );
+}
+
+function hasCompactTaskShape(value: unknown): value is ColonyTask {
+  const record = jsonRecord(value);
+  const kpiMetric = jsonRecord(record?.kpiMetric);
+  return Boolean(
+    record &&
+      (record.status === "active" || record.status === "retired") &&
+      typeof record.deliverableId === "string" &&
+      isFspmDomain(record.domain) &&
+      typeof record.taskKey === "string" &&
+      (record.taskWeight === undefined || isFiniteNumber(record.taskWeight)) &&
+      typeof record.qualityDescription === "string" &&
+      typeof record.qualityMetric === "string" &&
+      kpiMetric &&
+      typeof kpiMetric.metric === "string" &&
+      typeof kpiMetric.exceptional === "string" &&
+      typeof kpiMetric.satisfactory === "string" &&
+      typeof kpiMetric.unsatisfactory === "string" &&
+      Array.isArray(record.procedures) &&
+      hasCompactFspmRecordShape(record),
+  );
+}
+
+function hasCompactGovernanceBindingShape(
+  value: unknown,
+): value is FspmGovernanceBinding {
+  const record = jsonRecord(value);
+  return Boolean(
+    record &&
+      typeof record.authorityPackageId === "string" &&
+      isFiniteNumber(record.authorityPackageRevision) &&
+      typeof record.authorityPackageHash === "string" &&
+      typeof record.governanceSha === "string" &&
+      typeof record.effectiveDate === "string" &&
+      isFiniteNumber(record.importedAtTick) &&
+      typeof record.accountablePrincipalId === "string" &&
+      typeof record.accountablePositionId === "string",
+  );
+}
+
+function hasCompactReceiptShape(
+  value: unknown,
+): value is FspmDeliverableReceipt {
+  const record = jsonRecord(value);
+  return Boolean(
+    record &&
+      typeof record.id === "string" &&
+      isFiniteNumber(record.sequence) &&
+      typeof record.deliverableId === "string" &&
+      isFiniteNumber(record.capturedAtTick),
+  );
+}
+
+function hasCompactReceiptDecisionShape(
+  value: unknown,
+): value is FspmDeliverableReceiptDecision {
+  const record = jsonRecord(value);
+  return Boolean(
+    record &&
+      typeof record.id === "string" &&
+      isFiniteNumber(record.sequence) &&
+      typeof record.receiptId === "string" &&
+      typeof record.deliverableId === "string" &&
+      (record.outcome === "accepted" ||
+        record.outcome === "rejected" ||
+        record.outcome === "disputed"),
+  );
+}
+
+function compactTaskQi(value: unknown): NonNullable<ColonyTask["qi"]> | null {
+  const record = jsonRecord(value);
+  return record &&
+    isFiniteNumber(record.score) &&
+    isFiniteNumber(record.measuredAt) &&
+    isFiniteNumber(record.ratedActivities) &&
+    isFiniteNumber(record.totalActivities) &&
+    isFiniteNumber(record.exceptional) &&
+    isFiniteNumber(record.satisfactory) &&
+    isFiniteNumber(record.unsatisfactory)
+    ? {
+        score: record.score,
+        measuredAt: record.measuredAt,
+        ratedActivities: record.ratedActivities,
+        totalActivities: record.totalActivities,
+        exceptional: record.exceptional,
+        satisfactory: record.satisfactory,
+        unsatisfactory: record.unsatisfactory,
+      }
+    : null;
+}
+
+function compactActivityKpiSample(
+  value: unknown,
+): FspmActivityKpiSample | null {
+  const record = jsonRecord(value);
+  const outcome = jsonRecord(record?.outcome);
+  const compactOutcome =
+    record?.outcome === undefined
+      ? undefined
+      : outcome &&
+          typeof outcome.metric === "string" &&
+          isFiniteNumber(outcome.actual) &&
+          isFiniteNumber(outcome.target) &&
+          typeof outcome.unit === "string" &&
+          isFiniteNumber(outcome.utilization)
+        ? {
+            metric: outcome.metric,
+            actual: outcome.actual,
+            target: outcome.target,
+            unit: outcome.unit,
+            utilization: outcome.utilization,
+          }
+        : null;
+  if (
+    !record ||
+    !isFiniteNumber(record.tick) ||
+    typeof record.activityId !== "string" ||
+    typeof record.activityType !== "string" ||
+    typeof record.actor !== "string" ||
+    (record.rating !== "exceptional" &&
+      record.rating !== "satisfactory" &&
+      record.rating !== "unsatisfactory" &&
+      record.rating !== "in_progress") ||
+    (record.value !== null && !isFiniteNumber(record.value)) ||
+    typeof record.evidence !== "string" ||
+    compactOutcome === null
+  ) {
+    return null;
+  }
+  return {
+    tick: record.tick,
+    activityId: record.activityId,
+    activityType: record.activityType,
+    actor: record.actor,
+    rating: record.rating,
+    value: record.value,
+    evidence: record.evidence,
+    ...(compactOutcome ? { outcome: compactOutcome } : {}),
+  };
+}
+
+function compactQualitySample(value: unknown): FspmQualitySample | null {
+  const record = jsonRecord(value);
+  return record &&
+    isFiniteNumber(record.tick) &&
+    isFiniteNumber(record.score) &&
+    (record.state === "healthy" ||
+      record.state === "watch" ||
+      record.state === "degraded")
+    ? { tick: record.tick, score: record.score, state: record.state }
+    : null;
+}
+
+function hasCompactPortfolioShape(
+  value: unknown,
+): value is Parameters<typeof compactPortfolioP3>[0] {
+  const record = jsonRecord(value);
+  if (!record || !hasFspmPortfolioP3Shape(value)) return false;
+  const quality = record.quality;
+  const qualityRecord = quality === undefined ? null : jsonRecord(quality);
+  const qualityValid =
+    quality === undefined ||
+    (qualityRecord !== null &&
+      typeof qualityRecord.score === "number" &&
+      Number.isFinite(qualityRecord.score) &&
+      (qualityRecord.state === "healthy" ||
+        qualityRecord.state === "watch" ||
+        qualityRecord.state === "degraded") &&
+      (qualityRecord.trend === "new" ||
+        qualityRecord.trend === "improving" ||
+        qualityRecord.trend === "stable" ||
+        qualityRecord.trend === "declining") &&
+      Array.isArray(qualityRecord.evidence) &&
+      qualityRecord.evidence.every((entry) => typeof entry === "string"));
+
+  return (
+    hasFspmPortfolioP3Shape(value) &&
     isFspmStatus(record.status) &&
     qualityValid
   );
@@ -508,39 +876,162 @@ export function activityTraceDisposition(
   return (activity as ActivityWithEvidence).currentDisposition ?? null;
 }
 
-const compactActivity = (activity: FspmActivityRecord): CompactActivity => {
-  const evidence = activity as ActivityWithEvidence;
-  return {
-    id: activity.id,
-    taskId: activity.taskId,
-    assignee: activity.assignee,
-    status: activity.status,
-    currentProcedureId: activity.currentProcedureId,
-    currentTargetKey: evidence.currentTargetKey ?? null,
-    currentDisposition: activityTraceDisposition(activity),
-    createdAt: activity.createdAt,
-    startedAt: activity.startedAt ?? null,
-    updatedAt: activity.updatedAt,
-    completedAt: activity.completedAt ?? null,
-    timeToCompletion:
-      activity.startedAt !== undefined && activity.completedAt !== undefined
-        ? Math.max(0, activity.completedAt - activity.startedAt)
+const compactActivity = (value: unknown): CompactActivity | null => {
+  const record = jsonRecord(value);
+  const metrics = jsonRecord(record?.metrics);
+  const kpiMetric = jsonRecord(record?.kpiMetric);
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    typeof record.taskId !== "string" ||
+    typeof record.assignee !== "string" ||
+    (record.status !== "not_started" &&
+      record.status !== "in_progress" &&
+      record.status !== "on_hold" &&
+      record.status !== "completed") ||
+    typeof record.currentProcedureId !== "string" ||
+    typeof record.qualityDescription !== "string" ||
+    typeof record.qualityMetric !== "string" ||
+    !kpiMetric ||
+    typeof kpiMetric.metric !== "string" ||
+    typeof kpiMetric.exceptional !== "string" ||
+    typeof kpiMetric.satisfactory !== "string" ||
+    typeof kpiMetric.unsatisfactory !== "string" ||
+    !isFiniteNumber(record.createdAt) ||
+    !isFiniteNumber(record.updatedAt) ||
+    (record.startedAt !== undefined && !isFiniteNumber(record.startedAt)) ||
+    (record.completedAt !== undefined && !isFiniteNumber(record.completedAt)) ||
+    (record.kpiScore !== undefined &&
+      record.kpiScore !== "exceptional" &&
+      record.kpiScore !== "satisfactory" &&
+      record.kpiScore !== "unsatisfactory") ||
+    (record.holdReason !== undefined &&
+      typeof record.holdReason !== "string") ||
+    (record.currentTargetKey !== undefined &&
+      typeof record.currentTargetKey !== "string") ||
+    (record.kpiEvidence !== undefined &&
+      typeof record.kpiEvidence !== "string") ||
+    !metrics ||
+    ![
+      "inProgressTicks",
+      "onHoldTicks",
+      "productiveTicks",
+      "travelTicks",
+      "idleTicks",
+      "holdCount",
+      "resumeCount",
+      "taskPreemptions",
+      "procedureTransitions",
+    ].every((key) => isFiniteNumber(metrics[key]))
+  ) {
+    return null;
+  }
+
+  if (
+    record.currentDisposition !== undefined &&
+    (typeof record.currentDisposition !== "string" ||
+      !FSPM_ASSIGNMENT_STATES.has(
+        record.currentDisposition as FspmAssignmentState,
+      ))
+  ) {
+    return null;
+  }
+
+  const rawProcedureHistory = record.procedureHistory;
+  if (
+    rawProcedureHistory !== undefined &&
+    !Array.isArray(rawProcedureHistory)
+  ) {
+    return null;
+  }
+  const procedureHistory = (rawProcedureHistory ?? []).flatMap((value) => {
+    const entry = jsonRecord(value);
+    return entry &&
+      typeof entry.procedureId === "string" &&
+      isFiniteNumber(entry.enteredAt) &&
+      (entry.exitedAt === undefined || isFiniteNumber(entry.exitedAt)) &&
+      (entry.initialTargetKey === undefined ||
+        typeof entry.initialTargetKey === "string")
+      ? [
+          {
+            procedureId: entry.procedureId,
+            enteredAt: entry.enteredAt,
+            ...(entry.exitedAt !== undefined
+              ? { exitedAt: entry.exitedAt }
+              : {}),
+            ...(entry.initialTargetKey !== undefined
+              ? { initialTargetKey: entry.initialTargetKey }
+              : {}),
+          },
+        ]
+      : [];
+  });
+  if (procedureHistory.length !== (rawProcedureHistory?.length ?? 0)) {
+    return null;
+  }
+
+  const rawOutcome = record.outcome;
+  const outcome = jsonRecord(rawOutcome);
+  if (
+    rawOutcome !== undefined &&
+    (!outcome ||
+      typeof outcome.metric !== "string" ||
+      !isFiniteNumber(outcome.actual) ||
+      !isFiniteNumber(outcome.target) ||
+      typeof outcome.unit !== "string" ||
+      !isFiniteNumber(outcome.utilization))
+  ) {
+    return null;
+  }
+  const compactMetrics: Record<string, number | undefined> = {};
+  for (const [key, metric] of Object.entries(metrics)) {
+    if (metric === undefined || isFiniteNumber(metric)) {
+      compactMetrics[key] = metric;
+    }
+  }
+
+  const activity = value as ActivityWithEvidence;
+  try {
+    return {
+      id: activity.id,
+      taskId: activity.taskId,
+      assignee: activity.assignee,
+      status: activity.status,
+      currentProcedureId: activity.currentProcedureId,
+      currentTargetKey: activity.currentTargetKey ?? null,
+      currentDisposition: activityTraceDisposition(activity),
+      createdAt: activity.createdAt,
+      startedAt: activity.startedAt ?? null,
+      updatedAt: activity.updatedAt,
+      completedAt: activity.completedAt ?? null,
+      timeToCompletion:
+        activity.startedAt !== undefined && activity.completedAt !== undefined
+          ? Math.max(0, activity.completedAt - activity.startedAt)
+          : null,
+      timeToFirstProductiveWork: activityTimeToFirstProductiveWork(activity),
+      kpiScore: activity.kpiScore ?? null,
+      kpiEvidence: activity.kpiEvidence ?? null,
+      continuityRatio: activityContinuityRatio(activity),
+      workConversionRatio: activityWorkConversionRatio(activity),
+      outcome: outcome
+        ? {
+            metric: outcome.metric as string,
+            actual: outcome.actual as number,
+            target: outcome.target as number,
+            unit: outcome.unit as string,
+            utilization: outcome.utilization as number,
+          }
         : null,
-    timeToFirstProductiveWork: activityTimeToFirstProductiveWork(activity),
-    kpiScore: activity.kpiScore ?? null,
-    kpiEvidence: evidence.kpiEvidence ?? null,
-    continuityRatio: activityContinuityRatio(activity),
-    workConversionRatio: activityWorkConversionRatio(activity),
-    outcome: evidence.outcome ? { ...evidence.outcome } : null,
-    procedureHistory: (evidence.procedureHistory ?? []).map((entry) => ({
-      ...entry,
-    })),
-    metrics: { ...activity.metrics },
-    holdReason: activity.holdReason ?? null,
-  };
+      procedureHistory,
+      metrics: compactMetrics,
+      holdReason: activity.holdReason ?? null,
+    };
+  } catch {
+    return null;
+  }
 };
 
-function fspmSummaries(): {
+function fspmSummaries(empireRootAuthoritative: boolean): {
   colonies: FspmTraceSummary[];
   issues: FspmIntegritySample[];
 } {
@@ -554,6 +1045,20 @@ function fspmSummaries(): {
       const compactP3 = hasCompactPortfolioShape(p3)
         ? compactPortfolioP3(p3)
         : null;
+      let governanceErrors: string[] = [];
+      try {
+        governanceErrors = compactP3
+          ? validateColonyGovernanceAuthority(portfolio)
+          : [
+              p3 === undefined
+                ? "Colony P3 is missing"
+                : "Colony P3 is structurally malformed",
+            ];
+      } catch (error) {
+        governanceErrors = [
+          error instanceof Error ? error.message : String(error),
+        ];
+      }
       let issue: FspmIntegritySample | null = null;
       if (p3 === undefined) {
         issue = {
@@ -583,36 +1088,230 @@ function fspmSummaries(): {
           scope: `colony:${colony.roomName}`,
           reason: `Colony ${colony.roomName} P3 is ${compactP3.status}, not active`,
         };
+      } else if (governanceErrors.length > 0) {
+        issue = {
+          code: "colony_governance_invalid",
+          scope: `colony:${colony.roomName}`,
+          reason: governanceErrors.slice(0, 3).join("; "),
+        };
       }
       if (issue) issues.push(issue);
+      const requirementRegistry = jsonRecord(portfolio.requirements) ?? {};
+      const deliverableRegistry = jsonRecord(portfolio.deliverables) ?? {};
+      const taskRegistry = jsonRecord(portfolio.tasks) ?? {};
+      const activityRegistry = jsonRecord(portfolio.activities) ?? {};
+      const receiptRegistry = jsonRecord(portfolio.deliverableReceipts) ?? {};
+      const receiptDecisionRegistry =
+        jsonRecord(portfolio.deliverableReceiptDecisions) ?? {};
+      const qualityHistoryRegistry = jsonRecord(portfolio.qualityHistory) ?? {};
+      const governedRequirements = Object.values(requirementRegistry).filter(
+        hasCompactRequirementShape,
+      );
+      const governedDeliverables = Object.values(deliverableRegistry).filter(
+        hasCompactDeliverableShape,
+      );
+      const governedTasks =
+        Object.values(taskRegistry).filter(hasCompactTaskShape);
+      const governedReceipts = Object.values(receiptRegistry).filter(
+        hasCompactReceiptShape,
+      );
+      const governedReceiptDecisions = Object.values(
+        receiptDecisionRegistry,
+      ).filter(hasCompactReceiptDecisionShape);
+      const rawGovernanceBinding = (
+        portfolio as { governanceBinding?: unknown }
+      ).governanceBinding;
+      const governanceBinding = hasCompactGovernanceBindingShape(
+        rawGovernanceBinding,
+      )
+        ? rawGovernanceBinding
+        : null;
+      const governanceBindingPresent =
+        rawGovernanceBinding !== undefined && rawGovernanceBinding !== null;
+      const deliverableWeightBasisPoints = governedDeliverables
+        .filter(
+          (record) =>
+            record.status === "active" || record.status === "completed",
+        )
+        .reduce(
+          (sum, deliverable) => sum + deliverable.siblingWeightBasisPoints,
+          0,
+        );
+      const taskWeightByDeliverable = new Map<string, number>();
+      for (const task of governedTasks) {
+        if (task.status !== "active") continue;
+        taskWeightByDeliverable.set(
+          task.deliverableId,
+          (taskWeightByDeliverable.get(task.deliverableId) ?? 0) +
+            (task.taskWeight ?? 0) * 100,
+        );
+      }
+      const approvalEvents = Object.keys(
+        portfolio.requirementApprovalLedger ?? {},
+      ).length;
+      const receiptEvidenceEvents = Object.keys(receiptRegistry).length;
+      const receiptDecisionEvents = Object.keys(receiptDecisionRegistry).length;
+      let receiptRegistryErrors: string[];
+      let receiptDecisionRegistryErrors: string[];
+      try {
+        receiptRegistryErrors = validateDeliverableReceiptRegistry(portfolio);
+      } catch (error) {
+        receiptRegistryErrors = [
+          error instanceof Error ? error.message : String(error),
+        ];
+      }
+      try {
+        receiptDecisionRegistryErrors =
+          validateDeliverableReceiptDecisionRegistry(portfolio);
+      } catch (error) {
+        receiptDecisionRegistryErrors = [
+          error instanceof Error ? error.message : String(error),
+        ];
+      }
+      const governanceChecks = {
+        empireRoot: empireRootAuthoritative,
+        packageProjection:
+          governanceBinding !== null && governanceErrors.length === 0,
+        approvalLedger:
+          approvalEvents === governedRequirements.length &&
+          governedRequirements.every(
+            (record) =>
+              record.approval === true &&
+              Boolean(
+                portfolio.requirementApprovalLedger?.[record.approvalEventId],
+              ),
+          ) &&
+          !governanceErrors.some((error) =>
+            /approval|approved|\bOU\b/i.test(error),
+          ),
+        ancestry:
+          governedRequirements.every(
+            (record) => record.p3Id === compactP3?.id,
+          ) &&
+          governedDeliverables.every(
+            (record) =>
+              record.p3Id === compactP3?.id &&
+              governedRequirements.some(
+                (requirement) => requirement.id === record.requirementId,
+              ),
+          ) &&
+          governedTasks.every((record) =>
+            governedDeliverables.some(
+              (deliverable) => deliverable.id === record.deliverableId,
+            ),
+          ) &&
+          !governanceErrors.some((error) => /identity|ancestry/i.test(error)),
+        relationships:
+          governedDeliverables.every(
+            (record) =>
+              record.parentDeliverableId === undefined &&
+              Array.isArray(record.childDeliverableIds) &&
+              record.childDeliverableIds.length === 0,
+          ) &&
+          !governanceErrors.some((error) =>
+            /relationship|parent|child/i.test(error),
+          ),
+        exactWeights:
+          deliverableWeightBasisPoints === FSPM_WEIGHT_BASIS_POINTS &&
+          governedDeliverables.every(
+            (record) =>
+              taskWeightByDeliverable.get(record.id) ===
+              FSPM_WEIGHT_BASIS_POINTS,
+          ) &&
+          !governanceErrors.some((error) => /weight/i.test(error)),
+        receiptContracts: governedDeliverables.every((record) =>
+          Boolean(compactReceiptValidation(record.receiptValidation)),
+        ),
+        acceptancePolicies: governedDeliverables.every((record) =>
+          Boolean(
+            compactServicePrincipalAcceptance(
+              record.servicePrincipalAcceptance,
+            ),
+          ),
+        ),
+        receiptLedgers:
+          receiptRegistryErrors.length === 0 &&
+          receiptDecisionRegistryErrors.length === 0,
+      };
+      const qualityHistoryFor = (recordId: string): FspmQualitySample[] => {
+        const samples = qualityHistoryRegistry[recordId];
+        return Array.isArray(samples)
+          ? samples.slice(-12).flatMap((sample) => {
+              const compact = compactQualitySample(sample);
+              return compact ? [compact] : [];
+            })
+          : [];
+      };
       return [
         {
           roomName: colony.roomName,
           p3: compactP3,
-          program: portfolio.program
+          program:
+            portfolio.program &&
+            hasCompactFspmRecordShape(portfolio.program) &&
+            portfolio.program.type === "program" &&
+            portfolio.program.subType === "service_program"
+              ? {
+                  id: portfolio.program.id,
+                  type: portfolio.program.type,
+                  subType: portfolio.program.subType,
+                  title: portfolio.program.title,
+                  status: portfolio.program.status,
+                }
+              : null,
+          contract:
+            portfolio.contract && hasCompactFspmRecordShape(portfolio.contract)
+              ? compactRecord(portfolio.contract)
+              : null,
+          governance: governanceBindingPresent
             ? {
-                id: portfolio.program.id,
-                type: portfolio.program.type,
-                subType: portfolio.program.subType,
-                title: portfolio.program.title,
-                status: portfolio.program.status,
+                packageId:
+                  governanceBinding?.authorityPackageId ??
+                  "unavailable:malformed-governance-binding",
+                packageRevision:
+                  governanceBinding?.authorityPackageRevision ?? 0,
+                packageHash:
+                  governanceBinding?.authorityPackageHash ?? "unavailable",
+                governanceSha:
+                  governanceBinding?.governanceSha ?? "unavailable",
+                effectiveDate:
+                  governanceBinding?.effectiveDate ?? "not reported",
+                importedAtTick: governanceBinding?.importedAtTick ?? -1,
+                signerPrincipalId:
+                  governanceBinding?.accountablePrincipalId ?? "unavailable",
+                accountablePositionId:
+                  governanceBinding?.accountablePositionId ?? "unavailable",
+                approvalEvents,
+                receiptEvidenceEvents,
+                receiptDecisionEvents,
+                deliverableWeightBasisPoints,
+                approvalModel: "source_control_service_principal" as const,
+                canonicalHumanApproval: false as const,
+                checks: governanceChecks,
+                valid:
+                  governanceBinding !== null &&
+                  empireRootAuthoritative &&
+                  governanceErrors.length === 0,
+                executionEligible:
+                  governanceBinding !== null &&
+                  empireRootAuthoritative &&
+                  governanceErrors.length === 0 &&
+                  compactP3?.status === "active" &&
+                  governedRequirements.every(
+                    (record) => record.status === "active",
+                  ) &&
+                  governedDeliverables.every(
+                    (record) => record.status === "active",
+                  ) &&
+                  governedTasks.every((record) => record.status === "active"),
               }
             : null,
-          contract: portfolio.contract
-            ? compactRecord(portfolio.contract)
-            : null,
-          p3History: (compactP3
-            ? (portfolio.qualityHistory?.[compactP3.id] ?? [])
-            : []
-          )
-            .slice(-12)
-            .map((sample) => ({ ...sample })),
-          contractHistory: portfolio.contract
-            ? (portfolio.qualityHistory?.[portfolio.contract.id] ?? [])
-                .slice(-12)
-                .map((sample) => ({ ...sample }))
-            : [],
-          requirements: Object.values(portfolio.requirements)
+          p3History: compactP3 ? qualityHistoryFor(compactP3.id) : [],
+          contractHistory:
+            portfolio.contract && hasCompactFspmRecordShape(portfolio.contract)
+              ? qualityHistoryFor(portfolio.contract.id)
+              : [],
+          requirements: governedRequirements
             .flatMap((record) =>
               record
                 ? [
@@ -623,49 +1322,180 @@ function fspmSummaries(): {
                         ? { contractId: record.contractId }
                         : {}),
                       domain: record.domain,
+                      revision: record.revision,
+                      strategicPriority: record.strategicPriority,
+                      requirementSource: record.requirementSource ?? null,
+                      originatingAuthority: record.originatingAuthority ?? null,
+                      applicableOuId: record.applicableOuId,
+                      approvalAuthorityOuId: record.approvalAuthorityOuId,
+                      approval: record.approval,
+                      approvedBy: record.approvedBy,
+                      dateApproved: record.dateApproved,
+                      approvalEventId: record.approvalEventId,
+                      activationStatus: (() => {
+                        const event =
+                          portfolio.requirementApprovalLedger?.[
+                            record.approvalEventId
+                          ];
+                        if (record.approval !== true || !event)
+                          return "missing" as const;
+                        return governanceErrors.some(
+                          (error) =>
+                            (error.includes(record.id) ||
+                              error.includes(record.approvalEventId)) &&
+                            /approval|approved|\bOU\b/i.test(error),
+                        )
+                          ? ("invalid" as const)
+                          : ("valid" as const);
+                      })(),
                     },
                   ]
                 : [],
             )
             .sort((a, b) => a.id.localeCompare(b.id)),
-          deliverables: Object.values(portfolio.deliverables)
-            .flatMap((record) =>
-              record
-                ? [
-                    {
-                      ...compactRecord(record),
-                      requirementId: record.requirementId,
-                      domain: record.domain,
-                    },
-                  ]
-                : [],
-            )
+          deliverables: governedDeliverables
+            .flatMap((record) => {
+              if (!record) return [];
+              const receiptValidation = compactReceiptValidation(
+                record.receiptValidation,
+              );
+              const acceptancePolicy = compactServicePrincipalAcceptance(
+                record.servicePrincipalAcceptance,
+              );
+              return [
+                {
+                  ...compactRecord(record),
+                  p3Id: record.p3Id,
+                  requirementId: record.requirementId,
+                  domain: record.domain,
+                  revision: record.revision,
+                  category: record.category,
+                  deliverableType: record.deliverableType,
+                  output: record.output,
+                  qualityDescription: record.qualityDescription,
+                  qualityMetric: record.qualityMetric,
+                  siblingWeightBasisPoints: record.siblingWeightBasisPoints,
+                  expectedSiblingWeightBasisPoints:
+                    deliverableTemplateForDomain(record.domain)
+                      ?.siblingWeightBasisPoints ?? 0,
+                  weightStatus:
+                    record.siblingWeightBasisPoints ===
+                    deliverableTemplateForDomain(record.domain)
+                      ?.siblingWeightBasisPoints
+                      ? ("valid" as const)
+                      : ("invalid" as const),
+                  taskWeightBasisPoints:
+                    taskWeightByDeliverable.get(record.id) ?? 0,
+                  ...(receiptValidation ? { receiptValidation } : {}),
+                  ...(acceptancePolicy
+                    ? { servicePrincipalAcceptance: acceptancePolicy }
+                    : {}),
+                  receiptContractStatus: receiptValidation
+                    ? ("valid" as const)
+                    : ("invalid" as const),
+                  servicePrincipalAcceptanceStatus: acceptancePolicy
+                    ? ("valid" as const)
+                    : ("invalid" as const),
+                  receiptEvidenceStatus: (() => {
+                    const receipts = governedReceipts.filter(
+                      (receipt) => receipt.deliverableId === record.id,
+                    );
+                    if (receiptRegistryErrors.length > 0) {
+                      return "invalid" as const;
+                    }
+                    if (receipts.length === 0) {
+                      return "pending" as const;
+                    }
+                    return receipts.some((receipt) =>
+                      validateDeliverableReceipt(portfolio, receipt),
+                    )
+                      ? ("validated" as const)
+                      : ("invalid" as const);
+                  })(),
+                  receiptAcceptanceStatus: (() => {
+                    const receipts = governedReceipts
+                      .filter((receipt) => receipt.deliverableId === record.id)
+                      .sort((left, right) => left.sequence - right.sequence);
+                    const decisions = governedReceiptDecisions
+                      .filter(
+                        (decision) => decision.deliverableId === record.id,
+                      )
+                      .sort((left, right) => left.sequence - right.sequence);
+                    if (
+                      receiptRegistryErrors.length > 0 ||
+                      receiptDecisionRegistryErrors.length > 0
+                    ) {
+                      return "invalid" as const;
+                    }
+                    const latestReceipt = receipts.at(-1);
+                    if (!latestReceipt) {
+                      return "pending" as const;
+                    }
+                    const latestDecision = decisions.find(
+                      (decision) => decision.receiptId === latestReceipt.id,
+                    );
+                    return latestDecision?.outcome ?? ("pending" as const);
+                  })(),
+                  childDeliverableIds: Array.isArray(record.childDeliverableIds)
+                    ? record.childDeliverableIds.filter(
+                        (id): id is string => typeof id === "string",
+                      )
+                    : [],
+                },
+              ];
+            })
             .sort((a, b) => a.id.localeCompare(b.id)),
-          tasks: Object.values(portfolio.tasks)
-            .filter((record) => record !== undefined)
-            .map((record) => ({
-              ...compactRecord(record),
-              deliverableId: record.deliverableId,
-              domain: record.domain,
-              taskKey: record.taskKey,
-              qualityDescription: record.qualityDescription,
-              qualityMetric: record.qualityMetric,
-              kpiMetric: { ...record.kpiMetric },
-              procedures: record.procedures.map((procedure) => ({
-                id: procedure.id,
-                procedureKey: procedure.procedureKey,
-                title: procedure.title,
-              })),
-              ...(record.qi ? { qi: { ...record.qi } } : {}),
-              recentActivities: (
-                portfolio.activityKpiHistory?.[record.id] ?? []
-              )
-                .slice(-8)
-                .map((sample) => ({ ...sample })),
-            }))
+          tasks: governedTasks
+            .flatMap((record) => {
+              if (!record || !Array.isArray(record.procedures)) return [];
+              try {
+                const procedures = record.procedures.flatMap((procedure) => {
+                  const candidate = jsonRecord(procedure);
+                  return candidate &&
+                    typeof candidate.id === "string" &&
+                    typeof candidate.procedureKey === "string" &&
+                    typeof candidate.title === "string"
+                    ? [
+                        {
+                          id: candidate.id,
+                          procedureKey: candidate.procedureKey,
+                          title: candidate.title,
+                        },
+                      ]
+                    : [];
+                });
+                const recentHistory = portfolio.activityKpiHistory?.[record.id];
+                const qi = compactTaskQi(record.qi);
+                return [
+                  {
+                    ...compactRecord(record),
+                    deliverableId: record.deliverableId,
+                    domain: record.domain,
+                    taskKey: record.taskKey,
+                    taskWeightBasisPoints: (record.taskWeight ?? 0) * 100,
+                    qualityDescription: record.qualityDescription,
+                    qualityMetric: record.qualityMetric,
+                    kpiMetric: { ...record.kpiMetric },
+                    procedures,
+                    ...(qi ? { qi } : {}),
+                    recentActivities: Array.isArray(recentHistory)
+                      ? recentHistory.slice(-8).flatMap((sample) => {
+                          const compact = compactActivityKpiSample(sample);
+                          return compact ? [compact] : [];
+                        })
+                      : [],
+                  },
+                ];
+              } catch {
+                return [];
+              }
+            })
             .sort((a, b) => a.id.localeCompare(b.id)),
-          activities: Object.values(portfolio.activities ?? {})
-            .map(compactActivity)
+          activities: Object.values(activityRegistry)
+            .flatMap((activity) => {
+              const compact = compactActivity(activity);
+              return compact ? [compact] : [];
+            })
             .sort(
               (a, b) =>
                 a.assignee.localeCompare(b.assignee) ||
@@ -708,7 +1538,7 @@ export function publishTickTrace(
     plannerCpu[run.name] += roundCpu(run.cpu);
   }
   const empireAuthority = empireAuthorityEvidence();
-  const fspm = fspmSummaries();
+  const fspm = fspmSummaries(empireAuthority.issues.length === 0);
 
   const trace: TickObservabilityTrace = {
     version: 1,

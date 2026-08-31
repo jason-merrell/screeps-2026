@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Intent } from "../../src/intents/types";
 import {
+  activateApprovedColonyGovernance,
   ensureTask,
   reconcileFspmLifecycle,
   type ColonyFspmPortfolio,
@@ -48,7 +49,10 @@ function tracedIntent(taskId: string): Intent {
 }
 
 describe("FSPM lifecycle reconciliation", () => {
-  beforeEach(() => installGlobals());
+  beforeEach(() => {
+    installGlobals();
+    activateApprovedColonyGovernance("W1N1");
+  });
 
   it("keeps Task definitions active when no Activity is demanded this tick", () => {
     const task = ensureTask("W1N1", "spawning", WORKFORCE_TASK);
@@ -81,7 +85,9 @@ describe("FSPM lifecycle reconciliation", () => {
     task.statusReason = "operator retired test task";
 
     Game.time = 101;
-    reconcileFspmLifecycle([tracedIntent(task.id)]);
+    expect(() => reconcileFspmLifecycle([tracedIntent(task.id)])).toThrow(
+      /Task .* is retired|Task weights/i,
+    );
 
     expect(task.status).toBe("retired");
     expect(task.retiredAt).toBe(100);

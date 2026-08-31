@@ -6,7 +6,7 @@ import type {
 import type { RoomPlan } from "../planning/room-plan";
 import type { RuntimeSupervisorMemory } from "../runtime/supervisor";
 
-export const MEMORY_VERSION = 7;
+export const MEMORY_VERSION = 8;
 
 export interface ColonyMemory {
   roomName: string;
