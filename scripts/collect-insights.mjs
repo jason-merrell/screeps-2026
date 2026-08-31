@@ -1,4 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import {
+  buildPtrRuntimeReadiness,
+  DEFAULT_PTR_MEMORY_VERSION,
+  sanitizePtrBranchesResponse,
+} from "./lib/ptr-runtime-readiness.mjs";
 import { rankStartRooms } from "./lib/start-room-recommender.mjs";
 
 const token = process.env.SCREEPS_TOKEN;
@@ -11,13 +16,43 @@ const requestedTarget = process.env.SCREEPS_TARGET || "world";
 const requestId = process.env.SCREEPS_REQUEST_ID || "unknown";
 const requestCommand = process.env.SCREEPS_COMMAND || "/collect";
 const requestMode = process.env.SCREEPS_MODE || "collect";
+const expectedBranch = process.env.SCREEPS_BRANCH || "default";
+const expectedRuntimeSha =
+  process.env.SCREEPS_EXPECTED_RUNTIME_SHA || process.env.GITHUB_SHA || "";
+const expectedMemoryVersion = Number(
+  process.env.SCREEPS_EXPECTED_MEMORY_VERSION ||
+    String(DEFAULT_PTR_MEMORY_VERSION),
+);
+const observabilitySegment = Number(
+  process.env.SCREEPS_OBSERVABILITY_SEGMENT || "99",
+);
 const apiPrefix = requestedTarget === "ptr" ? "/ptr" : "";
+const collectedAtMs = Date.now();
+const collectedAt = new Date(collectedAtMs).toISOString();
 
 if (!token) {
   throw new Error("SCREEPS_TOKEN is required to collect insights");
 }
 if (requestedTarget !== "world" && requestedTarget !== "ptr") {
   throw new Error(`Unsupported Screeps target '${requestedTarget}'`);
+}
+if (
+  requestedTarget === "ptr" &&
+  (requestMode === "collect" || requestMode === "snapshot") &&
+  (!requestedRoom || !requestedShard)
+) {
+  throw new Error(
+    "PTR runtime preflight requires an explicit SCREEPS_ROOM and SCREEPS_REQUESTED_SHARD",
+  );
+}
+if (
+  !Number.isInteger(observabilitySegment) ||
+  observabilitySegment < 0 ||
+  observabilitySegment > 99
+) {
+  throw new Error(
+    "SCREEPS_OBSERVABILITY_SEGMENT must be an integer from 0 through 99",
+  );
 }
 
 const requestJson = async (path, params = {}) => {
@@ -43,10 +78,25 @@ const requestJson = async (path, params = {}) => {
       // Preserve non-JSON responses for diagnostics.
     }
 
-    return { ok: response.ok, status: response.status, body };
+    const hasExplicitError =
+      body !== null &&
+      typeof body === "object" &&
+      Object.hasOwn(body, "error") &&
+      body.error !== null &&
+      body.error !== "";
+    const apiRejected =
+      body === null || typeof body !== "object" || body.ok !== 1;
+
+    return {
+      ok: response.ok && !hasExplicitError && !apiRejected,
+      httpOk: response.ok,
+      status: response.status,
+      body,
+    };
   } catch (error) {
     return {
       ok: false,
+      httpOk: false,
       status: 0,
       body: error instanceof Error ? error.message : String(error),
     };
@@ -102,7 +152,10 @@ const parseRoomRef = (value, fallbackShard = defaultShard) => {
   if (typeof value !== "string" || value.length === 0) return null;
   const qualified = value.match(/^(shard[^/]+)\/([WE]\d+[NS]\d+)$/i);
   if (qualified) {
-    return { shard: qualified[1].toLowerCase(), room: qualified[2].toUpperCase() };
+    return {
+      shard: qualified[1].toLowerCase(),
+      room: qualified[2].toUpperCase(),
+    };
   }
   if (/^[WE]\d+[NS]\d+$/i.test(value)) {
     return { shard: fallbackShard, room: value.toUpperCase() };
@@ -125,7 +178,12 @@ const scanSector = async (sector, shard) => {
     const controller = objects.find((object) => object.type === "controller");
     const sources = objects.filter((object) => object.type === "source");
 
-    if (!controller || controller.user || controller.reservation || sources.length < 2) {
+    if (
+      !controller ||
+      controller.user ||
+      controller.reservation ||
+      sources.length < 2
+    ) {
       continue;
     }
 
@@ -155,9 +213,13 @@ const scanSector = async (sector, shard) => {
       terrain,
       objects: compactObjects(
         objects.filter((object) =>
-          ["controller", "source", "mineral", "portal", "constructedWall"].includes(
-            object.type,
-          ),
+          [
+            "controller",
+            "source",
+            "mineral",
+            "portal",
+            "constructedWall",
+          ].includes(object.type),
         ),
       ),
     });
@@ -184,13 +246,20 @@ if (requestMode === "recommend") {
     const ref = parseRoomRef(value, defaultShard);
     if (!ref) continue;
     if (requestedShard && ref.shard !== requestedShard) continue;
-    if (!startSectors.some((candidate) => candidate.room === ref.room && candidate.shard === ref.shard)) {
+    if (
+      !startSectors.some(
+        (candidate) =>
+          candidate.room === ref.room && candidate.shard === ref.shard,
+      )
+    ) {
       startSectors.push(ref);
     }
   }
 
   if (startSectors.length === 0) {
-    throw new Error("Screeps returned no usable start sectors for recommendation");
+    throw new Error(
+      "Screeps returned no usable start sectors for recommendation",
+    );
   }
 
   const scans = [];
@@ -208,7 +277,9 @@ if (requestMode === "recommend") {
 
   const ranking = rankStartRooms(allCandidates, 5);
   if (ranking.length === 0) {
-    throw new Error("No neutral two-source rooms were eligible in the offered start sectors");
+    throw new Error(
+      "No neutral two-source rooms were eligible in the offered start sectors",
+    );
   }
 
   snapshot = {
@@ -219,7 +290,7 @@ if (requestMode === "recommend") {
       shard: requestedShard || null,
       target: requestedTarget,
     },
-    collectedAt: new Date().toISOString(),
+    collectedAt,
     host,
     target: requestedTarget,
     recommendation: {
@@ -232,7 +303,8 @@ if (requestMode === "recommend") {
     },
   };
 } else if (requestMode === "scan") {
-  if (!requestedSector) throw new Error("SCREEPS_SECTOR is required for sector scan");
+  if (!requestedSector)
+    throw new Error("SCREEPS_SECTOR is required for sector scan");
 
   const scan = await scanSector(requestedSector, shard);
   snapshot = {
@@ -244,22 +316,66 @@ if (requestMode === "recommend") {
       shard,
       target: requestedTarget,
     },
-    collectedAt: new Date().toISOString(),
+    collectedAt,
     host,
     target: requestedTarget,
     scan,
   };
 } else {
-  const worldStatus = await requestJson("/api/user/world-status");
-  const startRoom = await requestJson("/api/user/world-start-room");
-  const rooms = await requestJson("/api/user/rooms", { interval: 8 });
-  const branches = await requestJson("/api/user/branches");
-  const stats = await requestJson("/api/user/stats", { interval: 8 });
+  const account =
+    requestedTarget === "ptr" ? await requestJson("/api/auth/me") : null;
+  const accountId =
+    account?.ok && typeof account.body?._id === "string"
+      ? account.body._id
+      : undefined;
+  const unavailableAccountScopedResponse = {
+    ok: false,
+    httpOk: false,
+    status: 0,
+    body: { error: "authenticated account id unavailable" },
+  };
+  const [
+    worldStatus,
+    startRoom,
+    rooms,
+    branches,
+    stats,
+    gameTime,
+    memoryVersion,
+    observability,
+  ] = await Promise.all([
+    requestJson("/api/user/world-status"),
+    requestJson("/api/user/world-start-room"),
+    requestedTarget === "ptr"
+      ? accountId
+        ? requestJson("/api/user/rooms", { id: accountId, interval: 8 })
+        : unavailableAccountScopedResponse
+      : requestJson("/api/user/rooms", { interval: 8 }),
+    requestJson("/api/user/branches"),
+    requestedTarget === "ptr"
+      ? accountId
+        ? requestJson("/api/user/stats", { id: accountId, interval: 8 })
+        : unavailableAccountScopedResponse
+      : requestJson("/api/user/stats", { interval: 8 }),
+    requestedTarget === "ptr" ? requestJson("/api/game/time", { shard }) : null,
+    requestedTarget === "ptr"
+      ? requestJson("/api/user/memory", { path: "version", shard })
+      : null,
+    requestedTarget === "ptr"
+      ? requestJson("/api/user/memory-segment", {
+          segment: observabilitySegment,
+          shard,
+        })
+      : null,
+  ]);
 
   const roomTargets = new Map();
   const addRoom = (value, fallbackShard = defaultShard) => {
     const ref = parseRoomRef(value, fallbackShard);
-    if (ref) roomTargets.set(ref.room, ref.shard);
+    // roomSnapshots is keyed by room name for compatibility. Keep the first
+    // authoritative shard binding so an explicit room/shard request cannot be
+    // silently replaced by the same room name reported on another shard.
+    if (ref && !roomTargets.has(ref.room)) roomTargets.set(ref.room, ref.shard);
   };
 
   if (requestedRoom) addRoom(requestedRoom, shard);
@@ -273,19 +389,24 @@ if (requestMode === "recommend") {
       if (!Array.isArray(shardRooms)) continue;
       for (const room of shardRooms) {
         if (typeof room === "string") addRoom(room, shardName);
-        else if (room && typeof room._id === "string") addRoom(room._id, shardName);
-        else if (room && typeof room.room === "string") addRoom(room.room, shardName);
+        else if (room && typeof room._id === "string")
+          addRoom(room._id, shardName);
+        else if (room && typeof room.room === "string")
+          addRoom(room.room, shardName);
       }
     }
   }
 
   const roomSnapshots = {};
-  for (const [roomName, roomShard] of [...roomTargets.entries()].sort(([a], [b]) =>
-    a.localeCompare(b),
+  for (const [roomName, roomShard] of [...roomTargets.entries()].sort(
+    ([a], [b]) => a.localeCompare(b),
   )) {
     roomSnapshots[roomName] = {
       shard: roomShard,
-      status: await requestJson("/api/game/room-status", { room: roomName }),
+      status: await requestJson("/api/game/room-status", {
+        room: roomName,
+        shard: roomShard,
+      }),
       overview: await requestJson("/api/game/room-overview", {
         room: roomName,
         shard: roomShard,
@@ -302,6 +423,30 @@ if (requestMode === "recommend") {
     };
   }
 
+  const readinessRoom =
+    requestedRoom ||
+    [...roomTargets.keys()].sort((a, b) => a.localeCompare(b))[0];
+  const runtimeReadiness =
+    requestedTarget === "ptr" && readinessRoom
+      ? buildPtrRuntimeReadiness({
+          expectedBranch,
+          expectedRuntimeSha,
+          expectedMemoryVersion,
+          shard: roomSnapshots[readinessRoom].shard,
+          room: readinessRoom,
+          worldStatusResponse: worldStatus,
+          branchesResponse: branches,
+          accountResponse: account,
+          gameTimeResponse: gameTime,
+          memoryVersionResponse: memoryVersion,
+          observabilityResponse: observability,
+          roomsResponse: rooms,
+          roomObjectsResponse: roomSnapshots[readinessRoom].objects,
+          observabilitySegment,
+          collectedAtMs,
+        })
+      : null;
+
   snapshot = {
     request: {
       id: requestId,
@@ -311,15 +456,18 @@ if (requestMode === "recommend") {
       shard: requestedShard || null,
       target: requestedTarget,
     },
-    collectedAt: new Date().toISOString(),
+    collectedAt,
     host,
     target: requestedTarget,
     defaultShard,
     worldStatus,
     startRoom,
     rooms,
-    branches,
+    // Branch module source and opaque branch metadata are never required for
+    // an insights artifact. Preserve only activation evidence on every target.
+    branches: sanitizePtrBranchesResponse(branches),
     stats,
+    ...(runtimeReadiness ? { runtimeReadiness } : {}),
     roomSnapshots,
   };
 }

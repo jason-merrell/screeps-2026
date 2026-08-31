@@ -3,6 +3,7 @@ const commentBody = process.env.SCREEPS_REQUEST || "";
 const commentId = process.env.SCREEPS_COMMENT_ID || "";
 const inputRoom = process.env.SCREEPS_INPUT_ROOM || "";
 const inputShard = process.env.SCREEPS_INPUT_SHARD || "";
+const inputTarget = process.env.SCREEPS_INPUT_TARGET || "";
 const runId = process.env.GITHUB_RUN_ID || "manual";
 const outputPath = process.env.GITHUB_OUTPUT;
 
@@ -205,6 +206,9 @@ if (eventName === "issue_comment") {
   } else {
     room = normalizeRoom(args.get("room") || "");
     target = normalizeTarget(args.get("target") || "world");
+    if (target === "ptr" && (!room || !shard)) {
+      fail("/collect target=ptr requires room=<ROOM> and shard=<SHARD>");
+    }
     if (shard && !room) fail("shard requires room");
     command = [
       "/collect",
@@ -219,8 +223,17 @@ if (eventName === "issue_comment") {
   requestId = runId;
   room = normalizeRoom(inputRoom.trim());
   shard = normalizeShard(inputShard.trim());
+  target = normalizeTarget(inputTarget.trim() || "world");
+  if (target === "ptr" && (!room || !shard)) {
+    fail("PTR workflow dispatch requires room and shard");
+  }
   if (shard && !room) fail("shard requires room");
-  command = ["/collect", room && `room=${room}`, shard && `shard=${shard}`]
+  command = [
+    "/collect",
+    target !== "world" && `target=${target}`,
+    room && `room=${room}`,
+    shard && `shard=${shard}`,
+  ]
     .filter(Boolean)
     .join(" ");
 }
