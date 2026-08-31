@@ -12,7 +12,7 @@ The current runtime already has the right low-level shape:
 
 `perceive -> planners -> arbitration -> execution -> trace`
 
-The execution kernel now has durable Task, Procedure, Activity, Intent, and outcome evidence. The versioned conformance profile in `docs/fspm-conformance.json` is authoritative about what remains incomplete. In particular, approved Corporate Requirements and Deliverables, OU/ARCI authority, complete EQVM roll-up, continuously managed Portfolio decisions, and issue/risk/stakeholder governance are not yet conformant.
+The execution kernel now has durable, content-pinned Corporate Requirement and Corporate Deliverable authority plus Task, Procedure, Activity, Intent, and outcome evidence. The source-controlled authority package is an explicit Screeps service-principal adaptation; it is not canonical human approval. The versioned conformance profile in `docs/fspm-conformance.json` remains authoritative about incomplete OU/ARCI authority, general child-Deliverable decomposition, complete EQVM roll-up, continuously managed Portfolio decisions, and issue/risk/stakeholder governance.
 
 ## Governance source model
 
@@ -37,8 +37,8 @@ For Screeps, the important lesson is:
 FSPM concept | Screeps concept | Persistence
 ---|---|---
 P3 Portfolio | Continuously managed empire or colony scope | durable
-Corporate Requirement | Approved binding Screeps obligation | durable + append-only approval history
-Corporate Deliverable | Product, service, or result with acceptance receipt | durable
+Corporate Requirement | Attested binding Screeps obligation | durable + append-only adapted activation history
+Corporate Deliverable | Product, service, or result requiring accountable acceptance | durable; current recurring service definitions remain active across accepted occurrences
 Task | Stable work definition with quality and procedures | durable
 Procedure | Ordered/eligible execution step inside a Task | durable definition
 Activity | One execution instance of exactly one Task | durable while open + bounded history
@@ -83,11 +83,15 @@ A Portfolio is the durable P3 authority for a continuously managed empire or col
 
 ### 4. Requirements
 
-Approved binding obligations derived from an authoritative trigger and human Accountable approval. Requirements express what is authorized and why, not how to perform it. The current generated domain placeholders are explicitly non-conformant scaffolding until #184 is complete.
+Approved binding obligations express what is authorized and why, not how to perform it. The current catalog is derived from the immutable Screeps Colony Operations Policy and activated top-down from an exact, versioned, content-pinned package. Approval-shaped projections are backed by immutable content-hashed adapted activation events created at the package-import tick. The named source-controlled service principal preserves autonomous execution authority but remains an explicit adaptation until #164 supplies the canonical human Accountable chain.
 
 ### 5. Deliverables
 
-Durable products, services, or results that satisfy Requirements. A Deliverable owns its output, Quality Description, Quality Metric, receipt validation, weight, one human Accountable, active plan revision, evidence window, and lifecycle state.
+Durable products, services, or results that satisfy Requirements. Each current Deliverable owns category/type, scope and output, all evaluation factors, Quality Description, Quality Metric, a three-part receipt contract, completed-Activity-derived append-only `received` evidence, a package-bound service-principal acceptance predicate, exact integer sibling weight, revision, and lifecycle state. A receipt carries a compact immutable completion snapshot so the live Activity registry remains bounded. `received` is not accountable acceptance. A separate immutable decision ledger records accepted/rejected/disputed review and allows acceptance only for satisfactory or exceptional terminal KPI evidence. Chain-independent count/digest anchors expose newest-suffix deletion in the receipt, decision, and retirement ledgers.
+
+The current Deliverables are recurring services: an accepted decision closes one occurrence while the durable definition stays Active. No completion API exists until a separately governed service-closure criterion is approved. This autonomous decision is not canonical human acceptance. Retirement uses a distinct hash-chained lifecycle ledger and blocks the current package from execution pending a reviewed superseding revision. General one-level child decomposition remains #176; human Accountable authority and acceptance remain #164; complete quality roll-up remains #136.
+
+Receipt capture and receipt decision are explicit, separately atomic authority APIs, not an automatic production-loop reconciliation path. The retained ledgers currently have no acknowledged bounded archive, so #194 must land before automatic occurrence capture is enabled. Until then, the APIs establish fail-closed semantics without claiming complete live occurrence evidence.
 
 ### 6. Plans, Tasks, and Procedures
 
@@ -217,12 +221,13 @@ KPI: pending until completion
 
 1. Keep the machine-readable conformance profile synchronized with the pinned governance SHA.
 2. Enforce exact active P3-to-Procedure ancestry before an intent can create or resume an Activity.
-3. Replace planner-created Requirement and Deliverable placeholders with approved governed records.
+3. Preserve content-pinned, top-down Requirement and Deliverable activation; planner and intent paths remain read-only consumers of authority.
 4. Implement OU/ARCI authority with one human Accountable and explicit Responsible AI Performer identity.
-5. Complete inherited Activity scheduling and schema semantics.
-6. Separate operational health from canonical EQVM and implement Activity KPI to Task QI to DQI to P3/PQI receipts.
-7. Add durable acknowledgment, gap detection, and as-of history before bounded runtime evidence is evicted.
-8. Implement continuously managed Portfolio decisions and Issue, Risk, and Stakeholder registers.
+5. Complete general one-level child-Deliverable decomposition and governed replacement packages.
+6. Complete inherited Activity scheduling and schema semantics.
+7. Separate operational health from canonical EQVM and implement Activity KPI to Task QI to DQI to P3/PQI receipts.
+8. Add durable acknowledgment, gap detection, and as-of history before bounded runtime evidence is evicted, including the receipt/decision checkpoint protocol in #194.
+9. Implement continuously managed Portfolio decisions and Issue, Risk, and Stakeholder registers.
 
 No rewrite is required. Existing planners can continue producing the same intents while authority, records, quality, and portfolio behavior are hardened underneath them. Capability expansion must not bypass those gates.
 

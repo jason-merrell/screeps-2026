@@ -6,8 +6,11 @@ import {
 } from "../src/observability/trace";
 import type { FspmAssignmentState } from "../src/planning/activity-lifecycle";
 import {
+  activateApprovedColonyGovernance,
   createEmpirePortfolioP3,
+  decideDeliverableReceipt,
   type FspmActivityRecord,
+  recordDeliverableReceipt,
   reconcileFspmLifecycle,
 } from "../src/planning/fspm";
 
@@ -104,6 +107,7 @@ function emptyTraceInput(): PublishTickTraceInput {
       scopeUnits: 1,
       phases: [],
       metrics: {
+        fspm_governance: { samples: 0, p50: null, p95: null, p99: null },
         settlement: { samples: 0, p50: null, p95: null, p99: null },
         defense: { samples: 0, p50: null, p95: null, p99: null },
         spawning: { samples: 0, p50: null, p95: null, p99: null },
@@ -233,6 +237,31 @@ describe("observability schema evidence", () => {
     ).toEqual(trace.fspm.integrity);
   });
 
+  it("fails colony governance closed when the Empire root authority is missing", () => {
+    installTraceGlobals(8);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    activateApprovedColonyGovernance("W1N1");
+    delete (Memory.empireFspm as Partial<typeof Memory.empireFspm>)?.p3;
+    RawMemory.segments[99] = "{}";
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const summary = trace.fspm.colonies.at(0);
+
+    expect(trace.fspm.rootP3).toBeNull();
+    expect(trace.fspm.integrity).toMatchObject({
+      authoritative: false,
+      byCode: { empire_p3_missing: 1 },
+    });
+    expect(summary?.governance).toMatchObject({
+      valid: false,
+      executionEligible: false,
+      checks: { empireRoot: false },
+    });
+  });
+
   it("quarantines a malformed colony P3 without aborting publication", () => {
     Memory.empireFspm = { p3: createEmpirePortfolioP3(1, Game.time) };
     Memory.colonies.W1N1 = {
@@ -274,5 +303,368 @@ describe("observability schema evidence", () => {
     expect(
       JSON.parse(RawMemory.segments[99] ?? "null")?.fspm?.integrity,
     ).toEqual(trace.fspm.integrity);
+  });
+
+  it("marks a structurally corrupted governed P3 invalid instead of publishing false-green governance", () => {
+    installTraceGlobals(8);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    (portfolio.p3 as unknown as { name: number }).name = 5;
+    RawMemory.segments[99] = "{}";
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const summary = trace.fspm.colonies.at(0);
+
+    expect(trace.fspm.integrity).toMatchObject({
+      authoritative: false,
+      byCode: { colony_p3_malformed: 1 },
+    });
+    expect(summary?.p3).toBeNull();
+    expect(summary?.governance).toMatchObject({
+      valid: false,
+      executionEligible: false,
+      checks: { packageProjection: false },
+    });
+  });
+
+  it("quarantines a null P3 on a populated governed portfolio without aborting publication", () => {
+    installTraceGlobals(8);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    Object.assign(portfolio, { p3: null });
+    RawMemory.segments[99] = "{}";
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const summary = trace.fspm.colonies.at(0);
+
+    expect(trace.fspm.integrity).toMatchObject({
+      authoritative: false,
+      byCode: { colony_p3_malformed: 1 },
+    });
+    expect(summary?.p3).toBeNull();
+    expect(summary?.governance).toMatchObject({
+      valid: false,
+      executionEligible: false,
+      checks: { packageProjection: false, ancestry: false },
+    });
+  });
+
+  it.each(["Requirement", "Deliverable"] as const)(
+    "omits a malformed %s identity while preserving bounded governance evidence",
+    (kind) => {
+      installTraceGlobals(8);
+      Memory.colonies.W1N1 = {
+        roomName: "W1N1",
+        discoveredAt: 1,
+      };
+      const portfolio = activateApprovedColonyGovernance("W1N1");
+      const record =
+        kind === "Requirement"
+          ? portfolio.requirements.defense
+          : portfolio.deliverables.defense;
+      if (!record) throw new Error(`expected governed ${kind}`);
+      (record as unknown as { id: number }).id = 5;
+      RawMemory.segments[99] = "{}";
+
+      const trace = publishTickTrace(emptyTraceInput());
+      const summary = trace.fspm.colonies.at(0);
+      const projected =
+        kind === "Requirement" ? summary?.requirements : summary?.deliverables;
+
+      expect(trace.fspm.integrity).toMatchObject({
+        authoritative: false,
+        byCode: { colony_governance_invalid: 1 },
+      });
+      expect(summary?.governance?.valid).toBe(false);
+      expect(projected).toHaveLength(3);
+      expect(projected?.every((entry) => typeof entry.id === "string")).toBe(
+        true,
+      );
+      expect(
+        JSON.parse(RawMemory.segments[99] ?? "null")?.fspm?.integrity?.byCode,
+      ).toEqual({ colony_governance_invalid: 1 });
+    },
+  );
+
+  it.each(["requirements", "deliverables", "tasks"] as const)(
+    "quarantines a null %s authority registry without aborting publication",
+    (registry) => {
+      installTraceGlobals(8);
+      Memory.colonies.W1N1 = {
+        roomName: "W1N1",
+        discoveredAt: 1,
+      };
+      const portfolio = activateApprovedColonyGovernance("W1N1");
+      Object.assign(portfolio, { [registry]: null });
+      RawMemory.segments[99] = "{}";
+
+      const trace = publishTickTrace(emptyTraceInput());
+      const summary = trace.fspm.colonies.at(0);
+
+      expect(trace.fspm.integrity).toMatchObject({
+        authoritative: false,
+        byCode: { colony_governance_invalid: 1 },
+      });
+      expect(summary?.governance?.valid).toBe(false);
+      expect(summary?.[registry]).toEqual([]);
+      expect(
+        JSON.parse(RawMemory.segments[99] ?? "null")?.fspm?.integrity?.byCode,
+      ).toEqual({ colony_governance_invalid: 1 });
+    },
+  );
+
+  it("omits a Deliverable with a malformed numeric projection instead of emitting a Lab-crashing value", () => {
+    installTraceGlobals(8);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    const deliverable = portfolio.deliverables.economy;
+    if (!deliverable) throw new Error("expected governed Deliverable");
+    Object.assign(deliverable, { siblingWeightBasisPoints: null });
+    RawMemory.segments[99] = "{}";
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const summary = trace.fspm.colonies.at(0);
+
+    expect(trace.fspm.integrity).toMatchObject({
+      authoritative: false,
+      byCode: { colony_governance_invalid: 1 },
+    });
+    expect(summary?.governance?.valid).toBe(false);
+    expect(summary?.deliverables).toHaveLength(3);
+    expect(
+      summary?.deliverables.every((record) =>
+        Number.isFinite(record.siblingWeightBasisPoints),
+      ),
+    ).toBe(true);
+  });
+
+  it("projects a malformed governance binding as explicit blocked authority with safe scalar fields", () => {
+    installTraceGlobals(8);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    Object.assign(portfolio, { governanceBinding: 5 });
+    RawMemory.segments[99] = "{}";
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const governance = trace.fspm.colonies.at(0)?.governance;
+
+    expect(trace.fspm.integrity).toMatchObject({
+      authoritative: false,
+      byCode: { colony_governance_invalid: 1 },
+    });
+    expect(governance).toMatchObject({
+      packageId: "unavailable:malformed-governance-binding",
+      packageRevision: 0,
+      importedAtTick: -1,
+      valid: false,
+      executionEligible: false,
+      checks: { packageProjection: false },
+    });
+  });
+
+  it.each([
+    ["deliverableReceipts", "receiptEvidenceStatus"],
+    ["deliverableReceiptDecisions", "receiptAcceptanceStatus"],
+  ] as const)(
+    "quarantines a null entry in %s without aborting publication",
+    (registry, statusField) => {
+      installTraceGlobals(8);
+      Memory.colonies.W1N1 = {
+        roomName: "W1N1",
+        discoveredAt: 1,
+      };
+      const portfolio = activateApprovedColonyGovernance("W1N1");
+      Object.assign(portfolio, { [registry]: { bad: null } });
+      RawMemory.segments[99] = "{}";
+
+      const trace = publishTickTrace(emptyTraceInput());
+      const summary = trace.fspm.colonies.at(0);
+
+      expect(trace.fspm.integrity).toMatchObject({
+        authoritative: false,
+        byCode: { colony_governance_invalid: 1 },
+      });
+      expect(summary?.governance).toMatchObject({
+        valid: false,
+        checks: { receiptLedgers: false },
+      });
+      expect(
+        summary?.deliverables.every(
+          (record) => record[statusField] === "invalid",
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it.each([{ bad: null }, 5] as const)(
+    "omits malformed Activity registry data without aborting publication",
+    (activities) => {
+      installTraceGlobals(8);
+      Memory.colonies.W1N1 = {
+        roomName: "W1N1",
+        discoveredAt: 1,
+      };
+      const portfolio = activateApprovedColonyGovernance("W1N1");
+      Object.assign(portfolio, { activities });
+      RawMemory.segments[99] = "{}";
+
+      const trace = publishTickTrace(emptyTraceInput());
+      const summary = trace.fspm.colonies.at(0);
+
+      expect(summary?.activities).toEqual([]);
+      expect(
+        JSON.parse(RawMemory.segments[99] ?? "null")?.fspm?.colonies?.[0]
+          ?.activities,
+      ).toEqual([]);
+    },
+  );
+
+  it("reports a newer undecided receipt as the latest pending service occurrence", () => {
+    installTraceGlobals(8);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    const deliverable = portfolio.deliverables.economy;
+    const task =
+      portfolio.tasks["task:W1N1:economy:maintain-colony-energy-service"];
+    const procedure = task?.procedures.at(-1);
+    if (!deliverable || !task || !procedure) {
+      throw new Error("expected governed economy authority");
+    }
+    portfolio.activities ??= {};
+    for (const suffix of ["accepted", "pending"] as const) {
+      const activityId = `activity:W1N1:economy:${suffix}`;
+      portfolio.activities[activityId] = {
+        id: activityId,
+        taskId: task.id,
+        assignee: `worker-${suffix}`,
+        status: "completed",
+        currentProcedureId: procedure.id,
+        qualityDescription: task.qualityDescription,
+        qualityMetric: task.qualityMetric,
+        kpiMetric: { ...task.kpiMetric },
+        kpiScore: "satisfactory",
+        createdAt: Game.time,
+        startedAt: Game.time,
+        completedAt: Game.time,
+        updatedAt: Game.time,
+        metrics: {
+          inProgressTicks: 1,
+          onHoldTicks: 0,
+          productiveTicks: 1,
+          travelTicks: 0,
+          idleTicks: 0,
+          holdCount: 0,
+          resumeCount: 0,
+          taskPreemptions: 0,
+          procedureTransitions: 1,
+        },
+      };
+    }
+    const acceptedReceipt = recordDeliverableReceipt(
+      "W1N1",
+      deliverable.id,
+      "activity:W1N1:economy:accepted",
+    );
+    decideDeliverableReceipt(
+      "W1N1",
+      acceptedReceipt.id,
+      "accepted",
+      "Terminal KPI satisfies the package-bound occurrence policy",
+    );
+    recordDeliverableReceipt(
+      "W1N1",
+      deliverable.id,
+      "activity:W1N1:economy:pending",
+    );
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const economy = trace.fspm.colonies
+      .at(0)
+      ?.deliverables.find((record) => record.domain === "economy");
+
+    expect(economy?.receiptEvidenceStatus).toBe("validated");
+    expect(economy?.receiptAcceptanceStatus).toBe("pending");
+  });
+
+  it.each(["receiptValidation", "servicePrincipalAcceptance"] as const)(
+    "publishes bounded invalid-governance evidence when a Deliverable loses %s",
+    (field) => {
+      installTraceGlobals(8);
+      Memory.colonies.W1N1 = {
+        roomName: "W1N1",
+        discoveredAt: 1,
+      };
+      const portfolio = activateApprovedColonyGovernance("W1N1");
+      const deliverable = portfolio.deliverables.economy;
+      if (!deliverable) throw new Error("expected governed Deliverable");
+      delete (deliverable as Partial<typeof deliverable>)[field];
+      RawMemory.segments[99] = "{}";
+
+      const trace = publishTickTrace(emptyTraceInput());
+      const summary = trace.fspm.colonies.at(0);
+      const economy = summary?.deliverables.find(
+        (record) => record.domain === "economy",
+      );
+
+      expect(trace.fspm.integrity).toMatchObject({
+        authoritative: false,
+        byCode: { colony_governance_invalid: 1 },
+      });
+      expect(summary?.governance?.valid).toBe(false);
+      if (field === "receiptValidation") {
+        expect(summary?.governance?.checks.receiptContracts).toBe(false);
+        expect(economy?.receiptContractStatus).toBe("invalid");
+        expect(economy?.receiptValidation).toBeUndefined();
+      } else {
+        expect(summary?.governance?.checks.acceptancePolicies).toBe(false);
+        expect(economy?.servicePrincipalAcceptanceStatus).toBe("invalid");
+        expect(economy?.servicePrincipalAcceptance).toBeUndefined();
+      }
+      expect(
+        JSON.parse(RawMemory.segments[99] ?? "null")?.fspm?.integrity?.byCode,
+      ).toEqual({ colony_governance_invalid: 1 });
+    },
+  );
+
+  it("omits a malformed Task projection while preserving bounded governance evidence", () => {
+    installTraceGlobals(8);
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    const task =
+      portfolio.tasks["task:W1N1:economy:maintain-colony-energy-service"];
+    if (!task) throw new Error("expected governed Task");
+    delete (task as Partial<typeof task>).procedures;
+    RawMemory.segments[99] = "{}";
+
+    const trace = publishTickTrace(emptyTraceInput());
+    const summary = trace.fspm.colonies.at(0);
+
+    expect(trace.fspm.integrity).toMatchObject({
+      authoritative: false,
+      byCode: { colony_governance_invalid: 1 },
+    });
+    expect(summary?.governance?.valid).toBe(false);
+    expect(summary?.tasks.some((record) => record.id === task.id)).toBe(false);
+    expect(
+      JSON.parse(RawMemory.segments[99] ?? "null")?.fspm?.integrity?.byCode,
+    ).toEqual({ colony_governance_invalid: 1 });
   });
 });

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Intent } from "../../src/intents/types";
 import type { WorldSnapshot } from "../../src/runtime/context";
+import { activateApprovedColonyGovernance } from "../../src/planning/fspm";
 import { planSurplusLaborUtilization } from "../../src/systems/economy/surplus-utilization";
 
 vi.stubGlobal("WORK", "work");
@@ -104,6 +105,7 @@ describe("surplus hybrid labor utilization", () => {
 
   beforeEach(() => {
     world = installWorld();
+    activateApprovedColonyGovernance("W1N1");
   });
 
   it("withdraws unclaimed buffered energy instead of falling through with no intent", () => {

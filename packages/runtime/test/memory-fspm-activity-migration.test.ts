@@ -125,11 +125,11 @@ describe("FSPM Activity memory migration", () => {
     });
   });
 
-  it("migrates pre-v4 Activity evidence through the current schema while preserving Task definitions", () => {
+  it("migrates pre-v4 evidence and quarantines the unauthorised placeholder spine", () => {
     migrateMemory();
 
     expect(Memory.version).toBe(MEMORY_VERSION);
-    expect(Memory.version).toBe(7);
+    expect(Memory.version).toBe(8);
     expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
     expect(Memory.empireFspm?.p3).toMatchObject({
       id: "portfolio:empire:operations",
@@ -137,17 +137,26 @@ describe("FSPM Activity memory migration", () => {
       startTick: 1,
     });
     const portfolio = Memory.colonies.W1N1?.fspm;
-    const task = portfolio?.tasks["task:W1N1:economy:test"];
+    const quarantine = portfolio?.authorityQuarantine?.[0];
+    const task = quarantine?.tasks["task:W1N1:economy:test"] as
+      | { qi?: unknown; procedures?: unknown[] }
+      | undefined;
     expect(portfolio?.p3).toMatchObject({
       id: "portfolio:colony:W1N1",
       parentP3Id: "portfolio:empire:operations",
       startTick: 1,
     });
     expect(portfolio?.contract?.status).toBe("retired");
+    expect(portfolio?.tasks).toEqual({});
+    expect(quarantine).toMatchObject({
+      schema: "screeps-fspm-authority-quarantine/v1",
+      migratedFromVersion: 7,
+    });
     expect(task).toBeDefined();
     expect(task?.qi).toBeUndefined();
     expect(task?.procedures).toEqual([]);
     expect(portfolio?.activities).toEqual({});
+    expect(quarantine?.activities).toEqual({});
     expect(portfolio?.activityKpiHistory).toEqual({});
     expect(
       (portfolio as typeof portfolio & { activityEvents?: unknown[] })

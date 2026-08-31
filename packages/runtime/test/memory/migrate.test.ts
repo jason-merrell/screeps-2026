@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { migrateMemory } from "../../src/memory/migrate";
 import { MEMORY_VERSION } from "../../src/memory/schema";
 import {
+  activateApprovedColonyGovernance,
   ensureColonyPortfolio,
   ensureProcedure,
   ensureTask,
@@ -46,7 +47,8 @@ describe("Memory migration", () => {
     });
   });
 
-  it("resets contaminated v4 Activity evidence while preserving canonical Tasks and Procedures", () => {
+  it("resets contaminated v4 evidence and quarantines the unapproved legacy spine", () => {
+    activateApprovedColonyGovernance("W1N1");
     const task = ensureTask("W1N1", "economy", TASK_KEY);
     const procedure = ensureProcedure(
       "W1N1",
@@ -55,6 +57,13 @@ describe("Memory migration", () => {
       PROCEDURE_KEY,
     );
     const portfolio = ensureColonyPortfolio("W1N1");
+    portfolio.p3.quality = {
+      score: 100,
+      state: "healthy",
+      trend: "stable",
+      measuredAt: 99,
+      evidence: ["legacy placeholder roll-up"],
+    };
 
     portfolio.activities = {
       contaminated: {
@@ -116,7 +125,7 @@ describe("Memory migration", () => {
     migrateMemory();
 
     expect(Memory.version).toBe(MEMORY_VERSION);
-    expect(Memory.version).toBe(7);
+    expect(Memory.version).toBe(8);
     expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
     expect(Memory.empireFspm?.p3).toMatchObject({
       id: "portfolio:empire:operations",
@@ -128,14 +137,24 @@ describe("Memory migration", () => {
       parentP3Id: "portfolio:empire:operations",
       startTick: 1,
     });
+    expect(portfolio.p3.quality).toBeUndefined();
     expect(portfolio.activities).toEqual({});
     expect(portfolio.activityKpiHistory).toEqual({});
     expect(evidencePortfolio.activityEvents).toEqual([]);
     expect(evidencePortfolio.activityEventSequence).toBe(0);
-    expect(portfolio.tasks[task.id]?.qi).toBeUndefined();
-    expect(portfolio.tasks[task.id]?.procedures).toContainEqual(procedure);
+    expect(portfolio.tasks).toEqual({});
+    const quarantine = portfolio.authorityQuarantine?.[0];
+    const quarantinedTask = quarantine?.tasks[task.id] as
+      | typeof task
+      | undefined;
+    expect(quarantine).toMatchObject({
+      schema: "screeps-fspm-authority-quarantine/v1",
+      migratedFromVersion: 7,
+    });
+    expect(quarantinedTask?.qi).toBeUndefined();
+    expect(quarantinedTask?.procedures).toContainEqual(procedure);
     expect(
-      portfolio.tasks[task.id]?.procedures.map((entry) => entry.procedureKey),
+      quarantinedTask?.procedures.map((entry) => entry.procedureKey),
     ).toEqual([
       "extract-source-energy",
       "buffer-source-energy",
@@ -145,6 +164,87 @@ describe("Memory migration", () => {
       "park-surplus-transport",
       "fund-workforce-energy",
     ]);
+  });
+
+  it("quarantines and clears Activity event evidence when migrating directly from v7", () => {
+    activateApprovedColonyGovernance("W1N1");
+    const portfolio = ensureColonyPortfolio("W1N1") as ReturnType<
+      typeof ensureColonyPortfolio
+    > & {
+      activityEvents?: unknown[];
+      activityEventSequence?: number;
+    };
+    const legacyEvent = {
+      id: "activity-event:legacy:9",
+      sequence: 9,
+      type: "activity_completed",
+    };
+    portfolio.activityEvents = [legacyEvent];
+    portfolio.activityEventSequence = 9;
+    Memory.version = 7;
+
+    migrateMemory();
+
+    expect(Memory.version).toBe(8);
+    expect(portfolio.activityEvents).toEqual([]);
+    expect(portfolio.activityEventSequence).toBe(0);
+    expect(portfolio.authorityQuarantine?.at(-1)).toMatchObject({
+      migratedFromVersion: 7,
+      activityEvents: [legacyEvent],
+      activityEventSequence: 9,
+    });
+  });
+
+  it("migrates a v7 colony with a missing P3 without fabricating authority", () => {
+    Object.assign(globalThis, {
+      Memory: {
+        version: 7,
+        colonies: {
+          W1N1: {
+            roomName: "W1N1",
+            discoveredAt: 1,
+            fspm: {
+              requirements: {},
+              deliverables: {},
+              tasks: {},
+              activities: {},
+              qualityHistory: {},
+              activityKpiHistory: {},
+            },
+          },
+        },
+        empireFspm: {
+          p3: {
+            id: "portfolio:empire:operations",
+            type: "portfolio",
+            subType: "ou_portfolio",
+            name: "EMPIRE-PORTFOLIO-Empire Operations",
+            description: "Governed Empire authority",
+            parentP3Id: null,
+            temporalBasis: "game_tick",
+            startTick: 1,
+            status: "active",
+            statusReason: "governed Empire authority",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+        runtimeSupervisor: { version: 1, phases: {} },
+      },
+    });
+
+    expect(() => migrateMemory()).not.toThrow();
+
+    const portfolio = Memory.colonies.W1N1?.fspm;
+    expect(Memory.version).toBe(MEMORY_VERSION);
+    expect(portfolio).toBeDefined();
+    expect(Object.hasOwn(portfolio ?? {}, "p3")).toBe(false);
+    expect(portfolio?.requirements).toEqual({});
+    expect(portfolio?.authorityLedgerAnchors).toEqual({
+      deliverableReceipts: { count: 0, headHash: null },
+      deliverableReceiptDecisions: { count: 0, headHash: null },
+      authorityLifecycle: { count: 0, headHash: null },
+    });
   });
 
   it("preserves a malformed existing Empire container for governed quarantine", () => {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createIntentTrace } from "../../src/intents/trace";
 import { migrateMemory } from "../../src/memory/migrate";
 import {
+  activateApprovedColonyGovernance,
   type ColonyFspmPortfolio,
   ensureDomainHierarchy,
 } from "../../src/planning/fspm";
@@ -113,6 +114,7 @@ describe("FSPM colony P3 authority", () => {
 
   it("initializes new colony work under subordinate Portfolio authority without a synthetic contract", () => {
     migrateMemory();
+    activateApprovedColonyGovernance("W1N1");
     const { portfolio, requirement } = ensureDomainHierarchy(
       "W1N1",
       "spawning",
@@ -150,7 +152,7 @@ describe("FSPM colony P3 authority", () => {
     expect(trace.contractId).toBeUndefined();
   });
 
-  it("migrates and retires legacy Service Program authority without rewriting Activity identity", () => {
+  it("retires legacy P3 authority and quarantines its placeholder execution spine", () => {
     installLegacyColony();
     const before = structuredClone(
       Memory.colonies.W1N1?.fspm?.activities?.["activity:legacy"],
@@ -160,7 +162,7 @@ describe("FSPM colony P3 authority", () => {
     const portfolio = Memory.colonies.W1N1?.fspm;
     if (!portfolio) throw new Error("expected migrated colony portfolio");
 
-    expect(Memory.version).toBe(7);
+    expect(Memory.version).toBe(8);
     expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
     expect(portfolio.p3).toMatchObject({
       id: "portfolio:colony:W1N1",
@@ -179,10 +181,13 @@ describe("FSPM colony P3 authority", () => {
       id: "contract:colony:W1N1",
       status: "retired",
     });
-    expect(portfolio.requirements.spawning).toMatchObject({
+    expect(portfolio.requirements).toEqual({});
+    expect(portfolio.activities).toEqual({});
+    const quarantine = portfolio.authorityQuarantine?.[0];
+    expect(quarantine?.requirements.spawning).toMatchObject({
       p3Id: "portfolio:colony:W1N1",
       contractId: "contract:colony:W1N1",
     });
-    expect(portfolio.activities?.["activity:legacy"]).toEqual(before);
+    expect(quarantine?.activities["activity:legacy"]).toEqual(before);
   });
 });

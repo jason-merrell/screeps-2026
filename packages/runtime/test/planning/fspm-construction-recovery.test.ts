@@ -13,7 +13,10 @@ import {
   fspmActivityEvents,
   reconcileFspmActivityEvidence,
 } from "../../src/planning/activity-lifecycle";
-import { ensureColonyPortfolio } from "../../src/planning/fspm";
+import {
+  activateApprovedColonyGovernance,
+  ensureColonyPortfolio,
+} from "../../src/planning/fspm";
 
 vi.stubGlobal("OK", 0);
 vi.stubGlobal("ERR_NOT_IN_RANGE", -9);
@@ -126,7 +129,10 @@ function successfulObservation(
 }
 
 describe("FSPM construction recovery", () => {
-  beforeEach(() => installGlobals());
+  beforeEach(() => {
+    installGlobals();
+    activateApprovedColonyGovernance("W1N1");
+  });
 
   it("re-sites interrupted construction under the same Activity and verifies the built output", () => {
     const firstSite = siteIntent();

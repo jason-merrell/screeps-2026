@@ -16,7 +16,7 @@ The architecture treats Screeps as a persistent, tick-driven, CPU-budgeted contr
 
 ## FSPM conformance
 
-The runtime implements a strong NTI FSPM execution slice, but it does not claim full framework parity yet. Its Task, Procedure, Activity, Intent, outcome, and completion-only KPI lineage is governed against `Namauu/governance-docs@02d581886a759d19044ff91a80d743fa042f23f7`.
+The runtime implements a strong NTI FSPM execution slice, but it does not claim full framework parity yet. A content-pinned authority package now activates the complete v1 root-authority catalog of Corporate Requirements, root Corporate Deliverables, Tasks, and Procedures before planning; execution, outcome, and completion-only KPI lineage are governed against `Namauu/governance-docs@02d581886a759d19044ff91a80d743fa042f23f7`.
 
 The machine-checkable profile at `docs/fspm-conformance.json` maps canonical fields and invariants to `implemented`, `adapted`, `not_implemented`, or `not_applicable`. It is the authoritative statement of parity; narrative documentation and UI labels may not overrule it.
 
@@ -25,7 +25,7 @@ node scripts/validate-fspm-conformance.mjs
 pnpm report:fspm
 ```
 
-The current blockers are approved Corporate Requirement and Deliverable records, OU/ARCI authority, complete EQVM roll-up, continuously governed Portfolio decisions, durable history acknowledgment, and Issue/Risk/Stakeholder registers.
+The current blockers are canonical human Employee/Position/OU and ARCI authority, general child-Deliverable decomposition, complete EQVM roll-up, continuously governed Portfolio decisions, automatic Deliverable-occurrence reconciliation with bounded acknowledged archival, durable history acknowledgment, and Issue/Risk/Stakeholder registers. Source-controlled service-principal activation is an explicit Screeps adaptation, never a claim of human approval.
 
 ## Tick flow
 

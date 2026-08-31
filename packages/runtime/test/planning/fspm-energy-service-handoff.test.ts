@@ -7,7 +7,10 @@ import {
   fspmActivityEvents,
   reconcileFspmActivityEvidence,
 } from "../../src/planning/activity-lifecycle";
-import { ensureColonyPortfolio } from "../../src/planning/fspm";
+import {
+  activateApprovedColonyGovernance,
+  ensureColonyPortfolio,
+} from "../../src/planning/fspm";
 
 vi.stubGlobal("OK", 0);
 vi.stubGlobal("ERR_NOT_IN_RANGE", -9);
@@ -93,7 +96,10 @@ function controllerIntent(): UpgradeIntent {
 }
 
 describe("FSPM energy-service handoff", () => {
-  beforeEach(() => installGlobals());
+  beforeEach(() => {
+    installGlobals();
+    activateApprovedColonyGovernance("W1N1");
+  });
 
   it("completes productive collection when usable energy is handed to a downstream governed Task", () => {
     const withdraw = withdrawIntent();

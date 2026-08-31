@@ -314,6 +314,21 @@ export const FSPM_TASK_CATALOG = [
   },
 ] as const satisfies readonly FspmTaskDefinition[];
 
+// The execution authorizer reads these definitions directly. Deep-freeze the
+// complete graph before building lookup indexes so a same-tick mutation cannot
+// expand Procedure capability without changing governed source code.
+for (const task of FSPM_TASK_CATALOG) {
+  Object.freeze(task.kpiMetric);
+  Object.freeze(task.determination);
+  for (const procedure of task.procedures) {
+    Object.freeze(procedure.allowedIntentTypes);
+    Object.freeze(procedure);
+  }
+  Object.freeze(task.procedures);
+  Object.freeze(task);
+}
+Object.freeze(FSPM_TASK_CATALOG);
+
 const definitionById = new Map<string, FspmTaskDefinition>(
   FSPM_TASK_CATALOG.map((definition) => [
     `${definition.domain}:${definition.taskKey}`,

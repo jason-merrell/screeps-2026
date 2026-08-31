@@ -3,8 +3,8 @@
   "schema": "screeps-fspm-conformance/v1",
   "profileVersion": 1,
   "profileStatus": "partial",
-  "evaluatedAt": "2026-08-30",
-  "implementationBaseline": "aded6723d3d86f323a94d429832f66b4283743dd",
+  "evaluatedAt": "2026-08-31",
+  "implementationBaseline": "8d03c29ea7e2e094a0e568a9743a3d6bc14cb5c8",
   "governance": {
     "repository": "Namauu/governance-docs",
     "commit": "02d581886a759d19044ff91a80d743fa042f23f7",
@@ -101,16 +101,16 @@
           "key": "ou_identity",
           "status": "not_implemented",
           "rationale": "No Organizational Unit record anchors the root Portfolio or derives its accountable Position.",
-          "issue": "#184"
+          "issue": "#164"
         }
       ]
     },
     {
       "key": "corporate_requirement",
       "name": "Corporate Requirement record",
-      "status": "not_implemented",
+      "status": "adapted",
       "owner": "area:fspm",
-      "issue": "#184",
+      "issue": "#164",
       "canonicalSources": [
         "execution/data/corporate-requirements.md#4-record-schema"
       ],
@@ -127,99 +127,118 @@
         },
         {
           "key": "requestor",
-          "status": "not_implemented",
-          "rationale": "Planner-created records have no governed requestor identity.",
-          "issue": "#184"
+          "status": "adapted",
+          "adaptation": "A source-controlled repository governance principal identifies the autonomous requestor; a canonical human Employee record remains #164.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm-governance.ts",
+            "docs/adr-fspm-governed-authority.md"
+          ],
+          "issue": "#164"
         },
         {
           "key": "requirement_trigger",
-          "status": "not_implemented",
-          "rationale": "No controlled trigger or occurrence identity is stored.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "requirement_source",
-          "status": "not_implemented",
-          "rationale": "Generated domain placeholders carry no authoritative source record.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": [
+            "docs/screeps-colony-operations-policy.md",
+            "packages/runtime/src/planning/fspm-governance.ts"
+          ]
         },
         {
           "key": "requirement_verbiage",
-          "status": "not_implemented",
-          "rationale": "The binding obligation is not retained verbatim.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": [
+            "docs/screeps-colony-operations-policy.md",
+            "packages/runtime/src/planning/fspm-governance.ts"
+          ]
         },
         {
           "key": "originating_authority",
-          "status": "not_implemented",
-          "rationale": "No human originating authority is represented.",
-          "issue": "#184"
+          "status": "not_applicable",
+          "rationale": "Authority package v1 contains derived Requirements with an immutable Requirement Source, so Originating Authority must be absent by the canonical exclusive-origin rule."
         },
         {
           "key": "purpose_statement",
-          "status": "not_implemented",
-          "rationale": "Generic completion criteria do not establish the canonical purpose and scope of an approved obligation.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "strategic_priority",
-          "status": "not_implemented",
-          "rationale": "No canonical SELL, STAFF, or SERVE mapping or approved Screeps adaptation exists.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "strategic_alignment",
-          "status": "not_implemented",
-          "rationale": "No strategy-to-requirement evidence is recorded.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "applicable_ou",
-          "status": "not_implemented",
-          "rationale": "The runtime has no governed OU model.",
-          "issue": "#184"
+          "status": "adapted",
+          "adaptation": "Stable empire-operations and colony-scoped OU identities bind applicability; canonical Employee/Position-backed OU records remain #164.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "docs/adr-fspm-governed-authority.md"
+          ],
+          "issue": "#164"
         },
         {
           "key": "desired_outcomes",
-          "status": "not_implemented",
-          "rationale": "Generated placeholders do not carry approved desired outcomes.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "business_case",
-          "status": "not_implemented",
-          "rationale": "Resource commitment is not justified by a governed business case.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "approval_authority",
-          "status": "not_implemented",
-          "rationale": "No human Accountable authority is represented.",
+          "status": "adapted",
+          "adaptation": "The Department OU, accountable Position identity, and source-controlled service principal are bound; canonical human Accountable authority remains #164.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm-governance.ts",
+            "docs/adr-fspm-governed-authority.md"
+          ],
           "issue": "#164"
         },
         {
           "key": "approval",
-          "status": "not_implemented",
-          "rationale": "Planner demand materializes records without an approval gate.",
-          "issue": "#184"
+          "status": "adapted",
+          "adaptation": "A content-pinned source-control policy attestation activates the full package before planning; it is explicitly not represented as human approval.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+          ],
+          "issue": "#164"
         },
         {
           "key": "approved_by",
-          "status": "not_implemented",
-          "rationale": "No approving human identity is recorded.",
+          "status": "adapted",
+          "adaptation": "The accountable source-controlled service principal is recorded and validated; it does not substitute for a canonical human Employee.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "docs/adr-fspm-governed-authority.md"
+          ],
           "issue": "#164"
         },
         {
           "key": "approval_signature",
-          "status": "not_implemented",
-          "rationale": "No immutable approval attestation is stored.",
+          "status": "adapted",
+          "adaptation": "An immutable typed source-control policy attestation and signed content hash replace a human typed-name signature.",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"],
           "issue": "#164"
         },
         {
           "key": "date_approved",
-          "status": "not_implemented",
-          "rationale": "No approval timestamp exists.",
-          "issue": "#184"
+          "status": "adapted",
+          "adaptation": "The source-controlled service-principal policy-attestation date is retained; it is not a canonical human approval date.",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"],
+          "issue": "#164"
         },
         {
           "key": "created_date",
@@ -235,29 +254,49 @@
         },
         {
           "key": "created_by",
-          "status": "not_implemented",
-          "rationale": "Creation actor and governing role are not recorded.",
+          "status": "adapted",
+          "adaptation": "The immutable authority-package issuer service principal is recorded; canonical human actor identity remains #164.",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"],
           "issue": "#164"
         },
         {
           "key": "modified_by",
-          "status": "not_implemented",
-          "rationale": "Mutation actor and governing role are not recorded.",
+          "status": "adapted",
+          "adaptation": "Package activation records the source-controlled issuer and in-place content modification is prohibited; canonical human actor identity remains #164.",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"],
           "issue": "#164"
         }
       ],
       "invariants": [
         {
           "key": "approval_precedes_binding_authority",
-          "status": "not_implemented",
-          "rationale": "The current record is created as an active side effect of intent tracing.",
-          "issue": "#184"
+          "status": "adapted",
+          "adaptation": "The source-controlled package attestation is validated before one atomic top-down activation transaction; no planner or intent path creates authority.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/runtime/supervisor.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+          ],
+          "issue": "#164"
         },
         {
           "key": "append_only_approval_history",
-          "status": "not_implemented",
-          "rationale": "No approval ledger exists.",
-          "issue": "#184"
+          "status": "adapted",
+          "adaptation": "Immutable per-Requirement adapted activation events bind exact content, OU, Position, principal, package, date, and import tick; canonical human approval remains #164.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+          ],
+          "issue": "#164"
+        },
+        {
+          "key": "irreversible_retirement_history",
+          "status": "adapted",
+          "adaptation": "A deterministic hash-chained game-tick lifecycle ledger makes retirement durable and rejects reactivation after Memory reload.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+          ]
         }
       ]
     },
@@ -266,22 +305,20 @@
       "name": "Corporate Deliverable record",
       "status": "not_implemented",
       "owner": "area:fspm",
-      "issue": "#184",
+      "issue": "#176",
       "canonicalSources": [
         "execution/data/corporate-deliverables.md#4-record-schema"
       ],
       "fields": [
         {
           "key": "category",
-          "status": "not_implemented",
-          "rationale": "The runtime does not distinguish Corporate and Service Program Deliverable categories.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "type",
-          "status": "not_implemented",
-          "rationale": "Product, Service, and Result semantics are not represented.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "title",
@@ -290,56 +327,58 @@
         },
         {
           "key": "details",
-          "status": "not_implemented",
-          "rationale": "Scope, components, technology, and performer qualifications are absent.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "output",
-          "status": "not_implemented",
-          "rationale": "A canonical product, service, or result output is not defined.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "requirement_source",
-          "status": "not_implemented",
-          "rationale": "The parent obligation source is absent.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": [
+            "docs/screeps-colony-operations-policy.md",
+            "packages/runtime/src/planning/fspm.ts"
+          ]
         },
         {
           "key": "requirement_verbiage",
-          "status": "not_implemented",
-          "rationale": "The exact binding language is absent.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm.ts"]
         },
         {
           "key": "evaluation_factors",
-          "status": "not_implemented",
-          "rationale": "No canonical evaluation-factor set or approved Screeps adaptation is represented.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "quality_description",
-          "status": "not_implemented",
-          "rationale": "Deliverable quality is currently a reused room-health measurement, not a governed deliverable quality contract.",
-          "issue": "#136"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "quality_metric",
-          "status": "not_implemented",
-          "rationale": "No deliverable-level acceptance metric exists.",
-          "issue": "#136"
+          "status": "implemented",
+          "evidence": ["packages/runtime/src/planning/fspm-governance.ts"]
         },
         {
           "key": "receipt_validation",
-          "status": "not_implemented",
-          "rationale": "Evidence form, storage location, and capture responsibility are absent.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/fspm-governance.ts",
+            "packages/runtime/src/planning/fspm.ts"
+          ]
         },
         {
           "key": "deliverable_weight",
-          "status": "not_implemented",
-          "rationale": "Deliverables have no sibling weight and cannot participate in PQI.",
+          "status": "adapted",
+          "adaptation": "Exact integer basis points preserve canonical percentage weighting without floating-point ambiguity; DQI/PQI roll-up remains #136.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm-governance.ts",
+            "packages/runtime/src/planning/fspm.ts"
+          ],
           "issue": "#136"
         },
         {
@@ -352,15 +391,52 @@
       "invariants": [
         {
           "key": "top_down_activation",
-          "status": "not_implemented",
-          "rationale": "Planner demand can create the Deliverable placeholder.",
-          "issue": "#184"
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/runtime/supervisor.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+          ]
         },
         {
           "key": "weights_sum_to_100",
+          "status": "adapted",
+          "adaptation": "All sibling Deliverables and all active Tasks per Deliverable must sum to exactly 10,000 integer basis points before execution is eligible.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+          ]
+        },
+        {
+          "key": "receipt_evidence_integrity",
+          "status": "adapted",
+          "adaptation": "Hash-chained received evidence must derive uniquely from a completed Activity under the Deliverable and retain its compact terminal chronology, Quality Metric, KPI, and evidence hash after bounded live-Activity pruning. A separate immutable accepted/rejected/disputed ledger binds the receipt and exact Deliverable revision; accepted requires the package-pinned satisfactory-or-exceptional predicate and closes one recurring-service occurrence without completing its definition. Both ledgers use retained count/digest anchors to expose suffix deletion. The accountable Screeps service principal remains an adaptation until canonical human acceptance exists under #164; DQI/PQI remains #136.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+          ],
+          "issue": "#164"
+        },
+        {
+          "key": "live_deliverable_occurrence_reconciliation",
           "status": "not_implemented",
-          "rationale": "Deliverable weights are absent.",
-          "issue": "#136"
+          "rationale": "Validated explicit receipt and decision append APIs exist, but the production loop does not automatically capture terminal Activities or decide their receipts.",
+          "issue": "#194"
+        },
+        {
+          "key": "bounded_receipt_decision_archival",
+          "status": "not_implemented",
+          "rationale": "Receipt and decision registries have no acknowledged archive checkpoint or safe compaction protocol; retained count/digest anchors protect current Memory only.",
+          "issue": "#194"
+        },
+        {
+          "key": "irreversible_retirement_history",
+          "status": "adapted",
+          "adaptation": "A deterministic hash-chained game-tick lifecycle ledger binds retirement to the exact Deliverable revision, atomically updates a retained count/digest anchor, and prevents reactivation or undetected suffix deletion.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+          ]
         }
       ]
     },
@@ -737,8 +813,12 @@
         },
         {
           "key": "deliverable_weight",
-          "status": "not_implemented",
-          "rationale": "Deliverable weights do not exist.",
+          "status": "adapted",
+          "adaptation": "Content-pinned Corporate Deliverables carry exact integer basis-point weights, but their DQI-to-PQI roll-up remains #136.",
+          "evidence": [
+            "packages/runtime/src/planning/fspm-governance.ts",
+            "packages/runtime/src/planning/fspm.ts"
+          ],
           "issue": "#136"
         },
         {
@@ -750,9 +830,11 @@
         {
           "key": "rating_evidence",
           "status": "adapted",
-          "adaptation": "Activity outcome and KPI evidence is retained, but reviewer identity, approval state, disputes, and durable evidence links remain incomplete.",
+          "adaptation": "Activity outcome and KPI evidence plus package-bound service-principal accepted/rejected/disputed occurrence decisions are retained. Accepted decisions require satisfactory or exceptional terminal KPI evidence and do not complete recurring service definitions. Canonical human reviewer identity, governed service closure, and complete durable EQVM evidence links remain incomplete.",
           "evidence": [
             "packages/runtime/src/planning/activity-lifecycle.ts",
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts",
             "supabase/migrations/20260828192232_fspm_v2_durable_history.sql"
           ],
           "issue": "#136"
@@ -799,7 +881,7 @@
           "key": "organizational_unit",
           "status": "not_implemented",
           "rationale": "No OU hierarchy or Accountable Position mapping exists.",
-          "issue": "#184"
+          "issue": "#164"
         },
         {
           "key": "accountable",

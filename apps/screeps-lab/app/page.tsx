@@ -15,7 +15,9 @@ type ObservabilityView = "overview" | "colony" | "runtime" | "fspm";
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
   const activeView: ObservabilityView =
-    params.view === "colony" || params.view === "runtime" || params.view === "fspm"
+    params.view === "colony" ||
+    params.view === "runtime" ||
+    params.view === "fspm"
       ? params.view
       : "overview";
   let controlPlane: Awaited<ReturnType<typeof loadControlPlane>> | null = null;
@@ -28,7 +30,8 @@ export default async function Home({ searchParams }: HomeProps) {
   const snapshot = controlPlane?.snapshot ?? null;
   const benchmark = controlPlane?.benchmark ?? null;
   const experiments = controlPlane?.experiments ?? [];
-  const provenance = controlPlane?.provenance ?? unavailableControlPlaneProvenance();
+  const provenance =
+    controlPlane?.provenance ?? unavailableControlPlaneProvenance();
   const provenanceClassName = {
     fresh: "w-fit border-emerald-400/20 px-3 py-1.5 text-emerald-300",
     stale: "w-fit border-amber-400/20 px-3 py-1.5 text-amber-300",
@@ -37,7 +40,9 @@ export default async function Home({ searchParams }: HomeProps) {
     error: "w-fit border-red-400/20 px-3 py-1.5 text-red-300",
   }[provenance.state];
   const fspm =
-    snapshot?.runtimeTrace?.fspm?.colonies?.find((colony) => colony.roomName === snapshot?.room) ??
+    snapshot?.runtimeTrace?.fspm?.colonies?.find(
+      (colony) => colony.roomName === snapshot?.room,
+    ) ??
     snapshot?.runtimeTrace?.fspm?.colonies?.[0] ??
     null;
 
@@ -48,12 +53,9 @@ export default async function Home({ searchParams }: HomeProps) {
       title="Colony observability"
       description="Start with colony health, then drill into room behavior, runtime performance, or the FSPM execution chain only when you need it."
       status={
-        <Badge
-          variant="outline"
-          className={provenanceClassName}
-        >
+        <Badge variant="outline" className={provenanceClassName}>
           <span className="mr-2 h-1.5 w-1.5 rounded-full bg-current shadow-[0_0_12px_currentColor]" />
-          {provenance.label}
+          Telemetry evidence · {provenance.label}
         </Badge>
       }
     >
@@ -67,7 +69,10 @@ export default async function Home({ searchParams }: HomeProps) {
       />
 
       <div className="mt-6 flex flex-col justify-between gap-2 border-t border-white/8 pt-5 text-xs text-muted-foreground sm:flex-row">
-        <span>Supabase evidence is evaluated per stream; persisted and fallback values are never blended.</span>
+        <span>
+          Supabase evidence is evaluated per stream; persisted and fallback
+          values are never blended.
+        </span>
         <span>GitHub issue #5 remains compatibility ingress only.</span>
       </div>
     </LabShell>

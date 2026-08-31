@@ -139,6 +139,82 @@ export function migrateMemory(): void {
     memory.version = 7;
   }
 
+  if (memory.version === 7) {
+    for (const colony of Object.values(memory.colonies ?? {})) {
+      const portfolio = colony.fspm;
+      if (!portfolio) continue;
+      const requirements = portfolio.requirements ?? {};
+      const deliverables = portfolio.deliverables ?? {};
+      const tasks = portfolio.tasks ?? {};
+      const activities = portfolio.activities ?? {};
+      const evidencePortfolio = portfolio as typeof portfolio & {
+        activityEvents?: unknown;
+        activityEventSequence?: unknown;
+      };
+      const activityEvents = Array.isArray(evidencePortfolio.activityEvents)
+        ? evidencePortfolio.activityEvents
+        : evidencePortfolio.activityEvents === undefined
+          ? []
+          : [evidencePortfolio.activityEvents];
+      const activityEventSequence =
+        typeof evidencePortfolio.activityEventSequence === "number" &&
+        Number.isFinite(evidencePortfolio.activityEventSequence)
+          ? evidencePortfolio.activityEventSequence
+          : 0;
+      const hasPlaceholderSpine =
+        Object.keys(requirements).length > 0 ||
+        Object.keys(deliverables).length > 0 ||
+        Object.keys(tasks).length > 0 ||
+        Object.keys(activities).length > 0 ||
+        activityEvents.length > 0 ||
+        activityEventSequence !== 0;
+      if (hasPlaceholderSpine) {
+        portfolio.authorityQuarantine ??= [];
+        portfolio.authorityQuarantine.push({
+          schema: "screeps-fspm-authority-quarantine/v1",
+          migratedFromVersion: 7,
+          reason:
+            "pre-v8 planner-created Requirement/Deliverable authority was compatibility scaffolding and cannot be promoted into an approved obligation",
+          quarantinedAtTick: Game.time,
+          requirements: requirements as Partial<
+            Record<keyof typeof requirements, unknown>
+          >,
+          deliverables: deliverables as Partial<
+            Record<keyof typeof deliverables, unknown>
+          >,
+          tasks,
+          activities,
+          activityEvents,
+          activityEventSequence,
+          qualityHistory: portfolio.qualityHistory ?? {},
+          activityKpiHistory: portfolio.activityKpiHistory ?? {},
+        });
+      }
+      portfolio.requirements = {};
+      portfolio.deliverables = {};
+      portfolio.tasks = {};
+      portfolio.activities = {};
+      evidencePortfolio.activityEvents = [];
+      evidencePortfolio.activityEventSequence = 0;
+      portfolio.qualityHistory = {};
+      portfolio.activityKpiHistory = {};
+      portfolio.requirementApprovalLedger = {};
+      portfolio.deliverableReceipts = {};
+      portfolio.deliverableReceiptDecisions = {};
+      portfolio.authorityLifecycleLedger = {};
+      portfolio.authorityLedgerAnchors = {
+        deliverableReceipts: { count: 0, headHash: null },
+        deliverableReceiptDecisions: { count: 0, headHash: null },
+        authorityLifecycle: { count: 0, headHash: null },
+      };
+      if (portfolio.p3 && typeof portfolio.p3 === "object") {
+        delete portfolio.p3.quality;
+      }
+      delete portfolio.governanceBinding;
+    }
+    memory.version = 8;
+  }
+
   if (memory.version !== MEMORY_VERSION) {
     throw new Error(
       `Unsupported Memory version ${memory.version}; expected ${MEMORY_VERSION}`,
