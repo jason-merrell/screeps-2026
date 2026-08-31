@@ -73,6 +73,7 @@ The workflow:
 5. Uploads that module to the configured Screeps code branch using `X-Token` authentication.
 6. Reads the same branch back with `GET /api/user/code`.
 7. Compares the returned `main` module byte-for-byte with the local build and fails if they differ.
+8. For PTR deployments, requests idempotent activation only after byte verification and requires the owned-colony world status to be `normal`. That status is not proof of CPU execution: tick advancement and runtime provenance remain observability-snapshot evidence, not deployment claims.
 
 Verification logs only a short SHA-256 fingerprint of the deployed module, never the module contents or `SCREEPS_TOKEN`.
 

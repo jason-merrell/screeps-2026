@@ -80,3 +80,9 @@ jobs:
         env:
           SCREEPS_BRANCH: ${{ vars.SCREEPS_BRANCH }}
           SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
+
+      - name: Request activation for verified PTR runtime
+        if: env.SCREEPS_TARGET == 'ptr'
+        run: node scripts/activate-ptr.mjs
+        env:
+          SCREEPS_HOST: ${{ vars.SCREEPS_HOST }}
