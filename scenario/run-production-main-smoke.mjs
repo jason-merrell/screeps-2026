@@ -358,13 +358,15 @@ try {
       expected: [roomName],
     },
     {
-      name: "Segment 99 published a complete fresh tick-correlated window",
+      name: "Segment 99 published a bounded boot prefix and complete fresh tail",
       passed: publicationWindow.passed,
       actual: publicationWindow,
       expected: {
         passed: true,
-        expectedFreshPublications: ticks - 1,
-        freshPublications: ticks - 1,
+        maxBootPrefixPublications: publicationWindow.maxBootPrefixPublications,
+        minimumConsecutiveFullPublications:
+          publicationWindow.minimumConsecutiveFullPublications,
+        trailingFullPublications: `>= ${publicationWindow.minimumConsecutiveFullPublications}`,
         invalidObservations: [],
       },
     },
@@ -511,10 +513,11 @@ try {
               : { malformedRootTicks: ticks, finalRootP3: null },
           },
           {
-            name: "every available Segment 99 trace published bounded integrity quarantine evidence",
+            name: "every accepted full Segment 99 trace published bounded integrity quarantine evidence",
             passed:
               publicationWindow.passed &&
-              publishedTraceTicks === ticks - 1 &&
+              publishedTraceTicks >=
+                publicationWindow.minimumConsecutiveFullPublications &&
               quarantinedTraceTicks === publishedTraceTicks &&
               finalTrace?.fspm?.integrity?.total === 1 &&
               (finalTrace?.fspm?.integrity?.samples?.length ?? 0) <=
@@ -525,8 +528,9 @@ try {
               integrity: finalTrace?.fspm?.integrity ?? null,
             },
             expected: {
-              publishedTraceTicks: ticks - 1,
-              quarantinedTraceTicks: "equal to publishedTraceTicks",
+              publishedTraceTicks: `>= ${publicationWindow.minimumConsecutiveFullPublications} accepted complete v1 publications`,
+              quarantinedTraceTicks:
+                "equal to actual accepted complete v1 publications",
               integrityTotal: 1,
               boundedSamples: true,
             },

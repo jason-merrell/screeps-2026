@@ -86,6 +86,30 @@ describe("insights benchmark request", () => {
 });
 
 describe("PTR insights request", () => {
+  it("accepts only an explicit room-bound PTR execution canary", async () => {
+    const { result, output } = await parseRequest(
+      "/canary target=PTR room=e52n38 shard=SHARD3",
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(output).toContain("mode=canary\n");
+    expect(output).toContain("target=ptr\n");
+    expect(output).toContain("room=E52N38\n");
+    expect(output).toContain("shard=shard3\n");
+    expect(output).toContain(
+      "command=/canary target=ptr room=E52N38 shard=shard3\n",
+    );
+  });
+
+  it.each([
+    "/canary target=ptr room=E52N38",
+    "/canary target=ptr shard=shard3",
+    "/canary target=world room=E52N38 shard=shard3",
+  ])("rejects unsafe canary request %s", async (request) => {
+    const { result } = await parseRequest(request);
+    expect(result.status).toBe(1);
+  });
+
   it("requires an explicit atomic room and shard for PTR collection", async () => {
     for (const request of [
       "/collect target=ptr",

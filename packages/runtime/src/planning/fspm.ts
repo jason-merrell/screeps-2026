@@ -1582,6 +1582,49 @@ function invalidateFspmPlanningAuthorityContext(): void {
 }
 
 /**
+ * Atomically publish operational colony state without replacing or editing any
+ * FSPM authority subtree. This is the only safe same-tick root swap after an
+ * authority index may have been built; the next authority read rebuilds its
+ * indexes over the identity-preserved portfolios.
+ */
+export function publishOperationalColonyMemory(
+  nextColonies: Memory["colonies"],
+): void {
+  if (planningAuthorityViolationTick === Game.time) {
+    throw new Error(
+      "Cannot publish operational colony Memory after an unauthorized FSPM authority mutation",
+    );
+  }
+  const currentKeys = Object.keys(Memory.colonies).sort();
+  const nextKeys = Object.keys(nextColonies).sort();
+  if (JSON.stringify(currentKeys) !== JSON.stringify(nextKeys)) {
+    throw new Error(
+      "Operational colony Memory publication cannot add, remove, or rename colony authority containers",
+    );
+  }
+  for (const roomName of currentKeys) {
+    const current = Memory.colonies[roomName];
+    const next = nextColonies[roomName];
+    if (!current || !next || current.fspm !== next.fspm) {
+      throw new Error(
+        `Operational colony Memory publication cannot replace FSPM authority for ${roomName}`,
+      );
+    }
+  }
+
+  // One root assignment is the commit marker. A CPU termination before it
+  // retains the complete old projection; one after it retains the complete new
+  // projection. Authority objects are shared by identity across both roots.
+  Memory.colonies = nextColonies;
+  planningAuthorityGuardTick = undefined;
+  planningAuthorityGuardMemory = undefined;
+  planningAuthorityViolationCheckedRevision = undefined;
+  planningAuthorityViolationError = undefined;
+  planningAuthorityRevision += 1;
+  planningAuthorityContext = undefined;
+}
+
+/**
  * Replace last tick's guarded authority containers with equivalent plain,
  * extensible containers before perception can discover a new colony. Screeps
  * normally rehydrates Memory between ticks; the explicit release also keeps

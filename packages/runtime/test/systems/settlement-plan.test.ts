@@ -24,9 +24,11 @@ import {
 } from "../../src/systems/settlement/defense-envelope";
 import { normalizeFreshRoomPlans } from "../../src/systems/settlement/normalize";
 import {
+  commitSettlementPlanProposals,
   ensureSettlementPlans,
   generateRoomPlan,
   invalidateRoomPlan,
+  proposeSettlementPlans,
   shouldRegenerateRoomPlan,
 } from "../../src/systems/settlement/plan";
 import {
@@ -352,6 +354,7 @@ interface FreshPlanningRoomOptions {
   readonly mineralVisible?: boolean;
   readonly reverseSources?: boolean;
   readonly reverseSpawns?: boolean;
+  readonly roomName?: string;
 }
 
 function freshPlanningRoom(
@@ -362,36 +365,37 @@ function freshPlanningRoom(
       ? { mineralVisible: optionsOrMineralVisible }
       : optionsOrMineralVisible;
   const mineralVisible = options.mineralVisible ?? true;
+  const roomName = options.roomName ?? "W1N1";
   const sources = [
-    { id: "source-1", pos: new TestRoomPosition(10, 10, "W1N1") },
-    { id: "source-2", pos: new TestRoomPosition(40, 10, "W1N1") },
+    { id: "source-1", pos: new TestRoomPosition(10, 10, roomName) },
+    { id: "source-2", pos: new TestRoomPosition(40, 10, roomName) },
   ];
   const mineral = {
     id: "mineral-1",
-    pos: new TestRoomPosition(10, 40, "W1N1"),
+    pos: new TestRoomPosition(10, 40, roomName),
   };
   const spawn = {
     id: "spawn-1",
     name: "Spawn1",
     my: true,
     structureType: "spawn",
-    pos: new TestRoomPosition(20, 25, "W1N1"),
+    pos: new TestRoomPosition(20, 25, roomName),
   };
   const secondarySpawn = {
     id: "spawn-2",
     name: "Spawn2",
     my: true,
     structureType: "spawn",
-    pos: new TestRoomPosition(30, 25, "W1N1"),
+    pos: new TestRoomPosition(30, 25, roomName),
   };
   const spawns = options.includeSecondarySpawn
     ? [spawn, secondarySpawn]
     : [spawn];
   const structures = [...spawns];
   return {
-    name: "W1N1",
+    name: roomName,
     controller: {
-      pos: new TestRoomPosition(40, 40, "W1N1"),
+      pos: new TestRoomPosition(40, 40, roomName),
     },
     getTerrain: () => ({ get: () => 0 }),
     find: (constant: FindConstant) => {
@@ -413,6 +417,11 @@ function freshPlanningRoom(
       return [];
     },
   } as unknown as Room;
+}
+
+function ensureGovernedSettlementPlans(room: Room): void {
+  activateApprovedColonyGovernance(room.name);
+  ensureSettlementPlans({ rooms: [room] } as never);
 }
 
 describe("settlement planning foundation", () => {
@@ -468,6 +477,139 @@ describe("settlement planning foundation", () => {
         return { path, incomplete: false, ops: path.length, cost: path.length };
       },
     });
+  });
+
+  it("keeps detached settlement proposals out of Memory without authority", () => {
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+
+    const proposals = proposeSettlementPlans({
+      rooms: [freshPlanningRoom()],
+    } as never);
+
+    expect(proposals).toHaveLength(1);
+    expect(Memory.colonies.W1N1.roomPlan).toBeUndefined();
+    expect(() => commitSettlementPlanProposals(proposals)).toThrow(
+      /without active canonical Empire FSPM authority/i,
+    );
+    expect(Memory.colonies.W1N1.roomPlan).toBeUndefined();
+    expect(Memory.colonies.W1N1.settlementProjectionFault).toBeUndefined();
+  });
+
+  it("rejects every detached settlement write beneath malformed governance", () => {
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    const portfolio = activateApprovedColonyGovernance("W1N1");
+    const binding = portfolio.governanceBinding;
+    if (!binding) throw new Error("expected governance binding");
+    binding.authorityPackageHash = "forged-package-hash";
+
+    const proposals = proposeSettlementPlans({
+      rooms: [freshPlanningRoom()],
+    } as never);
+
+    expect(Memory.colonies.W1N1.roomPlan).toBeUndefined();
+    expect(() => commitSettlementPlanProposals(proposals)).toThrow(
+      /invalid FSPM governance/i,
+    );
+    expect(Memory.colonies.W1N1.roomPlan).toBeUndefined();
+    expect(Memory.colonies.W1N1.settlementProjectionFault).toBeUndefined();
+  });
+
+  it("publishes a complete detached settlement proposal under valid authority", () => {
+    Memory.colonies.W1N1 = {
+      roomName: "W1N1",
+      discoveredAt: 1,
+    };
+    activateApprovedColonyGovernance("W1N1");
+
+    const proposals = proposeSettlementPlans({
+      rooms: [freshPlanningRoom()],
+    } as never);
+
+    expect(Memory.colonies.W1N1.roomPlan).toBeUndefined();
+    commitSettlementPlanProposals(proposals);
+    expect(Memory.colonies.W1N1.roomPlan).toMatchObject({
+      version: ROOM_PLAN_VERSION,
+      horizonRcl: ROOM_PLAN_HORIZON_RCL,
+      roomName: "W1N1",
+    });
+  });
+
+  it("publishes multi-colony plan and fault recovery through one root swap", () => {
+    const retained = {
+      ...basePlan(),
+      invalidatedAt: 499,
+      invalidationReason: "atomic publication fixture",
+    };
+    Memory.colonies = {
+      W1N1: {
+        roomName: "W1N1",
+        discoveredAt: 1,
+        roomPlan: retained,
+      },
+      W2N2: {
+        roomName: "W2N2",
+        discoveredAt: 2,
+      },
+    };
+    activateApprovedColonyGovernance("W1N1");
+    activateApprovedColonyGovernance("W2N2");
+
+    commitSettlementPlanProposals(
+      proposeSettlementPlans({
+        rooms: [freshPlanningRoom({ mineralVisible: false })],
+      } as never),
+    );
+    const faultedW1 = Memory.colonies.W1N1;
+    if (!faultedW1) throw new Error("expected faulted W1N1 colony");
+    expect(faultedW1.settlementProjectionFault).toMatchObject({
+      status: "active",
+      nextRetryTick: 505,
+    });
+
+    Game.time = 505;
+    const oldRoot = Memory.colonies;
+    const oldW1 = oldRoot.W1N1;
+    const oldW2 = oldRoot.W2N2;
+    if (!oldW1 || !oldW2) throw new Error("expected both retained colonies");
+    const proposals = proposeSettlementPlans({
+      rooms: [
+        freshPlanningRoom(),
+        freshPlanningRoom({ roomName: "W2N2" }),
+      ],
+    } as never);
+
+    expect(Memory.colonies).toBe(oldRoot);
+    expect(oldW1.roomPlan).toBe(retained);
+    expect(oldW1.settlementProjectionFault?.status).toBe("active");
+    expect(oldW2.roomPlan).toBeUndefined();
+
+    commitSettlementPlanProposals(proposals);
+
+    const nextW1 = Memory.colonies.W1N1;
+    const nextW2 = Memory.colonies.W2N2;
+    if (!nextW1 || !nextW2) throw new Error("expected both published colonies");
+    expect(Memory.colonies).not.toBe(oldRoot);
+    expect(nextW1).not.toBe(oldW1);
+    expect(nextW2).not.toBe(oldW2);
+    expect(nextW1.roomPlan).not.toBe(retained);
+    expect(nextW1.settlementProjectionFault).toMatchObject({
+      status: "superseded",
+      resolvedAtTick: 505,
+    });
+    expect(nextW2.roomPlan).toMatchObject({
+      roomName: "W2N2",
+      version: ROOM_PLAN_VERSION,
+      horizonRcl: ROOM_PLAN_HORIZON_RCL,
+    });
+    expect(oldW1.roomPlan).toBe(retained);
+    expect(oldW1.settlementProjectionFault?.status).toBe("active");
+    expect(oldW2.roomPlan).toBeUndefined();
   });
 
   it("keeps the rapid-fill extension stamp unique and off its preferred road lanes", () => {
@@ -605,7 +747,7 @@ describe("settlement planning foundation", () => {
     expect(Memory.colonies.W1N1.roomPlan).not.toHaveProperty(
       "projectionFingerprint",
     );
-    ensureSettlementPlans({ rooms: [freshPlanningRoom()] } as never);
+    ensureGovernedSettlementPlans(freshPlanningRoom());
 
     const regenerated = Memory.colonies.W1N1.roomPlan;
     expect(regenerated).toMatchObject({
@@ -639,7 +781,7 @@ describe("settlement planning foundation", () => {
       roomPlan: migrateRoomPlanProjection(legacy),
     };
 
-    ensureSettlementPlans({ rooms: [migrationRoom()] } as never);
+    ensureGovernedSettlementPlans(migrationRoom());
 
     const upgraded = Memory.colonies.W1N1.roomPlan;
     expect(upgraded).toBeDefined();
@@ -767,7 +909,7 @@ describe("settlement planning foundation", () => {
       roomPlan: wrongRoom,
     };
 
-    ensureSettlementPlans({ rooms: [freshPlanningRoom()] } as never);
+    ensureGovernedSettlementPlans(freshPlanningRoom());
 
     const repairedRoom = Memory.colonies.W1N1.roomPlan;
     expect(repairedRoom?.roomName).toBe("W1N1");
@@ -786,7 +928,7 @@ describe("settlement planning foundation", () => {
     Memory.colonies.W1N1.roomPlan = malformed;
     Game.time += 1;
 
-    ensureSettlementPlans({ rooms: [freshPlanningRoom()] } as never);
+    ensureGovernedSettlementPlans(freshPlanningRoom());
 
     const repairedSchema = Memory.colonies.W1N1.roomPlan;
     expect(repairedSchema?.projectionRevision).toBe(3);
@@ -942,7 +1084,7 @@ describe("settlement planning foundation", () => {
       roomPlan: retained,
     };
 
-    ensureSettlementPlans({ rooms: [freshPlanningRoom(false)] } as never);
+    ensureGovernedSettlementPlans(freshPlanningRoom(false));
 
     expect(Memory.colonies.W1N1.roomPlan?.structures).toEqual(
       retainedStructures,
@@ -963,7 +1105,7 @@ describe("settlement planning foundation", () => {
     });
 
     Game.time = 501;
-    ensureSettlementPlans({ rooms: [freshPlanningRoom(false)] } as never);
+    ensureGovernedSettlementPlans(freshPlanningRoom(false));
     expect(Memory.colonies.W1N1.settlementProjectionFault).toMatchObject({
       lastTick: 500,
       attemptCount: 1,
@@ -971,7 +1113,7 @@ describe("settlement planning foundation", () => {
     });
 
     Game.time = 505;
-    ensureSettlementPlans({ rooms: [freshPlanningRoom()] } as never);
+    ensureGovernedSettlementPlans(freshPlanningRoom());
     expect(Memory.colonies.W1N1.roomPlan).toMatchObject({
       version: ROOM_PLAN_VERSION,
       horizonRcl: ROOM_PLAN_HORIZON_RCL,

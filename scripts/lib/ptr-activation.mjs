@@ -20,16 +20,70 @@ const assertSuccessfulResponse = (response, body, label) => {
   }
 };
 
+export const DEFAULT_PTR_REQUEST_TIMEOUT_MS = 10_000;
+
+const requestWithDeadline = async ({
+  url,
+  init,
+  label,
+  fetchImpl,
+  requestTimeoutMs,
+}) => {
+  const controller = new AbortController();
+  let timedOut = false;
+  let timeoutId;
+  const request = (async () => {
+    const response = await fetchImpl(url, {
+      ...init,
+      signal: controller.signal,
+    });
+    const body = await parseResponseBody(response, label);
+    return { response, body };
+  })();
+  const deadline = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      reject(
+        new Error(`${label} timed out after ${requestTimeoutMs} milliseconds`),
+      );
+    }, requestTimeoutMs);
+  });
+
+  try {
+    return await Promise.race([request, deadline]);
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(
+        `${label} timed out after ${requestTimeoutMs} milliseconds`,
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 export async function activatePtrRuntime({
   token,
   host = "https://screeps.com",
   fetchImpl = fetch,
+  requestTimeoutMs = DEFAULT_PTR_REQUEST_TIMEOUT_MS,
 }) {
   if (typeof token !== "string" || token.length === 0) {
     throw new Error("SCREEPS_TOKEN is required for PTR activation");
   }
   if (typeof fetchImpl !== "function") {
     throw new Error("PTR activation requires a fetch implementation");
+  }
+  if (
+    !Number.isInteger(requestTimeoutMs) ||
+    requestTimeoutMs < 1 ||
+    requestTimeoutMs > 60_000
+  ) {
+    throw new Error(
+      "PTR activation request timeout must be an integer from 1 through 60000 milliseconds",
+    );
   }
 
   let activationUrl;
@@ -46,26 +100,34 @@ export async function activatePtrRuntime({
     "Content-Type": "application/json; charset=utf-8",
     "X-Token": token,
   };
-  const activationResponse = await fetchImpl(activationUrl, {
-    method: "POST",
-    headers,
-    body: "{}",
+  const {
+    response: activationResponse,
+    body: activationBody,
+  } = await requestWithDeadline({
+    url: activationUrl,
+    init: {
+      method: "POST",
+      headers,
+      body: "{}",
+    },
+    label: "PTR activation",
+    fetchImpl,
+    requestTimeoutMs,
   });
-  const activationBody = await parseResponseBody(
-    activationResponse,
-    "PTR activation",
-  );
   assertSuccessfulResponse(
     activationResponse,
     activationBody,
     "PTR activation",
   );
 
-  const statusResponse = await fetchImpl(statusUrl, { headers });
-  const statusBody = await parseResponseBody(
-    statusResponse,
-    "PTR world status",
-  );
+  const { response: statusResponse, body: statusBody } =
+    await requestWithDeadline({
+      url: statusUrl,
+      init: { headers },
+      label: "PTR world status",
+      fetchImpl,
+      requestTimeoutMs,
+    });
   assertSuccessfulResponse(statusResponse, statusBody, "PTR world status");
   if (
     typeof statusBody?.status !== "string" ||

@@ -10,7 +10,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: screeps-production-deploy
+  group: screeps-ptr-runtime-mutation
   cancel-in-progress: false
 
 env:

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { migrateMemory } from "../../src/memory/migrate";
+import { migrateMemory, migrateMemoryStep } from "../../src/memory/migrate";
 import { MEMORY_VERSION } from "../../src/memory/schema";
 import {
   activateApprovedColonyGovernance,
@@ -45,6 +45,115 @@ describe("Memory migration", () => {
         },
       },
     });
+  });
+
+  it("advances a live v6 schema one durable hop per boot tick", () => {
+    activateApprovedColonyGovernance("W1N1");
+    Memory.version = 6;
+    const versions: number[] = [];
+    const states: string[] = [];
+
+    for (let tick = 100; tick <= 103; tick += 1) {
+      Game.time = tick;
+      const result = migrateMemoryStep();
+      versions.push(Memory.version);
+      states.push(result.state);
+      Object.assign(globalThis, {
+        Memory: JSON.parse(JSON.stringify(Memory)) as Memory,
+      });
+    }
+
+    expect(versions).toEqual([7, 8, 9, 10]);
+    expect(states).toEqual([
+      "migration",
+      "migration",
+      "migration",
+      "settlement",
+    ]);
+    expect(Memory.runtimeBoot).toMatchObject({
+      sourceMemoryVersion: 6,
+      targetMemoryVersion: MEMORY_VERSION,
+      phase: "settlement",
+      lastFromVersion: 9,
+      lastToVersion: 10,
+    });
+  });
+
+  it("admits current-schema Memory without a boot marker into stabilization", () => {
+    Memory.version = MEMORY_VERSION;
+    delete Memory.runtimeBoot;
+
+    const first = migrateMemoryStep();
+    const second = migrateMemoryStep();
+
+    expect(first).toMatchObject({
+      state: "settlement",
+      sourceVersion: MEMORY_VERSION,
+      fromVersion: MEMORY_VERSION,
+      toVersion: MEMORY_VERSION,
+      progressed: true,
+    });
+    expect(second).toMatchObject({
+      state: "settlement",
+      progressed: false,
+    });
+    expect(Memory.runtimeBoot).toMatchObject({
+      version: 1,
+      sourceMemoryVersion: MEMORY_VERSION,
+      targetMemoryVersion: MEMORY_VERSION,
+      phase: "settlement",
+      settlementAttempts: 0,
+    });
+  });
+
+  it("defers a schema hop before mutation when boot headroom is exhausted", () => {
+    Memory.version = 6;
+    const before = structuredClone(Memory);
+
+    const result = migrateMemoryStep({ shouldDefer: () => true });
+
+    expect(result).toMatchObject({
+      state: "migration",
+      fromVersion: 6,
+      toVersion: 6,
+      progressed: false,
+    });
+    expect(Memory.version).toBe(6);
+    expect(Memory.colonies).toEqual(before.colonies);
+    expect(Memory.runtimeBoot).toMatchObject({
+      sourceMemoryVersion: 6,
+      phase: "migration",
+    });
+  });
+
+  it("replays an interrupted v7 commit without duplicating quarantine evidence", () => {
+    activateApprovedColonyGovernance("W1N1");
+    Memory.version = 7;
+    const legacyPortfolio = Memory.colonies.W1N1?.fspm;
+    const legacyTaskIds = Object.keys(legacyPortfolio?.tasks ?? {});
+    expect(legacyTaskIds.length).toBeGreaterThan(0);
+
+    migrateMemoryStep();
+
+    const migrated = Memory.colonies.W1N1?.fspm;
+    expect(migrated).not.toBe(legacyPortfolio);
+    expect(Object.keys(legacyPortfolio?.tasks ?? {})).toEqual(legacyTaskIds);
+    expect(migrated?.authorityQuarantine).toHaveLength(1);
+    expect(
+      Object.keys(migrated?.authorityQuarantine?.[0]?.tasks ?? {}),
+    ).toEqual(legacyTaskIds);
+
+    // Model a normal CPU termination after the portfolio assignment but before
+    // the schema commit marker becomes durable.
+    Memory.version = 7;
+    Object.assign(globalThis, {
+      Memory: JSON.parse(JSON.stringify(Memory)) as Memory,
+    });
+    migrateMemoryStep();
+
+    expect(Memory.version).toBe(8);
+    expect(Memory.colonies.W1N1?.fspm?.authorityQuarantine).toHaveLength(1);
+    expect(Memory.colonies.W1N1?.fspm?.tasks).toEqual({});
   });
 
   it("preserves linkage but withholds epoch identity from an incomplete v8 room projection", () => {
@@ -145,16 +254,20 @@ describe("Memory migration", () => {
 
     migrateMemory();
 
+    const migrated = ensureColonyPortfolio("W1N1");
+    const migratedTask = migrated.tasks[task.id];
+    const migratedRequirement = migrated.requirements.economy;
+    const migratedDeliverable = migrated.deliverables.economy;
     expect(Memory.version).toBe(10);
-    expect(portfolio.p3.quality).toBeUndefined();
-    expect(requirement.quality).toBeUndefined();
-    expect(deliverable.quality).toBeUndefined();
-    expect(portfolio.qualityHistory).toEqual({});
-    expect(portfolio.operationalHealthHistory).toEqual({});
-    expect(portfolio.activityKpiHistory).toEqual({});
-    expect(task.qi).toBeUndefined();
-    expect(task).not.toHaveProperty("activityKpiAggregation");
-    expect(portfolio.authorityLedgerAnchors).toEqual({
+    expect(migrated.p3.quality).toBeUndefined();
+    expect(migratedRequirement?.quality).toBeUndefined();
+    expect(migratedDeliverable?.quality).toBeUndefined();
+    expect(migrated.qualityHistory).toEqual({});
+    expect(migrated.operationalHealthHistory).toEqual({});
+    expect(migrated.activityKpiHistory).toEqual({});
+    expect(migratedTask?.qi).toBeUndefined();
+    expect(migratedTask).not.toHaveProperty("activityKpiAggregation");
+    expect(migrated.authorityLedgerAnchors).toEqual({
       deliverableReceipts: { count: 0, headHash: null },
       deliverableReceiptDecisions: { count: 0, headHash: null },
       authorityLifecycle: { count: 0, headHash: null },
@@ -238,6 +351,12 @@ describe("Memory migration", () => {
 
     migrateMemory();
 
+    const migrated = ensureColonyPortfolio("W1N1") as ReturnType<
+      typeof ensureColonyPortfolio
+    > & {
+      activityEvents?: unknown[];
+      activityEventSequence?: number;
+    };
     expect(Memory.version).toBe(MEMORY_VERSION);
     expect(Memory.version).toBe(MEMORY_VERSION);
     expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
@@ -246,18 +365,18 @@ describe("Memory migration", () => {
       parentP3Id: null,
       startTick: 1,
     });
-    expect(portfolio.p3).toMatchObject({
+    expect(migrated.p3).toMatchObject({
       id: "portfolio:colony:W1N1",
       parentP3Id: "portfolio:empire:operations",
       startTick: 1,
     });
-    expect(portfolio.p3.quality).toBeUndefined();
-    expect(portfolio.activities).toEqual({});
-    expect(portfolio.activityKpiHistory).toEqual({});
-    expect(evidencePortfolio.activityEvents).toEqual([]);
-    expect(evidencePortfolio.activityEventSequence).toBe(0);
-    expect(portfolio.tasks).toEqual({});
-    const quarantine = portfolio.authorityQuarantine?.[0];
+    expect(migrated.p3.quality).toBeUndefined();
+    expect(migrated.activities).toEqual({});
+    expect(migrated.activityKpiHistory).toEqual({});
+    expect(migrated.activityEvents).toEqual([]);
+    expect(migrated.activityEventSequence).toBe(0);
+    expect(migrated.tasks).toEqual({});
+    const quarantine = migrated.authorityQuarantine?.[0];
     const quarantinedTask = quarantine?.tasks[task.id] as
       | typeof task
       | undefined;
@@ -299,10 +418,16 @@ describe("Memory migration", () => {
 
     migrateMemory();
 
+    const migrated = ensureColonyPortfolio("W1N1") as ReturnType<
+      typeof ensureColonyPortfolio
+    > & {
+      activityEvents?: unknown[];
+      activityEventSequence?: number;
+    };
     expect(Memory.version).toBe(MEMORY_VERSION);
-    expect(portfolio.activityEvents).toEqual([]);
-    expect(portfolio.activityEventSequence).toBe(0);
-    expect(portfolio.authorityQuarantine?.at(-1)).toMatchObject({
+    expect(migrated.activityEvents).toEqual([]);
+    expect(migrated.activityEventSequence).toBe(0);
+    expect(migrated.authorityQuarantine?.at(-1)).toMatchObject({
       migratedFromVersion: 7,
       activityEvents: [legacyEvent],
       activityEventSequence: 9,
@@ -370,9 +495,18 @@ describe("Memory migration", () => {
         runtimeSupervisor: { version: 1, phases: {} },
       },
     });
-    const before = structuredClone(Memory);
-
     expect(() => migrateMemory()).not.toThrow();
-    expect(Memory).toEqual(before);
+    expect(Memory).toMatchObject({
+      version: MEMORY_VERSION,
+      colonies: {},
+      empireFspm: {},
+      runtimeSupervisor: { version: 1, phases: {} },
+      runtimeBoot: {
+        version: 1,
+        sourceMemoryVersion: MEMORY_VERSION,
+        targetMemoryVersion: MEMORY_VERSION,
+        phase: "settlement",
+      },
+    });
   });
 });

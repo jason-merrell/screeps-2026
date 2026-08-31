@@ -1,0 +1,46 @@
+{
+  "schema": "screeps-ptr-room-engine-contradiction/v1",
+  "sourceRunId": "33427789505",
+  "room": "E52N38",
+  "shard": "shard3",
+  "shardTick": 82599974,
+  "scope": "minimal exact contradiction subset from the collected room-objects response",
+  "objects": [
+    {
+      "type": "source",
+      "energy": 2960,
+      "energyCapacity": 3000,
+      "nextRegenerationTime": 82598154
+    },
+    {
+      "type": "source",
+      "energy": 2990,
+      "energyCapacity": 3000,
+      "nextRegenerationTime": 82598151
+    },
+    {
+      "type": "road",
+      "nextDecayTime": 82597890
+    },
+    {
+      "type": "creep",
+      "ageTime": 82598183
+    },
+    {
+      "type": "creep",
+      "ageTime": 82598689
+    },
+    {
+      "type": "creep",
+      "ageTime": 82598716
+    },
+    {
+      "type": "creep",
+      "ageTime": 82598737
+    },
+    {
+      "type": "creep",
+      "ageTime": 82598758
+    }
+  ]
+}

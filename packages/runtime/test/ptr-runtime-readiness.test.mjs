@@ -117,7 +117,7 @@ describe("PTR runtime readiness", () => {
     const readiness = buildPtrRuntimeReadiness(readyInput());
 
     expect(readiness).toMatchObject({
-      schema: "screeps-ptr-runtime-readiness/v1",
+      schema: "screeps-ptr-runtime-readiness/v2",
       assurance: "runtime-preflight",
       releaseClosure: false,
       status: "ready",
@@ -134,7 +134,7 @@ describe("PTR runtime readiness", () => {
         worldStatusNormal: true,
         activeBranchMatches: true,
         cpuAllocationPositive: true,
-        accountOperational: true,
+        accountNotExplicitlyDisabled: true,
         gameTimeAvailable: true,
         memoryVersionMatches: true,
         traceVersionMatches: true,
@@ -158,11 +158,22 @@ describe("PTR runtime readiness", () => {
         account: {
           requestOk: true,
           httpStatus: 200,
+          totalCpuReported: true,
           totalCpu: 20,
+          totalCpuValid: true,
+          cpuShardFieldReported: true,
           cpuShardReported: true,
           shardAllocation: { shard0: 0, shard3: 20 },
+          shardAllocationTotal: 20,
+          duplicateShardAllocations: [],
+          invalidShardAllocations: [],
+          cpuShardUpdatedTime: 82_599_900,
           cpuUnlockWindowActive: null,
+          activeReported: false,
+          activeValid: true,
           active: null,
+          blockedReported: false,
+          blockedValid: true,
           blocked: null,
         },
       },
@@ -236,6 +247,48 @@ describe("PTR runtime readiness", () => {
     expect(readiness.status).toBe("blocked");
     expect(readiness.evidence.traceLag).toBe(1000);
     expect(readiness.checks.traceFresh).toBe(false);
+  });
+
+  it("reports a boot heartbeat without accepting it as a full runtime trace", () => {
+    const readiness = buildPtrRuntimeReadiness(
+      readyInput({
+        observabilityResponse: traceResponse({
+          schema: "screeps-runtime-boot-heartbeat/v1",
+          version: 0,
+          boot: {
+            phase: "migration",
+            sourceMemoryVersion: 6,
+            targetMemoryVersion: 10,
+            fromVersion: 6,
+            toVersion: 7,
+            progressed: true,
+            degraded: false,
+            settlementAttempts: 0,
+            reason: "memory schema advanced",
+            privateBootState: "private-canary",
+          },
+        }),
+      }),
+    );
+
+    expect(readiness.status).toBe("blocked");
+    expect(readiness.checks.traceVersionMatches).toBe(false);
+    expect(readiness.evidence.trace).toMatchObject({
+      kind: "boot-heartbeat",
+      version: 0,
+      boot: {
+        phase: "migration",
+        sourceMemoryVersion: 6,
+        targetMemoryVersion: 10,
+        fromVersion: 6,
+        toVersion: 7,
+        progressed: true,
+        degraded: false,
+        settlementAttempts: 0,
+        reason: "memory schema advanced",
+      },
+    });
+    expect(JSON.stringify(readiness)).not.toContain("private-canary");
   });
 
   it("allows a one-tick sampling race but rejects a larger future trace", () => {
@@ -334,7 +387,7 @@ describe("PTR runtime readiness", () => {
     expect(readiness.missingEvidence).toEqual(
       expect.arrayContaining([
         "cpuAllocationPositive",
-        "accountOperational",
+        "accountNotExplicitlyDisabled",
         "controllerOwned",
       ]),
     );
@@ -408,6 +461,20 @@ describe("PTR response-envelope integrity", () => {
     expect(readiness.missingEvidence).toContain("gameTimeAvailable");
   });
 
+  it("does not accept negative shard or trace ticks as temporal evidence", () => {
+    const negativeGameTime = buildPtrRuntimeReadiness(
+      readyInput({ gameTimeResponse: response({ ok: 1, time: -1 }) }),
+    );
+    const negativeTraceTick = buildPtrRuntimeReadiness(
+      readyInput({ observabilityResponse: traceResponse({ tick: -1 }) }),
+    );
+
+    expect(negativeGameTime.checks.gameTimeAvailable).toBeNull();
+    expect(negativeGameTime.checks.traceFresh).toBeNull();
+    expect(negativeTraceTick.checks.traceFresh).toBeNull();
+    expect(negativeTraceTick.checks.targetRoomEvaluated).toBe(false);
+  });
+
   it("never throws when Segment 99 is absent or malformed", () => {
     for (const observabilityResponse of [
       null,
@@ -477,6 +544,77 @@ describe("PTR active-branch authority", () => {
 });
 
 describe("PTR CPU allocation and account state", () => {
+  it("blocks an explicit zero total CPU even when no shard map is reported", () => {
+    const readiness = buildPtrRuntimeReadiness(
+      readyInput({
+        accountResponse: response({
+          ok: 1,
+          _id: "private-account-id-canary",
+          cpu: 0,
+        }),
+      }),
+    );
+
+    expect(readiness.status).toBe("blocked");
+    expect(readiness.checks.cpuAllocationPositive).toBe(false);
+  });
+
+  it("keeps positive total CPU unverified when no shard map is reported", () => {
+    const readiness = buildPtrRuntimeReadiness(
+      readyInput({
+        accountResponse: response({
+          ok: 1,
+          _id: "private-account-id-canary",
+          cpu: 50,
+        }),
+      }),
+    );
+
+    expect(readiness.status).toBe("unverified");
+    expect(readiness.checks.cpuAllocationPositive).toBeNull();
+  });
+
+  it("keeps contradictory zero-total and positive-shard CPU unverified", () => {
+    const readiness = buildPtrRuntimeReadiness(
+      readyInput({
+        accountResponse: response(
+          accountValue({ cpu: 0, cpuShard: { shard3: 50 } }),
+        ),
+      }),
+    );
+
+    expect(readiness.status).toBe("unverified");
+    expect(readiness.checks.cpuAllocationPositive).toBeNull();
+  });
+
+  it.each([
+    ["target allocation exceeds entitlement", { shard3: 50 }],
+    ["allocation sum exceeds entitlement", { shard0: 10, shard3: 20 }],
+  ])("keeps %s unverified", (_name, cpuShard) => {
+    const readiness = buildPtrRuntimeReadiness(
+      readyInput({
+        accountResponse: response(accountValue({ cpu: 20, cpuShard })),
+      }),
+    );
+
+    expect(readiness.status).toBe("unverified");
+    expect(readiness.checks.cpuAllocationPositive).toBeNull();
+  });
+
+  it.each([
+    ["malformed target", { shard3: "50" }],
+    ["duplicate target", { shard3: 50, SHARD3: 50 }],
+  ])("keeps a %s allocation unverified", (_name, cpuShard) => {
+    const readiness = buildPtrRuntimeReadiness(
+      readyInput({
+        accountResponse: response(accountValue({ cpu: 50, cpuShard })),
+      }),
+    );
+
+    expect(readiness.status).toBe("unverified");
+    expect(readiness.checks.cpuAllocationPositive).toBeNull();
+  });
+
   it("does not fall back to total CPU when a reported map omits the target shard", () => {
     const readiness = buildPtrRuntimeReadiness(
       readyInput({
@@ -518,13 +656,15 @@ describe("PTR CPU allocation and account state", () => {
 
     expect(readiness.status).toBe("unverified");
     expect(readiness.checks.cpuAllocationPositive).toBeNull();
-    expect(readiness.checks.accountOperational).toBeNull();
+    expect(readiness.checks.accountNotExplicitlyDisabled).toBeNull();
     expect(readiness.checks.controllerOwned).toBeNull();
   });
 
   it.each([
     ["explicitly inactive", { active: false }],
+    ["numerically inactive", { active: 0 }],
     ["explicitly blocked", { blocked: true }],
+    ["numerically blocked", { blocked: 1 }],
   ])("blocks an %s account", (_name, accountOverrides) => {
     const readiness = buildPtrRuntimeReadiness(
       readyInput({
@@ -533,14 +673,39 @@ describe("PTR CPU allocation and account state", () => {
     );
 
     expect(readiness.status).toBe("blocked");
-    expect(readiness.checks.accountOperational).toBe(false);
-    expect(readiness.blockers).toContain("accountOperational");
+    expect(readiness.checks.accountNotExplicitlyDisabled).toBe(false);
+    expect(readiness.blockers).toContain("accountNotExplicitlyDisabled");
   });
 
   it("accepts the live PTR shape that omits active and blocked", () => {
     const readiness = buildPtrRuntimeReadiness(readyInput());
 
-    expect(readiness.checks.accountOperational).toBe(true);
+    expect(readiness.checks.accountNotExplicitlyDisabled).toBe(true);
+  });
+
+  it("accepts a positive numeric activation lease", () => {
+    const readiness = buildPtrRuntimeReadiness(
+      readyInput({
+        accountResponse: response(accountValue({ active: 10_000 })),
+      }),
+    );
+
+    expect(readiness.checks.accountNotExplicitlyDisabled).toBe(true);
+    expect(readiness.evidence.account.active).toBe(true);
+  });
+
+  it.each([
+    ["active", { active: "0" }],
+    ["blocked", { blocked: "false" }],
+  ])("keeps a malformed %s field unverified", (_name, accountOverrides) => {
+    const readiness = buildPtrRuntimeReadiness(
+      readyInput({
+        accountResponse: response(accountValue(accountOverrides)),
+      }),
+    );
+
+    expect(readiness.status).toBe("unverified");
+    expect(readiness.checks.accountNotExplicitlyDisabled).toBeNull();
   });
 });
 
@@ -563,11 +728,22 @@ describe("PTR account redaction", () => {
     expect(safe).toEqual({
       requestOk: true,
       httpStatus: 200,
+      totalCpuReported: true,
       totalCpu: 30,
+      totalCpuValid: true,
+      cpuShardFieldReported: true,
       cpuShardReported: true,
       shardAllocation: { shard3: 20 },
+      shardAllocationTotal: 20,
+      duplicateShardAllocations: [],
+      invalidShardAllocations: ["shard2"],
+      cpuShardUpdatedTime: 100,
       cpuUnlockWindowActive: null,
+      activeReported: false,
+      activeValid: true,
       active: null,
+      blockedReported: false,
+      blockedValid: true,
       blocked: null,
     });
   });

@@ -14,6 +14,17 @@ const finiteNumber = (value) =>
 
 const integer = (value) => (Number.isInteger(value) ? value : null);
 
+const nonNegativeInteger = (value) => {
+  const normalized = integer(value);
+  return normalized !== null && normalized >= 0 ? normalized : null;
+};
+
+const operationalFlag = (value) => {
+  if (typeof value === "boolean") return value;
+  const numeric = finiteNumber(value);
+  return numeric === null ? null : numeric > 0;
+};
+
 const boundedString = (value, maximumLength = 120) =>
   typeof value === "string" && value.length > 0
     ? value.slice(0, maximumLength)
@@ -58,36 +69,76 @@ export function sanitizePtrAccountResponse(
     requestOk && response.body && typeof response.body === "object"
       ? response.body
       : {};
+  const totalCpuReported = requestOk && Object.hasOwn(body, "cpu");
+  const totalCpu = finiteNumber(body.cpu);
+  const totalCpuValid =
+    !totalCpuReported || (totalCpu !== null && totalCpu >= 0);
+  const cpuShardFieldReported = requestOk && Object.hasOwn(body, "cpuShard");
   const cpuShardReported =
-    requestOk &&
+    cpuShardFieldReported &&
     body.cpuShard !== null &&
     typeof body.cpuShard === "object" &&
     !Array.isArray(body.cpuShard);
+  const duplicateShardAllocations = new Set();
+  const invalidShardAllocations = new Set();
+  const seenShardAllocations = new Set();
   const shardAllocation = cpuShardReported
     ? Object.fromEntries(
         Object.entries(body.cpuShard)
-          .filter(
-            ([key, value]) =>
-              /^shard\d+$/i.test(key) && finiteNumber(value) !== null,
-          )
-          .map(([key, value]) => [key.toLowerCase(), value])
+          .filter(([key]) => /^shard\d+$/i.test(key))
+          .flatMap(([key, value]) => {
+            const normalizedKey = key.toLowerCase();
+            if (seenShardAllocations.has(normalizedKey)) {
+              duplicateShardAllocations.add(normalizedKey);
+              return [];
+            }
+            seenShardAllocations.add(normalizedKey);
+            const normalizedValue = finiteNumber(value);
+            if (normalizedValue === null || normalizedValue < 0) {
+              invalidShardAllocations.add(normalizedKey);
+              return [];
+            }
+            return [[normalizedKey, normalizedValue]];
+          })
           .sort(([left], [right]) => left.localeCompare(right)),
       )
     : {};
   const promoPeriodUntil = finiteNumber(body.promoPeriodUntil);
+  const activeReported = requestOk && Object.hasOwn(body, "active");
+  const blockedReported = requestOk && Object.hasOwn(body, "blocked");
+  const active = operationalFlag(body.active);
+  const blocked = operationalFlag(body.blocked);
+  const shardAllocationTotal = Object.values(shardAllocation).reduce(
+    (sum, allocation) => sum + allocation,
+    0,
+  );
 
   return {
     requestOk,
     httpStatus: integer(response?.status) ?? 0,
-    totalCpu: finiteNumber(body.cpu),
+    totalCpuReported,
+    totalCpu,
+    totalCpuValid,
+    cpuShardFieldReported,
     cpuShardReported,
     shardAllocation,
+    shardAllocationTotal,
+    duplicateShardAllocations: [...duplicateShardAllocations].sort(),
+    invalidShardAllocations: [...invalidShardAllocations].sort(),
+    cpuShardUpdatedTime: finiteNumber(body.cpuShardUpdatedTime),
     cpuUnlockWindowActive:
       promoPeriodUntil === null || !Number.isFinite(collectedAtMs)
         ? null
         : promoPeriodUntil > collectedAtMs,
-    active: typeof body.active === "boolean" ? body.active : null,
-    blocked: typeof body.blocked === "boolean" ? body.blocked : null,
+    // Screeps stores `active` as an activation lease/counter (0 means idle),
+    // although some compatible servers expose a boolean. Normalize both
+    // shapes so a numeric zero can never pass the operational preflight.
+    activeReported,
+    activeValid: !activeReported || active !== null,
+    active,
+    blockedReported,
+    blockedValid: !blockedReported || blocked !== null,
+    blocked,
   };
 }
 
@@ -115,9 +166,35 @@ export function sanitizePtrBranchesResponse(response) {
 
 const resolveCpuAllocation = (account, shard) => {
   if (!account.requestOk) return null;
+  if (!account.totalCpuValid) return null;
+  if (
+    account.invalidShardAllocations.length > 0 ||
+    account.duplicateShardAllocations.length > 0
+  ) {
+    return null;
+  }
+  if (
+    account.totalCpu !== null &&
+    account.shardAllocationTotal > account.totalCpu
+  ) {
+    return null;
+  }
+  const targetReported = Object.hasOwn(account.shardAllocation, shard);
+  if (account.totalCpu === 0) {
+    if (targetReported && account.shardAllocation[shard] > 0) return null;
+    return false;
+  }
+  if (!account.cpuShardFieldReported) return null;
   if (!account.cpuShardReported) return null;
-  if (!Object.hasOwn(account.shardAllocation, shard)) return false;
+  if (!targetReported) return false;
   return account.shardAllocation[shard] > 0;
+};
+
+const resolveAccountNotExplicitlyDisabled = (account) => {
+  if (!account.requestOk) return null;
+  if (!account.activeValid || !account.blockedValid) return null;
+  if (account.active === false || account.blocked === true) return false;
+  return true;
 };
 
 const summarizeTrace = (response) => {
@@ -127,16 +204,57 @@ const summarizeTrace = (response) => {
   if (!decoded || typeof decoded !== "object" || Array.isArray(decoded))
     return null;
 
+  const bootHeartbeat =
+    decoded.schema === "screeps-runtime-boot-heartbeat/v1" &&
+    decoded.boot &&
+    typeof decoded.boot === "object" &&
+    !Array.isArray(decoded.boot)
+      ? {
+          phase: boundedString(decoded.boot.phase, 40),
+          sourceMemoryVersion: nonNegativeInteger(
+            decoded.boot.sourceMemoryVersion,
+          ),
+          targetMemoryVersion: nonNegativeInteger(
+            decoded.boot.targetMemoryVersion,
+          ),
+          fromVersion: nonNegativeInteger(decoded.boot.fromVersion),
+          toVersion: nonNegativeInteger(decoded.boot.toVersion),
+          progressed:
+            typeof decoded.boot.progressed === "boolean"
+              ? decoded.boot.progressed
+              : null,
+          degraded:
+            typeof decoded.boot.degraded === "boolean"
+              ? decoded.boot.degraded
+              : null,
+          settlementAttempts: nonNegativeInteger(
+            decoded.boot.settlementAttempts,
+          ),
+          settlementRetryTick: nonNegativeInteger(
+            decoded.boot.settlementRetryTick,
+          ),
+          reason: boundedString(decoded.boot.reason, 240),
+        }
+      : null;
+
   const plans = Array.isArray(decoded.settlement?.plans)
     ? decoded.settlement.plans.map((plan) => ({
         roomName: normalizeRoomName(plan?.roomName),
-        developmentEvaluatedAt: integer(plan?.development?.evaluatedAt),
+        developmentEvaluatedAt: nonNegativeInteger(
+          plan?.development?.evaluatedAt,
+        ),
       }))
     : null;
 
   return {
+    kind:
+      bootHeartbeat !== null
+        ? "boot-heartbeat"
+        : decoded.version === 1
+          ? "runtime-trace"
+          : "unknown",
     version: integer(decoded.version),
-    tick: integer(decoded.tick),
+    tick: nonNegativeInteger(decoded.tick),
     runtimeSha: boundedString(decoded.runtimeSha, 80),
     memoryVersion: integer(decoded.memoryVersion),
     cpu:
@@ -147,6 +265,7 @@ const summarizeTrace = (response) => {
             total: finiteNumber(decoded.cpu.total),
           }
         : null,
+    boot: bootHeartbeat,
     plans,
   };
 };
@@ -234,7 +353,7 @@ export function buildPtrRuntimeReadiness({
         : false;
 
   const gameTime = accepted(gameTimeResponse)
-    ? integer(gameTimeResponse.body.time)
+    ? nonNegativeInteger(gameTimeResponse.body.time)
     : null;
   const decodedMemoryVersion = accepted(memoryVersionResponse)
     ? decodeScreepsMemory(memoryVersionResponse.body)
@@ -323,10 +442,8 @@ export function buildPtrRuntimeReadiness({
     checks,
     blockers,
     missingEvidence,
-    "accountOperational",
-    !account.requestOk
-      ? null
-      : !(account.active === false || account.blocked === true),
+    "accountNotExplicitlyDisabled",
+    resolveAccountNotExplicitlyDisabled(account),
   );
   pushCheck(checks, blockers, missingEvidence, "roomListed", roomListed);
   pushCheck(
@@ -387,11 +504,9 @@ export function buildPtrRuntimeReadiness({
     blockers,
     missingEvidence,
     "traceFresh",
-    trace === null || gameTime === null
+    trace === null || gameTime === null || traceLag === null
       ? null
-      : traceLag !== null &&
-          traceLag >= -maximumTraceLead &&
-          traceLag <= maximumTraceLag,
+      : traceLag >= -maximumTraceLead && traceLag <= maximumTraceLag,
   );
   pushCheck(
     checks,
@@ -409,7 +524,7 @@ export function buildPtrRuntimeReadiness({
   );
 
   return {
-    schema: "screeps-ptr-runtime-readiness/v1",
+    schema: "screeps-ptr-runtime-readiness/v2",
     assurance: "runtime-preflight",
     releaseClosure: false,
     status:

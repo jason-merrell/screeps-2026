@@ -124,6 +124,23 @@ describe("PTR runtime activation", () => {
     ).rejects.toThrow("PTR world status failed (200)");
   });
 
+  it("bounds a PTR activation request that never settles", async () => {
+    const fetchImpl = vi.fn(
+      () => new Promise(() => undefined),
+    );
+
+    await expect(
+      activatePtrRuntime({
+        token: "test-token",
+        fetchImpl,
+        requestTimeoutMs: 5,
+      }),
+    ).rejects.toThrow("PTR activation timed out after 5 milliseconds");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    expect(fetchImpl.mock.calls[0][1].signal.aborted).toBe(true);
+  });
+
   it("requires a token without making a request", async () => {
     const fetchImpl = vi.fn();
 

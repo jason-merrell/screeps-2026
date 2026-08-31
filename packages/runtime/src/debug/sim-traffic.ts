@@ -269,7 +269,12 @@ function clearParticipantCaches(state: SimTrafficState, specs: ScenarioParticipa
 export function runSimTrafficHarness(): boolean {
   const state = Memory.simTraffic;
   if (!state?.active) return false;
-  if (!isSimulation()) return fail(state, "simTraffic can only run in the browser Simulation room");
+  if (!isSimulation()) {
+    state.active = false;
+    fail(state, "simTraffic can only run in the browser Simulation room");
+    // A stale test flag must never own World runtime availability.
+    return false;
+  }
 
   const room = Game.rooms.sim;
   if (!room) return fail(state, "Simulation room 'sim' is not visible");

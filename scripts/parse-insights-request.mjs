@@ -64,6 +64,7 @@ if (eventName === "issue_comment") {
       "/recommend-start",
       "/place-start",
       "/deploy-code",
+      "/canary",
       "/experiment",
       "/scenario",
       "/benchmark",
@@ -71,7 +72,7 @@ if (eventName === "issue_comment") {
     ].includes(commandToken)
   ) {
     fail(
-      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, /deploy-code, /experiment, /scenario, /benchmark, or /snapshot",
+      "command must begin with exactly /collect, /scan, /recommend-start, /place-start, /deploy-code, /canary, /experiment, /scenario, /benchmark, or /snapshot",
     );
   }
 
@@ -84,15 +85,17 @@ if (eventName === "issue_comment") {
           ? "place-start"
           : commandToken === "/deploy-code"
             ? "deploy-code"
-            : commandToken === "/experiment"
-              ? "experiment"
-              : commandToken === "/scenario"
-                ? "scenario"
-                : commandToken === "/benchmark"
-                  ? "benchmark"
-                  : commandToken === "/snapshot"
-                    ? "snapshot"
-                    : "collect";
+            : commandToken === "/canary"
+              ? "canary"
+              : commandToken === "/experiment"
+                ? "experiment"
+                : commandToken === "/scenario"
+                  ? "scenario"
+                  : commandToken === "/benchmark"
+                    ? "benchmark"
+                    : commandToken === "/snapshot"
+                      ? "snapshot"
+                      : "collect";
 
   const args = new Map();
   for (const token of tokens.slice(1)) {
@@ -110,15 +113,17 @@ if (eventName === "issue_comment") {
             ? ["target", "shard"]
             : mode === "deploy-code"
               ? ["target"]
-              : mode === "experiment"
-                ? ["name", "target", "shard"]
-                : mode === "scenario"
-                  ? ["name"]
-                  : mode === "benchmark"
-                    ? ["name", "runs"]
-                    : mode === "snapshot"
-                      ? ["room", "shard", "target"]
-                      : ["room", "shard", "target"];
+              : mode === "canary"
+                ? ["target", "room", "shard"]
+                : mode === "experiment"
+                  ? ["name", "target", "shard"]
+                  : mode === "scenario"
+                    ? ["name"]
+                    : mode === "benchmark"
+                      ? ["name", "runs"]
+                      : mode === "snapshot"
+                        ? ["room", "shard", "target"]
+                        : ["room", "shard", "target"];
     if (!allowed.includes(key))
       fail(`unknown key '${key}' for ${commandToken}`);
     if (args.has(key)) fail(`duplicate key '${key}'`);
@@ -145,6 +150,17 @@ if (eventName === "issue_comment") {
   } else if (mode === "deploy-code") {
     target = normalizeTarget(args.get("target") || "", "");
     command = `/deploy-code target=${target}`;
+  } else if (mode === "canary") {
+    target = normalizeTarget(args.get("target") || "", "");
+    room = normalizeRoom(args.get("room") || "");
+    shard = normalizeShard(args.get("shard") || "");
+    if (target !== "ptr") {
+      fail("/canary requires target=ptr; it cannot switch a World branch");
+    }
+    if (!room || !shard) {
+      fail("/canary target=ptr requires room=<ROOM> and shard=<SHARD>");
+    }
+    command = `/canary target=ptr room=${room} shard=${shard}`;
   } else if (mode === "experiment") {
     target = normalizeTarget(args.get("target") || "", "");
     if (target !== "ptr") {
