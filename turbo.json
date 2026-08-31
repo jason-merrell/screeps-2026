@@ -13,6 +13,10 @@
     "build": {
       "outputs": ["dist/**", ".vercel/output/**"]
     },
+    "@screeps/runtime#build": {
+      "cache": false,
+      "outputs": ["dist/**"]
+    },
     "@screeps/scenario#build": {
       "dependsOn": ["@screeps/runtime#build"],
       "outputs": ["dist/**"]
