@@ -19,11 +19,12 @@
   "components": [
     {
       "key": "p3",
-      "name": "P3 Portfolio record",
+      "name": "P3 authority record",
       "status": "not_implemented",
       "owner": "area:fspm",
       "issue": "#183",
       "canonicalSources": [
+        "execution/data/p3.md#3-when-records-are-created",
         "execution/data/p3.md#4-record-schema",
         "structure/fspm-framework.md#06-portfolio-management"
       ],
@@ -31,44 +32,72 @@
         {
           "key": "name",
           "status": "adapted",
-          "adaptation": "Stable empire and colony Portfolio names replace OU-coded corporate names until the OU model exists.",
-          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+          "adaptation": "Stable Empire and Colony Portfolio names replace OU-coded corporate names until the OU model exists; the definition-only General Project candidate uses the unique noun-phrase pattern COLONY-<room>-PROJ-Mature Operating Base Development G<generation>.",
+          "evidence": [
+            "docs/adr-fspm-p3-authority.md",
+            "docs/adr-fspm-mature-base-project.md",
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
+          ]
         },
         {
           "key": "description",
           "status": "implemented",
-          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
+          ]
         },
         {
           "key": "type",
           "status": "implemented",
-          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
+          ]
         },
         {
           "key": "sub_type",
           "status": "implemented",
-          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+          "evidence": [
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
+          ]
         },
         {
           "key": "start_date",
           "status": "adapted",
-          "adaptation": "Game ticks are the authoritative runtime clock; startTick is the deterministic Start Date mapping.",
+          "adaptation": "Game ticks are the authoritative runtime clock; startTick is the deterministic Start Date mapping for live Portfolios and the service-principal-attested baseline of a definition-only General Project candidate. The candidate remains canonically unauthorized.",
           "evidence": [
             "docs/adr-fspm-p3-authority.md",
-            "packages/runtime/src/planning/fspm.ts"
+            "docs/adr-fspm-mature-base-project.md",
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
           ]
         },
         {
           "key": "end_date",
-          "status": "not_applicable",
-          "rationale": "The current Empire and colony records are continuously managed Portfolios; canonical Portfolios have no end date until retirement."
+          "status": "adapted",
+          "adaptation": "Continuously managed Empire and Colony Portfolios have no planned end; the definition-only General Project candidate maps its proposed initial End Date to initialDueTick on the authoritative game-tick clock. It is a baseline target, not actual closure or immutable canonical End Date; future changes require an append-only schedule-revision ledger that preserves the baseline.",
+          "evidence": [
+            "docs/adr-fspm-mature-base-project.md",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
+          ]
         },
         {
           "key": "parent_p3_id",
           "status": "implemented",
           "evidence": [
             "packages/runtime/src/planning/fspm.ts",
-            "packages/runtime/test/planning/fspm-p3-authority.test.ts"
+            "packages/runtime/test/planning/fspm-p3-authority.test.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
           ]
         },
         {
@@ -90,6 +119,12 @@
             "docs/adr-fspm-p3-authority.md",
             "packages/runtime/test/planning/fspm-p3-authority.test.ts"
           ]
+        },
+        {
+          "key": "project_activation_and_persistence",
+          "status": "not_implemented",
+          "rationale": "The mature-base General Project is a validated source-controlled candidate only; canonical authorization, OU/Position/ARCI assignments, live room and parent verification, monotonic generation, append-only schedule revision, durable evidence storage, and atomic persistence remain absent. No Project, Requirement, Deliverable, Task, lifecycle, or evidence record is activated or persisted in Memory.",
+          "issue": "#176"
         },
         {
           "key": "continuous_prioritization_and_rebalancing",
@@ -145,16 +180,24 @@
           "status": "implemented",
           "evidence": [
             "docs/screeps-colony-operations-policy.md",
-            "packages/runtime/src/planning/fspm-governance.ts"
+            "docs/screeps-mature-base-development-policy.md",
+            "packages/runtime/src/planning/fspm-governance.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
           ]
         },
         {
           "key": "requirement_verbiage",
-          "status": "implemented",
+          "status": "adapted",
+          "adaptation": "The definition-only mature-base candidate encodes the canonical section locator as the first line followed by the verbatim obligation. Current live colony authority v1 records preserve the exact obligation body but omit that required first-line locator, so repository-wide conformance remains adapted until the versioned live-authority migration in #203.",
           "evidence": [
             "docs/screeps-colony-operations-policy.md",
-            "packages/runtime/src/planning/fspm-governance.ts"
-          ]
+            "docs/screeps-mature-base-development-policy.md",
+            "packages/runtime/src/planning/fspm-governance.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
+          ],
+          "issue": "#203"
         },
         {
           "key": "originating_authority",
@@ -307,7 +350,8 @@
       "owner": "area:fspm",
       "issue": "#176",
       "canonicalSources": [
-        "execution/data/corporate-deliverables.md#4-record-schema"
+        "execution/data/corporate-deliverables.md#4-record-schema",
+        "execution/data/corporate-deliverables.md#6-relationship-rules"
       ],
       "fields": [
         {
@@ -340,13 +384,24 @@
           "status": "implemented",
           "evidence": [
             "docs/screeps-colony-operations-policy.md",
-            "packages/runtime/src/planning/fspm.ts"
+            "docs/screeps-mature-base-development-policy.md",
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
           ]
         },
         {
           "key": "requirement_verbiage",
-          "status": "implemented",
-          "evidence": ["packages/runtime/src/planning/fspm.ts"]
+          "status": "adapted",
+          "adaptation": "The mature-base candidate carries canonical first-line locators in every Deliverable Requirement Verbiage field, but current live recurring colony Deliverables retain bare obligation sentences without the required locator. Full implementation requires the versioned live-authority migration in #203.",
+          "evidence": [
+            "docs/screeps-colony-operations-policy.md",
+            "docs/screeps-mature-base-development-policy.md",
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
+          ],
+          "issue": "#203"
         },
         {
           "key": "evaluation_factors",
@@ -374,17 +429,20 @@
         {
           "key": "deliverable_weight",
           "status": "adapted",
-          "adaptation": "Exact integer basis points preserve canonical percentage weighting without floating-point ambiguity and feed the fail-closed DQI/P3-PQI roll-up; human-reviewed durable quality history remains #136.",
+          "adaptation": "Exact integer basis points preserve canonical percentage weighting without floating-point ambiguity. Live recurring Deliverables feed the fail-closed DQI/P3-PQI roll-up; the inert mature-base candidate validates one flat 10,000-point pool across all seven Project Deliverables but contributes no quality value. Human-reviewed durable quality history remains #136.",
           "evidence": [
             "packages/runtime/src/planning/fspm-governance.ts",
-            "packages/runtime/src/planning/fspm.ts"
+            "packages/runtime/src/planning/fspm.ts",
+            "docs/adr-fspm-mature-base-project.md",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
           ],
           "issue": "#136"
         },
         {
           "key": "child_deliverables",
           "status": "not_implemented",
-          "rationale": "One-level child Deliverable relationships and decomposition rules are absent.",
+          "rationale": "The source-controlled mature-base candidate strictly validates one-level child Result decomposition, exact parentage, and no grandchildren, but no Child Deliverable records are activated or persisted in the live FSPM authority model.",
           "issue": "#176"
         }
       ],
@@ -401,10 +459,13 @@
         {
           "key": "weights_sum_to_100",
           "status": "adapted",
-          "adaptation": "All sibling Deliverables and all active Tasks per Deliverable must sum to exactly 10,000 integer basis points before execution is eligible.",
+          "adaptation": "Live recurring Deliverable sets and active Tasks per Deliverable must sum to exactly 10,000 integer basis points before execution is eligible. The definition-only mature-base candidate also validates one flat 10,000-point pool across its two roots and five children, counting every Project Deliverable once and performing no parent-child double roll-up.",
           "evidence": [
             "packages/runtime/src/planning/fspm.ts",
-            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts",
+            "docs/adr-fspm-mature-base-project.md",
+            "packages/runtime/src/planning/fspm-mature-base-project.ts",
+            "packages/runtime/test/planning/fspm-mature-base-project.test.ts"
           ]
         },
         {

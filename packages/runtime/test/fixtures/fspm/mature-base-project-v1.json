@@ -1,0 +1,161 @@
+{
+  "input": {
+    "roomName": "W1N1",
+    "parentP3Id": "portfolio:colony:W1N1",
+    "projectGeneration": 1,
+    "startTick": 1000,
+    "initialDueTick": 7000,
+    "initialMilestoneTicks": {
+      "roomDevelopmentPlan": 1500,
+      "bootstrap": 2000,
+      "logistics": 3000,
+      "core-economy": 4000,
+      "advanced-operations": 5500,
+      "mature-rcl8": 7000
+    },
+    "scheduleAttestationId": "attestation:colony:W1N1:mature-base-development:g1:1000:7000",
+    "attestedBy": "principal:repository-governance-owner",
+    "attestedAtTick": 900,
+    "typedAttestation": "ATTEST PROPOSED W1N1 MATURE BASE DEVELOPMENT G1 1000-7000"
+  },
+  "expected": {
+    "packageSchema": "screeps-fspm-mature-base-project-authority-package/v1",
+    "definitionPackageHash": "sha256:db1f8ab44624d66e3247fecc811047451bba00c653a4ca4e78a2c00e3a03ce0b",
+    "candidateSchema": "screeps-fspm-mature-base-project-candidate/v1",
+    "candidateContentHash": "sha256:1ab5920255ff0d3d4b9e787877783990294b545df1367ab791da16d9344a7063",
+    "scheduleAttestationHash": "sha256:8bc5c4945e5cd0bfbfae9b013f0f7f55bb7d40b74f313e732a05eb49ea60fb83",
+    "projectId": "project:colony:W1N1:mature-base-development:g1",
+    "projectName": "COLONY-W1N1-PROJ-Mature Operating Base Development G1",
+    "projectDefinitionHash": "sha256:34573da7a8d72b7c7559078cccb54d747755a8e139348ab3b8391297f5d5465a",
+    "requirementId": "requirement:W1N1:mature-base-development:g1",
+    "requirementDefinitionHash": "sha256:2405b695522df76fe266fd1d66fa9d564a4534abb6bcf3a28b883f8d11816fb1",
+    "deliverableKeys": [
+      "room-development-plan",
+      "mature-base-state",
+      "bootstrap",
+      "logistics",
+      "core-economy",
+      "advanced-operations",
+      "mature-rcl8"
+    ],
+    "deliverableIds": [
+      "deliverable:W1N1:mature-base:g1:room-development-plan",
+      "deliverable:W1N1:mature-base:g1:mature-base-state",
+      "deliverable:W1N1:mature-base:g1:bootstrap",
+      "deliverable:W1N1:mature-base:g1:logistics",
+      "deliverable:W1N1:mature-base:g1:core-economy",
+      "deliverable:W1N1:mature-base:g1:advanced-operations",
+      "deliverable:W1N1:mature-base:g1:mature-rcl8"
+    ],
+    "deliverableDefinitionHashes": {
+      "room-development-plan": "sha256:7d1f55286e92697d49d10004bfb26fc8866fb5323d322b6820c971d94f7e3a53",
+      "mature-base-state": "sha256:45a767a6a8a4d09d564a2b9c6a4f2cbbb49b5b64d385315a048b5a94197035c3",
+      "bootstrap": "sha256:ef2f28b381ad0eb1c9736775d1055f49654b0ec085f14d1affaa588d30fdab65",
+      "logistics": "sha256:b645b6796d53a92c01c405fc5fc0e355bc739f899675bf2be3084fc5344ac0db",
+      "core-economy": "sha256:402f037b67211eef384572741d502715c347c3ab585fe6b3e79bac0a7b414e64",
+      "advanced-operations": "sha256:efa8e343140fe9017ba291d63cc4b903c2474fe021302be6f1539b9095339b30",
+      "mature-rcl8": "sha256:314a12a925bba555baf75b645dd66ec4746bbdd57f0506a9a8038575d3f2b3e2"
+    },
+    "weights": {
+      "room-development-plan": 1000,
+      "mature-base-state": 1000,
+      "bootstrap": 1200,
+      "logistics": 1200,
+      "core-economy": 2000,
+      "advanced-operations": 1600,
+      "mature-rcl8": 2000
+    },
+    "totalWeightBasisPoints": 10000,
+    "rootDeliverableIds": [
+      "deliverable:W1N1:mature-base:g1:room-development-plan",
+      "deliverable:W1N1:mature-base:g1:mature-base-state"
+    ],
+    "matureBaseChildDeliverableIds": [
+      "deliverable:W1N1:mature-base:g1:bootstrap",
+      "deliverable:W1N1:mature-base:g1:logistics",
+      "deliverable:W1N1:mature-base:g1:core-economy",
+      "deliverable:W1N1:mature-base:g1:advanced-operations",
+      "deliverable:W1N1:mature-base:g1:mature-rcl8"
+    ],
+    "initialMilestoneTicks": {
+      "room-development-plan": 1500,
+      "mature-base-state": 7000,
+      "bootstrap": 2000,
+      "logistics": 3000,
+      "core-economy": 4000,
+      "advanced-operations": 5500,
+      "mature-rcl8": 7000
+    },
+    "taskKeys": [
+      "produce-room-development-plan",
+      "validate-mature-base-state",
+      "achieve-bootstrap-base-state",
+      "achieve-logistics-base-state",
+      "achieve-core-economy-base-state",
+      "achieve-advanced-operations-base-state",
+      "achieve-mature-rcl8-base-state"
+    ],
+    "taskDeliverableIds": [
+      "deliverable:W1N1:mature-base:g1:room-development-plan",
+      "deliverable:W1N1:mature-base:g1:mature-base-state",
+      "deliverable:W1N1:mature-base:g1:bootstrap",
+      "deliverable:W1N1:mature-base:g1:logistics",
+      "deliverable:W1N1:mature-base:g1:core-economy",
+      "deliverable:W1N1:mature-base:g1:advanced-operations",
+      "deliverable:W1N1:mature-base:g1:mature-rcl8"
+    ],
+    "taskDefinitionHashes": {
+      "produce-room-development-plan": "sha256:31580290bf6549507a41b743bfc1ef43b24ec53be13f7d9eb1115f0fffa90de7",
+      "validate-mature-base-state": "sha256:cc89e211f22fbcf02cc12e390b8ec22bcf12dc7e557368dce08a244e5c6c9357",
+      "achieve-bootstrap-base-state": "sha256:1ad023834f9deada66bc1df193a73393fa7352aba6475429886f46dc1804ac0f",
+      "achieve-logistics-base-state": "sha256:c0389dfd311f20f8f59b293567d9389088a4d916677bdfa1a496c5f9caf49464",
+      "achieve-core-economy-base-state": "sha256:115e31f7e28ab95edd53b2683e008363ada1d526fbd1ac13a118c1a3e0f19403",
+      "achieve-advanced-operations-base-state": "sha256:3435541af07f50d77b2c1f80ef4983ab0d273ab30b06489ba66d1e52b5930eb5",
+      "achieve-mature-rcl8-base-state": "sha256:e029efeaa3fd3a5e6240f0e16f44cbdb0ae72c9aa5f6043165912d9d66288164"
+    },
+    "aggregatePrerequisites": [
+      "room-development-plan",
+      "bootstrap",
+      "logistics",
+      "core-economy",
+      "advanced-operations",
+      "mature-rcl8"
+    ],
+    "receiptStorage": {
+      "evidenceForm": "logged_system_record",
+      "evidenceSchema": "screeps-fspm-mature-base-evidence/v1",
+      "storageLocation": "unresolved://issue/176/mature-base-evidence",
+      "storageState": "blocked_pending_durable_append_only_store",
+      "captureResponsibility": "principal:runtime-evidence-recorder"
+    },
+    "runtimeBoundary": {
+      "grantsP3Authority": false,
+      "grantsTaskAuthority": false,
+      "grantsIntentAuthority": false,
+      "permitsEvidenceCapture": false,
+      "permitsReceiptOrDecision": false,
+      "permitsRetroactiveEvidence": false,
+      "qi": null,
+      "dqi": null,
+      "pqi": null,
+      "activationIssue": "#176",
+      "requiredActivationPreconditions": [
+        "canonical_authorization_exists",
+        "canonical_ou_position_and_arci_assignments_exist",
+        "activation_tick_equals_canonical_authorization_tick",
+        "schedule_attestation_tick_is_no_later_than_activation_tick",
+        "activation_tick_is_no_later_than_start_tick",
+        "no_activity_or_evidence_before_start_tick",
+        "room_is_currently_owned",
+        "exact_active_colony_portfolio_exists",
+        "project_generation_is_monotonic_and_unused",
+        "durable_append_only_evidence_store_is_bound",
+        "append_only_schedule_revision_ledger_exists",
+        "atomic_compact_persistence_schema_exists",
+        "deliverable_weights_confirmed_by_accountable_position",
+        "mature_quality_evaluator_contracts_are_content_bound",
+        "mature_capability_manifest_is_content_bound"
+      ]
+    }
+  }
+}

@@ -98,9 +98,10 @@ describe("FSPM conformance profile", () => {
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("# NTI FSPM conformance report");
-    expect(result.stdout).toContain("| P3 Portfolio record |");
+    expect(result.stdout).toContain("| P3 authority record |");
     expect(result.stdout).toContain("## Open conformance gaps");
     expect(result.stdout).toContain("`child_deliverables`");
+    expect(result.stdout).toContain("`project_activation_and_persistence`");
     expect(result.stdout).toContain(
       "Namauu/governance-docs@02d581886a759d19044ff91a80d743fa042f23f7",
     );
