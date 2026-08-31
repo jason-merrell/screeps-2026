@@ -7,6 +7,7 @@ import {
 import type {
   BuildIntent,
   CreateConstructionSiteIntent,
+  RepairIntent,
   SpawnIntent,
 } from "../../src/intents/types";
 import {
@@ -23,6 +24,7 @@ vi.stubGlobal("OK", 0);
 vi.stubGlobal("ERR_NOT_IN_RANGE", -9);
 vi.stubGlobal("RESOURCE_ENERGY", "energy");
 vi.stubGlobal("STRUCTURE_RAMPART", "rampart");
+vi.stubGlobal("FIND_HOSTILE_CREEPS", "hostileCreeps");
 
 const ROOM = "W1N1";
 const WORK_KEY = infrastructureWorkKey(ROOM, 20, 21, "extension");
@@ -118,6 +120,22 @@ function spawnIntent(): SpawnIntent {
       domain: "spawning",
       task: "maintain-workforce-capacity",
       procedure: "maintain-general-workforce",
+    }),
+  };
+}
+
+function repairIntent(): RepairIntent {
+  return {
+    type: "repair",
+    creepName: "builder-1",
+    targetId: "rampart-1" as Id<Structure>,
+    priority: 500,
+    reason: "restore governed defensive condition",
+    trace: createIntentTrace({
+      roomName: ROOM,
+      domain: "construction",
+      task: "maintain-infrastructure-condition",
+      procedure: "repair-infrastructure",
     }),
   };
 }
@@ -255,5 +273,56 @@ describe("FSPM system Activity lifecycle", () => {
         "kpi_scored",
       ]),
     );
+  });
+
+  it("does not complete mature rampart maintenance at the obsolete bootstrap floor", () => {
+    const room = {
+      name: ROOM,
+      controller: { level: 8, my: true },
+      find: () => [],
+    } as unknown as Room;
+    const rampart = {
+      id: "rampart-1",
+      structureType: "rampart",
+      hits: 10_000,
+      hitsMax: 10_000_000,
+      room,
+      pos: { x: 20, y: 21, roomName: ROOM },
+    } as unknown as StructureRampart;
+    Game.rooms[ROOM] = room;
+    Game.getObjectById = (<T extends _HasId>(id: Id<T>): T | null =>
+      String(id) === String(rampart.id)
+        ? (rampart as unknown as T)
+        : null) as typeof Game.getObjectById;
+
+    const repair = repairIntent();
+    bindFspmActivities([repair]);
+    const activityId = repair.trace?.activityId;
+    if (!activityId) throw new Error("expected repair Activity");
+
+    reconcileFspmActivityEvidence([
+      {
+        intent: repair,
+        result: OK,
+        movementRequired: false,
+        evidence: "rampart repaired",
+      } satisfies ActivityExecutionObservation,
+    ]);
+
+    const portfolio = ensureColonyPortfolio(ROOM);
+    expect(portfolio.activities?.[activityId]).toMatchObject({
+      status: "in_progress",
+      metrics: { productiveTicks: 1 },
+    });
+
+    Game.time = 101;
+    rampart.hits = 5_000_000;
+    reconcileFspmActivityEvidence([]);
+
+    expect(portfolio.activities?.[activityId]).toMatchObject({
+      status: "completed",
+      completedAt: 101,
+      kpiScore: "satisfactory",
+    });
   });
 });

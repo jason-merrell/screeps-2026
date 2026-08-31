@@ -30,13 +30,14 @@ import {
   reconcileFspmLifecycle,
 } from "./planning/fspm";
 import { ensureRoomPlanOwnership } from "./planning/ownership";
-import { reconcileFspmQuality } from "./planning/quality";
+import { reconcileFspmEvidence } from "./planning/quality";
 import { ensureFspmWorkIdentities } from "./planning/work-identity";
 import { injectFspmMaintenanceFaultForTest } from "./runtime/fault-injection";
 import { RuntimeSupervisor } from "./runtime/supervisor";
 import { planConstruction } from "./systems/construction/plan";
 import { planDefense } from "./systems/defense/plan";
 import { planEconomy } from "./systems/economy/plan";
+import { planMatureEnergyCore } from "./systems/economy/mature-energy";
 import { planScavenging } from "./systems/economy/scavenge";
 import { planSurplusLaborUtilization } from "./systems/economy/surplus-utilization";
 import { normalizeFreshRoomPlans } from "./systems/settlement/normalize";
@@ -105,7 +106,9 @@ export const loop = (): void => {
         ...planScavenging(world),
         ...planEconomy(world),
       ]);
-      return [...primary, ...planSurplusLaborUtilization(world, primary)];
+      const mature = planMatureEnergyCore(world, primary);
+      const governed = [...primary, ...mature];
+      return [...governed, ...planSurplusLaborUtilization(world, governed)];
     }),
   ];
   let settlementCpu = 0;
@@ -137,7 +140,7 @@ export const loop = (): void => {
       injectFspmMaintenanceFaultForTest();
       ensureFspmWorkIdentities(proposed);
       reconcileFspmLifecycle(proposed);
-      reconcileFspmQuality(world);
+      reconcileFspmEvidence(world);
     },
     () => undefined,
   );

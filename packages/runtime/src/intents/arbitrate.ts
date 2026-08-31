@@ -19,6 +19,8 @@ export function conflictKey(intent: Intent): string {
       return `site:${intent.roomName}:${intent.x}:${intent.y}`;
     case "towerAttack":
       return `tower:${intent.towerId}`;
+    case "linkTransfer":
+      return `link:${intent.linkId}`;
     default:
       return `creep:${intent.creepName}`;
   }

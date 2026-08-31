@@ -4,15 +4,17 @@ import type {
   EmpireFspmPortfolio,
 } from "../planning/fspm";
 import type { RoomPlan } from "../planning/room-plan";
+import type { SettlementProjectionFault } from "../planning/room-plan-projection";
 import type { RuntimeSupervisorMemory } from "../runtime/supervisor";
 
-export const MEMORY_VERSION = 8;
+export const MEMORY_VERSION = 10;
 
 export interface ColonyMemory {
   roomName: string;
   discoveredAt: number;
   fspm?: ColonyFspmPortfolio;
   roomPlan?: RoomPlan;
+  settlementProjectionFault?: SettlementProjectionFault;
   traffic?: TrafficMemory;
 }
 

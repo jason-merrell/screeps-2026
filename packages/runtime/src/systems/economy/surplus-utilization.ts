@@ -1,5 +1,6 @@
 import { createIntentTrace } from "../../intents/trace";
 import type { Intent } from "../../intents/types";
+import { usableRoomPlanProjection } from "../../planning/room-plan-projection";
 import type { WorldSnapshot } from "../../runtime/context";
 import { capabilitiesOf } from "../../workforce/capabilities";
 import { shouldActivateSourceBuffers } from "./logistics";
@@ -31,8 +32,12 @@ function reservedBufferTarget(intent: Intent): string | undefined {
 }
 
 function bufferedSources(room: Room): BufferedSource[] {
-  const plan = Memory.colonies[room.name]?.roomPlan;
-  if (!plan) return [];
+  const projection = usableRoomPlanProjection(
+    Memory.colonies[room.name],
+    room.name,
+  );
+  if (!projection.usable) return [];
+  const plan = projection.plan;
 
   const controllerLevel = room.controller?.level ?? 0;
   const workforceCount = room.find(FIND_MY_CREEPS).length;

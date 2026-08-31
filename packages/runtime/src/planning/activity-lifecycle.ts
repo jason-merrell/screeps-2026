@@ -4,6 +4,7 @@ import {
   intentActorKey,
 } from "../intents/execute";
 import type { CreepIntent, Intent } from "../intents/types";
+import { infrastructureRepairThreshold } from "../systems/economy/repair-policy";
 import {
   type ActiveFspmAuthority,
   type ColonyFspmPortfolio,
@@ -18,10 +19,14 @@ import {
   type FspmKpiRating,
   recordFspmAuthorityDenial,
 } from "./fspm";
-import { computeTaskQi } from "./task-kpi";
+import {
+  activityKpiMultiplier,
+  computeEqvmResearchEstimate,
+  computeTaskQi,
+  FSPM_ACTIVITY_KPI_AGGREGATION_POLICY,
+} from "./task-kpi";
 
 const ACTIVITY_EVENT_LIMIT = 192;
-const TASK_KPI_HISTORY_LIMIT = 24;
 const PEACETIME_TOWER_RESERVE = 400;
 
 export type FspmAssignmentState =
@@ -141,7 +146,8 @@ function isSystemAssignee(assignee: string): boolean {
   return (
     assignee.startsWith("spawn:") ||
     assignee.startsWith("construction:") ||
-    assignee.startsWith("tower:")
+    assignee.startsWith("tower:") ||
+    assignee.startsWith("link:")
   );
 }
 
@@ -198,6 +204,8 @@ function targetKeyForIntent(intent: Intent): string {
       return `site:${intent.roomName}:${intent.x}:${intent.y}:${intent.structureType}`;
     case "towerAttack":
       return String(intent.targetId);
+    case "linkTransfer":
+      return String(intent.targetLinkId);
   }
 }
 
@@ -510,9 +518,11 @@ function targetSatisfiedForCurrentProcedure(
     case "extract-source-energy":
       return sourceObjectDepleted(object);
     case "withdraw-buffered-energy":
+    case "withdraw-mature-energy-buffer":
     case "recover-salvage-energy":
       return storeObjectDepleted(object);
     case "fund-workforce-energy":
+    case "deposit-mature-energy-buffer":
       return storeTargetFull(object);
     case "fund-tower-reserve":
       return towerReserveSatisfied(object);
@@ -700,10 +710,14 @@ function repairedEnough(activity: EvidenceActivity): boolean {
   const object = activityObject(activity);
   if (!object || !("hits" in object) || !("hitsMax" in object)) return false;
   const structure = object as Structure;
-  if (structure.structureType === STRUCTURE_RAMPART) {
-    return structure.hits >= Math.min(10_000, structure.hitsMax);
-  }
-  return structure.hits >= structure.hitsMax * 0.5;
+  const underAttack = structure.room.find(FIND_HOSTILE_CREEPS).length > 0;
+  const threshold = infrastructureRepairThreshold(
+    structure.structureType,
+    structure.hitsMax,
+    structure.room.controller?.level,
+    underAttack,
+  );
+  return threshold > 0 && structure.hits >= threshold;
 }
 
 function isLegacyWaitingTask(taskKey: string): boolean {
@@ -726,6 +740,7 @@ function energyServiceHandoffReason(
   if (
     currentProcedure !== "extract-source-energy" &&
     currentProcedure !== "withdraw-buffered-energy" &&
+    currentProcedure !== "withdraw-mature-energy-buffer" &&
     currentProcedure !== "recover-salvage-energy"
   ) {
     return null;
@@ -754,7 +769,8 @@ function completionReason(
       if (
         productive > 0 &&
         (currentProcedure === "buffer-source-energy" ||
-          currentProcedure === "fund-workforce-energy") &&
+          currentProcedure === "fund-workforce-energy" ||
+          currentProcedure === "deposit-mature-energy-buffer") &&
         energy <= 0
       ) {
         return `canonical energy-service cycle completed through ${currentProcedure}`;
@@ -829,17 +845,6 @@ function completionReason(
   }
 }
 
-function ratingValue(rating: Exclude<FspmKpiRating, "in_progress">): number {
-  switch (rating) {
-    case "exceptional":
-      return 1.5;
-    case "satisfactory":
-      return 1;
-    case "unsatisfactory":
-      return 0.5;
-  }
-}
-
 function scoreCanonicalActivity(
   task: ColonyTask,
   activity: EvidenceActivity,
@@ -909,7 +914,10 @@ function recordCompletedKpi(
   evidence: string,
 ): void {
   const task = portfolio.tasks[activity.taskId];
-  if (!task) return;
+  if (!task || activity.completedAt === undefined) {
+    return;
+  }
+  const policy = FSPM_ACTIVITY_KPI_AGGREGATION_POLICY;
   portfolio.activityKpiHistory ??= {};
   const history = portfolio.activityKpiHistory[task.id] ?? [];
   const sample: FspmActivityKpiSample = {
@@ -918,17 +926,33 @@ function recordCompletedKpi(
     activityType: task.taskKey,
     actor: activity.assignee,
     rating,
-    value: ratingValue(rating),
+    value: activityKpiMultiplier(rating),
     evidence,
+    source: "terminal_activity_kpi",
+    activityCompletedAtTick: activity.completedAt,
+    activityWeightPolicyId: policy.id,
     ...(activity.outcome ? { outcome: { ...activity.outcome } } : {}),
   };
   history.push(sample);
-  if (history.length > TASK_KPI_HISTORY_LIMIT) {
-    history.splice(0, history.length - TASK_KPI_HISTORY_LIMIT);
+  if (history.length > policy.historyLimit) {
+    history.splice(0, history.length - policy.historyLimit);
   }
   portfolio.activityKpiHistory[task.id] = history;
-  const qi = computeTaskQi(history, Game.time);
-  if (qi) task.qi = qi;
+  portfolio.eqvmResearchTelemetry ??= {};
+  portfolio.eqvmResearchTelemetry[task.id] = computeEqvmResearchEstimate(
+    history,
+    Game.time,
+    {
+      task,
+      activities: portfolio.activities ?? {},
+      policy,
+    },
+  );
+  task.qi = computeTaskQi(history, Game.time, {
+    task,
+    activities: portfolio.activities ?? {},
+    policy,
+  });
 }
 
 function completeActivity(
@@ -1423,6 +1447,13 @@ function reconcileSystemObservation(
           portfolio,
           activity,
           `tower ${observation.intent.towerId} executed governed hostile response`,
+        );
+        break;
+      case "linkTransfer":
+        completeActivity(
+          portfolio,
+          activity,
+          `link ${observation.intent.linkId} routed governed energy to ${observation.intent.targetLinkId}`,
         );
         break;
     }

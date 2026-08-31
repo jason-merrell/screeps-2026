@@ -17,15 +17,22 @@ import type {
   ColonyDeliverable,
   ColonyRequirement,
   ColonyTask,
-  FspmDeliverableReceipt,
-  FspmDeliverableReceiptDecision,
   FspmActivityKpiSample,
   FspmActivityRecord,
   FspmAuthorityDenialSummary,
+  FspmCanonicalEqvmRollupState,
+  FspmDeliverableQi,
+  FspmDeliverableReceipt,
+  FspmDeliverableReceiptDecision,
+  FspmEqvmCoverageStatus,
+  FspmEqvmPolicyAuthorization,
   FspmGovernanceBinding,
-  FspmQuality,
-  FspmQualitySample,
+  FspmOperationalHealth,
+  FspmOperationalHealthSample,
+  FspmP3Pqi,
   FspmStatus,
+  FspmTaskQi,
+  FspmWeightedEqvmCoverage,
 } from "../planning/fspm";
 import {
   EMPIRE_PORTFOLIO_ID,
@@ -35,12 +42,26 @@ import {
   validateDeliverableReceiptDecisionRegistry,
   validateDeliverableReceiptRegistry,
 } from "../planning/fspm";
+import { FSPM_GOVERNANCE_SHA } from "../planning/fspm-catalog";
 import {
   deliverableTemplateForDomain,
   FSPM_WEIGHT_BASIS_POINTS,
 } from "../planning/fspm-governance";
+import {
+  evaluateRoomDevelopmentForRoom,
+  type RoomDevelopmentHorizonStatus,
+  type RoomDevelopmentMilestoneKind,
+  type RoomDevelopmentStageStatus,
+} from "../planning/room-development";
+import type { RoomDevelopmentStageId } from "../planning/room-plan";
+import {
+  type RoomPlanProjectionUsabilityStatus,
+  usableRoomPlanProjection,
+} from "../planning/room-plan-projection";
 import { runtimeBuildSha } from "../runtime/build-info";
 import type { RuntimeSupervisorTrace } from "../runtime/supervisor";
+import { defensiveRampartTargetHits } from "../systems/defense/readiness";
+import { assessMatureLinkService } from "../systems/economy/mature-energy";
 import type { SpatialIndexMetrics } from "../world/spatial-index";
 
 export type PlannerName = "defense" | "spawning" | "construction" | "economy";
@@ -67,26 +88,133 @@ interface CompactRejectionTrace {
   loser: CompactIntentTrace;
 }
 
-interface RoomPlanTraceSummary {
-  roomName: string;
-  planId: string | null;
-  deliverableId: string | null;
-  version: number;
-  horizonRcl: number;
-  generatedAt: number;
-  generatedReason: string;
-  hub: { x: number; y: number };
-  automaticStructures: number;
-  demandStructures: number;
-  roadTiles: number;
-  roadEdges: number;
-  invalidated: boolean;
+interface RoomDevelopmentRequirementTrace {
+  plannedStructureId: string;
+  stageId: RoomDevelopmentStageId;
+  structureType: BuildableStructureConstant;
+  x: number;
+  y: number;
+  minRcl: number;
+  priority: number;
+  strategicWeight: number;
+  underConstruction: boolean;
+  blocked: boolean;
+  blockerReasons: string[];
 }
 
-interface CompactFspmQuality {
+interface RoomDevelopmentStageTrace {
+  id: RoomDevelopmentStageId;
+  title: string;
+  minRcl: number;
+  stageWeight: number;
+  status: RoomDevelopmentStageStatus;
+  controllerEligible: boolean;
+  prerequisitesSatisfied: boolean;
+  realizationPercentage: number | null;
+  realizedStructures: number;
+  eligibleStructures: number;
+  missingStructures: number;
+  blockedStructures: number;
+}
+
+interface RuntimeRoomDevelopmentTrace {
+  source: "runtime_room_development_evaluator";
+  evaluatedAt: number;
+  horizonStatus: RoomDevelopmentHorizonStatus;
+  validationIssues: string[];
+  activeStageId: RoomDevelopmentStageId | null;
+  nextStageId: RoomDevelopmentStageId | null;
+  realizationPercentage: number | null;
+  missingStructures: number;
+  blockedStructures: number;
+  stages: RoomDevelopmentStageTrace[];
+  missingCriticalStructures: RoomDevelopmentRequirementTrace[];
+  nextMilestone: {
+    kind: RoomDevelopmentMilestoneKind;
+    stageId: RoomDevelopmentStageId | null;
+    plannedStructureId: string | null;
+    reason: string;
+  };
+}
+
+interface RoomPlanTraceSummary {
+  roomName: string;
+  projectionUsability: {
+    usable: boolean;
+    status: RoomPlanProjectionUsabilityStatus;
+    reason: string;
+  };
+  planId: string | null;
+  deliverableId: string | null;
+  plannerRevision: number | null;
+  projectionRevision: number | null;
+  projectionFingerprint: string | null;
+  version: number | null;
+  horizonRcl: number | null;
+  generatedAt: number | null;
+  generatedReason: string | null;
+  hub: { x: number; y: number } | null;
+  automaticStructures: number | null;
+  demandStructures: number | null;
+  roadTiles: number | null;
+  roadEdges: number | null;
+  invalidated: boolean;
+  controllerLevel: number | null;
+  horizonStatus: RoomDevelopmentHorizonStatus | null;
+  activeStageId: RoomDevelopmentStageId | null;
+  nextStageId: RoomDevelopmentStageId | null;
+  realizationPercentage: number | null;
+  missingStructures: number | null;
+  blockedStructures: number | null;
+  nextMilestone: {
+    kind: RoomDevelopmentMilestoneKind;
+    reason: string;
+  } | null;
+  development: RuntimeRoomDevelopmentTrace | null;
+  defense: {
+    strategy: string | null;
+    protectedTiles: number | null;
+    perimeterPlanned: number | null;
+    perimeterBuilt: number | null;
+    perimeterAtTarget: number | null;
+    targetHits: number | null;
+    underAttack: boolean;
+    nextMissingTile: { x: number; y: number } | null;
+  };
+  energyTopology: {
+    status: "authorization-debt" | "incomplete" | "fault" | "unavailable";
+    reason: string;
+    sourceLinks: number | null;
+    controllerLinkPlanId: string | null;
+    coreLinkPlanId: string | null;
+  };
+}
+
+interface SettlementProjectionFaultTrace {
+  roomName: string;
+  kind: "room-plan-generation";
+  status: "active" | "superseded";
+  firstTick: number;
+  lastTick: number;
+  attemptCount: number;
+  retryDelayTicks: number;
+  nextRetryTick: number | null;
+  reason: string;
+  remediation: string;
+  retainedPlannerRevision: number | null;
+  targetPlannerRevision: number;
+  retainedProjectionRevision: number | null;
+  retainedProjectionFingerprint: string | null;
+  resolvedAtTick: number | null;
+  supersededByRevision: number | null;
+  supersededByFingerprint: string | null;
+}
+
+interface CompactOperationalHealth {
   score: number;
-  state: FspmQuality["state"];
-  trend: FspmQuality["trend"];
+  state: FspmOperationalHealth["state"];
+  trend: FspmOperationalHealth["trend"];
+  measuredAt: number;
   evidence: string[];
 }
 
@@ -94,7 +222,7 @@ interface CompactFspmRecord {
   id: string;
   title: string;
   status: FspmStatus;
-  quality?: CompactFspmQuality;
+  operationalHealth?: CompactOperationalHealth;
 }
 
 interface CompactPortfolioP3 {
@@ -107,7 +235,8 @@ interface CompactPortfolioP3 {
   temporalBasis: "game_tick";
   startTick: number;
   status: FspmStatus;
-  quality?: CompactFspmQuality;
+  operationalHealth?: CompactOperationalHealth;
+  pqi?: FspmP3Pqi;
 }
 
 interface CompactRequirement extends CompactFspmRecord {
@@ -141,6 +270,7 @@ interface CompactDeliverable extends CompactFspmRecord {
   expectedSiblingWeightBasisPoints: number;
   weightStatus: "valid" | "invalid";
   taskWeightBasisPoints: number;
+  dqi?: FspmDeliverableQi;
   receiptValidation?: ColonyDeliverable["receiptValidation"];
   servicePrincipalAcceptance?: ColonyDeliverable["servicePrincipalAcceptance"];
   receiptContractStatus: "valid" | "invalid";
@@ -165,7 +295,7 @@ interface CompactTask extends CompactFspmRecord {
   qualityMetric: string;
   kpiMetric: ColonyTask["kpiMetric"];
   procedures: Array<{ id: string; procedureKey: string; title: string }>;
-  qi?: ColonyTask["qi"];
+  qi?: FspmTaskQi;
   recentActivities: FspmActivityKpiSample[];
 }
 
@@ -243,8 +373,8 @@ interface FspmTraceSummary {
     valid: boolean;
     executionEligible: boolean;
   } | null;
-  p3History: FspmQualitySample[];
-  contractHistory: FspmQualitySample[];
+  p3OperationalHealthHistory: FspmOperationalHealthSample[];
+  contractOperationalHealthHistory: FspmOperationalHealthSample[];
   requirements: CompactRequirement[];
   deliverables: CompactDeliverable[];
   tasks: CompactTask[];
@@ -308,7 +438,10 @@ export interface TickObservabilityTrace {
       segmentWritten: boolean;
     } | null;
   };
-  settlement: { plans: RoomPlanTraceSummary[] };
+  settlement: {
+    plans: RoomPlanTraceSummary[];
+    faults: SettlementProjectionFaultTrace[];
+  };
   fspm: {
     rootP3: CompactPortfolioP3 | null;
     integrity: FspmIntegritySummary;
@@ -423,32 +556,19 @@ function hasCompactFspmRecordShape(value: unknown): value is {
   id: string;
   title: string;
   status: FspmStatus;
-  quality?: FspmQuality;
+  operationalHealth?: FspmOperationalHealth;
 } {
   const record = jsonRecord(value);
   if (!record) return false;
-  const quality = record.quality;
-  const qualityRecord = quality === undefined ? null : jsonRecord(quality);
-  const qualityValid =
-    quality === undefined ||
-    (qualityRecord !== null &&
-      typeof qualityRecord.score === "number" &&
-      Number.isFinite(qualityRecord.score) &&
-      (qualityRecord.state === "healthy" ||
-        qualityRecord.state === "watch" ||
-        qualityRecord.state === "degraded") &&
-      (qualityRecord.trend === "new" ||
-        qualityRecord.trend === "improving" ||
-        qualityRecord.trend === "stable" ||
-        qualityRecord.trend === "declining") &&
-      Array.isArray(qualityRecord.evidence) &&
-      qualityRecord.evidence.every((entry) => typeof entry === "string"));
+  const operationalHealthValid =
+    record.operationalHealth === undefined ||
+    compactOperationalHealth(record.operationalHealth) !== null;
 
   return (
     typeof record.id === "string" &&
     typeof record.title === "string" &&
     isFspmStatus(record.status) &&
-    qualityValid
+    operationalHealthValid
   );
 }
 
@@ -584,26 +704,244 @@ function hasCompactReceiptDecisionShape(
   );
 }
 
-function compactTaskQi(value: unknown): NonNullable<ColonyTask["qi"]> | null {
+function isEqvmCoverageStatus(value: unknown): value is FspmEqvmCoverageStatus {
+  return (
+    value === "unavailable" ||
+    value === "partial" ||
+    value === "complete" ||
+    value === "stale" ||
+    value === "invalid"
+  );
+}
+
+function stringArray(value: unknown): string[] | null {
+  return Array.isArray(value) &&
+    value.every((entry) => typeof entry === "string")
+    ? [...value]
+    : null;
+}
+
+function compactWeightedCoverage(
+  value: unknown,
+): FspmWeightedEqvmCoverage | null {
   const record = jsonRecord(value);
+  const missingIds = stringArray(record?.missingIds);
+  const staleIds = stringArray(record?.staleIds);
+  const invalidIds = stringArray(record?.invalidIds);
+  const evidence = stringArray(record?.evidence);
   return record &&
-    isFiniteNumber(record.score) &&
-    isFiniteNumber(record.measuredAt) &&
-    isFiniteNumber(record.ratedActivities) &&
-    isFiniteNumber(record.totalActivities) &&
-    isFiniteNumber(record.exceptional) &&
-    isFiniteNumber(record.satisfactory) &&
-    isFiniteNumber(record.unsatisfactory)
+    isEqvmCoverageStatus(record.status) &&
+    isFiniteNumber(record.expectedWeightBasisPoints) &&
+    isFiniteNumber(record.coveredWeightBasisPoints) &&
+    missingIds &&
+    staleIds &&
+    invalidIds &&
+    evidence
     ? {
-        score: record.score,
-        measuredAt: record.measuredAt,
-        ratedActivities: record.ratedActivities,
-        totalActivities: record.totalActivities,
-        exceptional: record.exceptional,
-        satisfactory: record.satisfactory,
-        unsatisfactory: record.unsatisfactory,
+        status: record.status,
+        expectedWeightBasisPoints: record.expectedWeightBasisPoints,
+        coveredWeightBasisPoints: record.coveredWeightBasisPoints,
+        missingIds,
+        staleIds,
+        invalidIds,
+        evidence,
       }
     : null;
+}
+
+function compactEqvmPolicyAuthorization(
+  value: unknown,
+): FspmEqvmPolicyAuthorization | null {
+  const record = jsonRecord(value);
+  if (
+    record?.status === "unapproved" &&
+    typeof record.authorizationDebt === "string" &&
+    record.authorizationDebt.trim().length > 0
+  ) {
+    return {
+      status: "unapproved",
+      authorizationDebt: record.authorizationDebt,
+    };
+  }
+  // Approval-shaped nested telemetry is not authority. Until a governed EQVM
+  // approval ledger exists and is resolved here, every approved claim is
+  // omitted from the trusted trace.
+  return null;
+}
+
+function compactCanonicalEqvmRollupState(
+  score: unknown,
+  coverage: FspmWeightedEqvmCoverage,
+  policyAuthorization: FspmEqvmPolicyAuthorization,
+): FspmCanonicalEqvmRollupState | null {
+  return policyAuthorization.status === "unapproved" &&
+    score === null &&
+    coverage.status !== "complete"
+    ? {
+        score: null,
+        coverage: {
+          ...coverage,
+          status: coverage.status as Exclude<
+            FspmEqvmCoverageStatus,
+            "complete"
+          >,
+        },
+        policyAuthorization,
+      }
+    : null;
+}
+
+function compactDeliverableQi(value: unknown): FspmDeliverableQi | null {
+  const record = jsonRecord(value);
+  const measuredAt =
+    Number.isSafeInteger(record?.measuredAt) &&
+    (record?.measuredAt as number) >= 0
+      ? (record?.measuredAt as number)
+      : null;
+  const coverage = compactWeightedCoverage(record?.coverage);
+  const policyAuthorization = compactEqvmPolicyAuthorization(
+    record?.policyAuthorization,
+  );
+  const state =
+    coverage && policyAuthorization
+      ? compactCanonicalEqvmRollupState(
+          record?.score,
+          coverage,
+          policyAuthorization,
+        )
+      : null;
+  return record &&
+    measuredAt !== null &&
+    record.activityWeightPolicyId ===
+      "eqvm:activity-weight:equal-terminal-samples:v1" &&
+    Number.isSafeInteger(record.taskWeightBasisPoints) &&
+    (record.taskWeightBasisPoints as number) >= 0 &&
+    state
+    ? {
+        ...state,
+        measuredAt,
+        activityWeightPolicyId: record.activityWeightPolicyId,
+        taskWeightBasisPoints: record.taskWeightBasisPoints as number,
+      }
+    : null;
+}
+
+function compactP3Pqi(value: unknown): FspmP3Pqi | null {
+  const record = jsonRecord(value);
+  const measuredAt =
+    Number.isSafeInteger(record?.measuredAt) &&
+    (record?.measuredAt as number) >= 0
+      ? (record?.measuredAt as number)
+      : null;
+  const coverage = compactWeightedCoverage(record?.coverage);
+  const policyAuthorization = compactEqvmPolicyAuthorization(
+    record?.policyAuthorization,
+  );
+  const state =
+    coverage && policyAuthorization
+      ? compactCanonicalEqvmRollupState(
+          record?.score,
+          coverage,
+          policyAuthorization,
+        )
+      : null;
+  return record &&
+    measuredAt !== null &&
+    record.activityWeightPolicyId ===
+      "eqvm:activity-weight:equal-terminal-samples:v1" &&
+    Number.isSafeInteger(record.deliverableWeightBasisPoints) &&
+    (record.deliverableWeightBasisPoints as number) >= 0 &&
+    state
+    ? {
+        ...state,
+        measuredAt,
+        activityWeightPolicyId: record.activityWeightPolicyId,
+        deliverableWeightBasisPoints:
+          record.deliverableWeightBasisPoints as number,
+      }
+    : null;
+}
+
+function compactTaskQi(value: unknown): FspmTaskQi | null {
+  const record = jsonRecord(value);
+  const evidence = stringArray(record?.evidence);
+  const policyAuthorization = compactEqvmPolicyAuthorization(
+    record?.policyAuthorization,
+  );
+  const coherentAuthorizationState =
+    policyAuthorization?.status === "unapproved" &&
+    record?.configurationClass === "implementation_research_configuration" &&
+    record.score === null &&
+    record.status === "unavailable" &&
+    record.unavailabilityReason === "activity_weight_policy_unapproved";
+  if (
+    !record ||
+    !coherentAuthorizationState ||
+    !isEqvmCoverageStatus(record.status) ||
+    !Number.isSafeInteger(record.measuredAt) ||
+    (record.measuredAt as number) < 0 ||
+    record.activityWeightPolicyId !==
+      "eqvm:activity-weight:equal-terminal-samples:v1" ||
+    record.activityWeightModel !== "equal_weight" ||
+    record.frameworkReferenceSha !== FSPM_GOVERNANCE_SHA ||
+    policyAuthorization?.status !== "unapproved" ||
+    !Number.isSafeInteger(record.evidenceWindowTicks) ||
+    record.evidenceWindowTicks !== 1_500 ||
+    !Number.isSafeInteger(record.ratedActivities) ||
+    (record.ratedActivities as number) < 0 ||
+    !Number.isSafeInteger(record.totalActivities) ||
+    (record.totalActivities as number) < 0 ||
+    !Number.isSafeInteger(record.freshActivities) ||
+    (record.freshActivities as number) < 0 ||
+    !Number.isSafeInteger(record.staleActivities) ||
+    (record.staleActivities as number) < 0 ||
+    !Number.isSafeInteger(record.unratedActivities) ||
+    (record.unratedActivities as number) < 0 ||
+    !Number.isSafeInteger(record.invalidActivities) ||
+    (record.invalidActivities as number) < 0 ||
+    !Number.isSafeInteger(record.exceptional) ||
+    (record.exceptional as number) < 0 ||
+    !Number.isSafeInteger(record.satisfactory) ||
+    (record.satisfactory as number) < 0 ||
+    !Number.isSafeInteger(record.marginal) ||
+    (record.marginal as number) < 0 ||
+    !Number.isSafeInteger(record.unsatisfactory) ||
+    (record.unsatisfactory as number) < 0 ||
+    !Number.isSafeInteger(record.rejected) ||
+    (record.rejected as number) < 0 ||
+    !evidence
+  ) {
+    return null;
+  }
+
+  const summary = {
+    measuredAt: record.measuredAt as number,
+    activityWeightPolicyId:
+      "eqvm:activity-weight:equal-terminal-samples:v1" as const,
+    activityWeightModel: "equal_weight" as const,
+    frameworkReferenceSha: record.frameworkReferenceSha,
+    evidenceWindowTicks: record.evidenceWindowTicks as number,
+    ratedActivities: record.ratedActivities as number,
+    totalActivities: record.totalActivities as number,
+    freshActivities: record.freshActivities as number,
+    staleActivities: record.staleActivities as number,
+    unratedActivities: record.unratedActivities as number,
+    invalidActivities: record.invalidActivities as number,
+    exceptional: record.exceptional as number,
+    satisfactory: record.satisfactory as number,
+    marginal: record.marginal as number,
+    unsatisfactory: record.unsatisfactory as number,
+    rejected: record.rejected as number,
+    evidence,
+  };
+  return {
+    ...summary,
+    score: null,
+    status: "unavailable",
+    configurationClass: "implementation_research_configuration",
+    policyAuthorization,
+    unavailabilityReason: "activity_weight_policy_unapproved",
+  };
 }
 
 function compactActivityKpiSample(
@@ -636,10 +974,15 @@ function compactActivityKpiSample(
     typeof record.actor !== "string" ||
     (record.rating !== "exceptional" &&
       record.rating !== "satisfactory" &&
+      record.rating !== "marginal" &&
       record.rating !== "unsatisfactory" &&
-      record.rating !== "in_progress") ||
+      record.rating !== "rejected") ||
     (record.value !== null && !isFiniteNumber(record.value)) ||
     typeof record.evidence !== "string" ||
+    record.source !== "terminal_activity_kpi" ||
+    !isFiniteNumber(record.activityCompletedAtTick) ||
+    record.activityWeightPolicyId !==
+      "eqvm:activity-weight:equal-terminal-samples:v1" ||
     compactOutcome === null
   ) {
     return null;
@@ -652,11 +995,16 @@ function compactActivityKpiSample(
     rating: record.rating,
     value: record.value,
     evidence: record.evidence,
+    source: record.source,
+    activityCompletedAtTick: record.activityCompletedAtTick,
+    activityWeightPolicyId: record.activityWeightPolicyId,
     ...(compactOutcome ? { outcome: compactOutcome } : {}),
   };
 }
 
-function compactQualitySample(value: unknown): FspmQualitySample | null {
+function compactOperationalHealthSample(
+  value: unknown,
+): FspmOperationalHealthSample | null {
   const record = jsonRecord(value);
   return record &&
     isFiniteNumber(record.tick) &&
@@ -673,27 +1021,14 @@ function hasCompactPortfolioShape(
 ): value is Parameters<typeof compactPortfolioP3>[0] {
   const record = jsonRecord(value);
   if (!record || !hasFspmPortfolioP3Shape(value)) return false;
-  const quality = record.quality;
-  const qualityRecord = quality === undefined ? null : jsonRecord(quality);
-  const qualityValid =
-    quality === undefined ||
-    (qualityRecord !== null &&
-      typeof qualityRecord.score === "number" &&
-      Number.isFinite(qualityRecord.score) &&
-      (qualityRecord.state === "healthy" ||
-        qualityRecord.state === "watch" ||
-        qualityRecord.state === "degraded") &&
-      (qualityRecord.trend === "new" ||
-        qualityRecord.trend === "improving" ||
-        qualityRecord.trend === "stable" ||
-        qualityRecord.trend === "declining") &&
-      Array.isArray(qualityRecord.evidence) &&
-      qualityRecord.evidence.every((entry) => typeof entry === "string"));
+  const operationalHealthValid =
+    record.operationalHealth === undefined ||
+    compactOperationalHealth(record.operationalHealth) !== null;
 
   return (
     hasFspmPortfolioP3Shape(value) &&
     isFspmStatus(record.status) &&
-    qualityValid
+    operationalHealthValid
   );
 }
 
@@ -768,6 +1103,8 @@ function actorOf(intent: Intent): string {
       return `room:${intent.roomName}@${intent.x},${intent.y}`;
     case "towerAttack":
       return `tower:${intent.towerId}`;
+    case "linkTransfer":
+      return `link:${intent.linkId}`;
     default:
       return `creep:${intent.creepName}`;
   }
@@ -796,54 +1133,256 @@ function compactIntent(
   };
 }
 
+const DEVELOPMENT_TRACE_REQUIREMENT_LIMIT = 16;
+
 function roomPlanSummaries(): RoomPlanTraceSummary[] {
   return Object.values(Memory.colonies)
-    .flatMap((colony) => {
-      const plan = colony.roomPlan;
-      if (!plan) return [];
-      return [
-        {
-          roomName: plan.roomName,
-          planId: plan.planId ?? null,
-          deliverableId: plan.deliverableId ?? null,
-          version: plan.version,
-          horizonRcl: plan.horizonRcl,
-          generatedAt: plan.generatedAt,
-          generatedReason: plan.generatedReason,
-          hub: { ...plan.anchors.hub },
-          automaticStructures: plan.structures.filter(
-            (structure) => structure.activation === "automatic",
-          ).length,
-          demandStructures: plan.structures.filter(
-            (structure) => structure.activation === "demand",
-          ).length,
-          roadTiles: plan.roads.length,
-          roadEdges: plan.roadGraph.edges.length,
-          invalidated: plan.invalidatedAt !== undefined,
+    .map((colony) => {
+      const retainedPlan = colony.roomPlan;
+      const projection = usableRoomPlanProjection(colony, colony.roomName);
+      const plan = projection.plan;
+      const room = Game.rooms?.[colony.roomName];
+      const development =
+        room && plan ? evaluateRoomDevelopmentForRoom(room, plan) : null;
+      const energyTopology = plan ? assessMatureLinkService(plan) : null;
+      const controllerLevel = room?.controller?.level ?? null;
+      const hostiles = room?.find(FIND_HOSTILE_CREEPS) ?? [];
+      const targetHits =
+        !plan || controllerLevel === null
+          ? null
+          : defensiveRampartTargetHits(controllerLevel, hostiles.length > 0);
+      const rampartsByPosition =
+        room && plan
+          ? new Map(
+              room
+                .find(FIND_MY_STRUCTURES)
+                .filter(
+                  (structure): structure is StructureRampart =>
+                    structure.structureType === STRUCTURE_RAMPART,
+                )
+                .map((rampart) => [
+                  `${rampart.pos.x}:${rampart.pos.y}`,
+                  rampart,
+                ]),
+            )
+          : null;
+      const perimeterRamparts =
+        rampartsByPosition && plan
+          ? plan.defense.perimeter.flatMap((point) => {
+              const rampart = rampartsByPosition.get(`${point.x}:${point.y}`);
+              return rampart ? [rampart] : [];
+            })
+          : null;
+      const nextMissingPerimeterTile =
+        rampartsByPosition && plan
+          ? (plan.defense.perimeter.find(
+              (point) => !rampartsByPosition.has(`${point.x}:${point.y}`),
+            ) ?? null)
+          : null;
+      const developmentTrace: RuntimeRoomDevelopmentTrace | null = development
+        ? {
+            source: "runtime_room_development_evaluator",
+            evaluatedAt: Game.time,
+            horizonStatus: development.horizonStatus,
+            validationIssues: development.validationIssues.slice(0, 12),
+            activeStageId: development.activeStageId,
+            nextStageId: development.nextStageId,
+            realizationPercentage:
+              development.overallEligibleRealizationPercentage,
+            missingStructures: development.missingStructures.length,
+            blockedStructures: development.blockedStructures.length,
+            stages: development.stages.map((stage) => ({
+              id: stage.id,
+              title: stage.title,
+              minRcl: stage.minRcl,
+              stageWeight: stage.stageWeight,
+              status: stage.status,
+              controllerEligible: stage.controllerEligible,
+              prerequisitesSatisfied: stage.prerequisitesSatisfied,
+              realizationPercentage: stage.realizationPercentage,
+              realizedStructures: stage.realizedStructures.length,
+              eligibleStructures: stage.eligibleStructures.length,
+              missingStructures: stage.missingStructures.length,
+              blockedStructures: stage.blockedStructures.length,
+            })),
+            missingCriticalStructures: development.missingStructures
+              .slice(0, DEVELOPMENT_TRACE_REQUIREMENT_LIMIT)
+              .map((structure) => ({
+                plannedStructureId: structure.plannedStructureId,
+                stageId: structure.stageId,
+                structureType: structure.structureType,
+                x: structure.x,
+                y: structure.y,
+                minRcl: structure.minRcl,
+                priority: structure.priority,
+                strategicWeight: structure.strategicWeight,
+                underConstruction: structure.underConstruction,
+                blocked: structure.blocked,
+                blockerReasons: structure.blockerReasons.slice(0, 4),
+              })),
+            nextMilestone: {
+              kind: development.nextMilestone.kind,
+              stageId: development.nextMilestone.stageId,
+              plannedStructureId: development.nextMilestone.plannedStructureId,
+              reason: development.nextMilestone.reason,
+            },
+          }
+        : null;
+      return {
+        roomName: colony.roomName,
+        projectionUsability: {
+          usable: projection.usable,
+          status: projection.status,
+          reason: projection.reason,
         },
-      ];
+        planId: retainedPlan?.planId ?? null,
+        deliverableId: retainedPlan?.deliverableId ?? null,
+        plannerRevision: retainedPlan?.plannerRevision ?? null,
+        projectionRevision: retainedPlan?.projectionRevision ?? null,
+        projectionFingerprint: retainedPlan?.projectionFingerprint ?? null,
+        version: retainedPlan?.version ?? null,
+        horizonRcl: retainedPlan?.horizonRcl ?? null,
+        generatedAt: retainedPlan?.generatedAt ?? null,
+        generatedReason: retainedPlan?.generatedReason ?? null,
+        hub: plan ? { ...plan.anchors.hub } : null,
+        automaticStructures: plan
+          ? plan.structures.filter(
+              (structure) => structure.activation === "automatic",
+            ).length
+          : null,
+        demandStructures: plan
+          ? plan.structures.filter(
+              (structure) => structure.activation === "demand",
+            ).length
+          : null,
+        roadTiles: plan?.roads.length ?? null,
+        roadEdges: plan?.roadGraph.edges.length ?? null,
+        invalidated: retainedPlan?.invalidatedAt !== undefined,
+        controllerLevel,
+        horizonStatus: development?.horizonStatus ?? null,
+        activeStageId: development?.activeStageId ?? null,
+        nextStageId: development?.nextStageId ?? null,
+        realizationPercentage:
+          development?.overallEligibleRealizationPercentage ?? null,
+        missingStructures: development?.missingStructures.length ?? null,
+        blockedStructures: development?.blockedStructures.length ?? null,
+        nextMilestone: development
+          ? {
+              kind: development.nextMilestone.kind,
+              reason: development.nextMilestone.reason,
+            }
+          : null,
+        development: developmentTrace,
+        defense: {
+          strategy: plan?.defense.strategy ?? null,
+          protectedTiles: plan?.defense.protectedTiles.length ?? null,
+          perimeterPlanned: plan?.defense.perimeter.length ?? null,
+          perimeterBuilt: perimeterRamparts?.length ?? null,
+          perimeterAtTarget:
+            perimeterRamparts && targetHits !== null
+              ? perimeterRamparts.filter(
+                  (rampart) => rampart.hits >= targetHits,
+                ).length
+              : null,
+          targetHits,
+          underAttack: hostiles.length > 0,
+          nextMissingTile: nextMissingPerimeterTile
+            ? { ...nextMissingPerimeterTile }
+            : null,
+        },
+        energyTopology: energyTopology
+          ? {
+              status: energyTopology.status,
+              reason: energyTopology.reason,
+              sourceLinks: energyTopology.roles?.sources.length ?? 0,
+              controllerLinkPlanId:
+                energyTopology.roles?.controllerPlanId ?? null,
+              coreLinkPlanId: energyTopology.roles?.corePlanId ?? null,
+            }
+          : {
+              status: "unavailable" as const,
+              reason: `Room-plan projection ${projection.status}: ${projection.reason}`,
+              sourceLinks: null,
+              controllerLinkPlanId: null,
+              coreLinkPlanId: null,
+            },
+      };
     })
     .sort((a, b) => a.roomName.localeCompare(b.roomName));
 }
 
-const compactQuality = (quality: FspmQuality): CompactFspmQuality => ({
-  score: quality.score,
-  state: quality.state,
-  trend: quality.trend,
-  evidence: [...quality.evidence],
-});
+function settlementProjectionFaultSummaries(): SettlementProjectionFaultTrace[] {
+  return Object.values(Memory.colonies)
+    .flatMap((colony) => {
+      const fault = colony.settlementProjectionFault;
+      return fault
+        ? [
+            {
+              roomName: colony.roomName,
+              kind: fault.kind,
+              status: fault.status,
+              firstTick: fault.firstTick,
+              lastTick: fault.lastTick,
+              attemptCount: fault.attemptCount,
+              retryDelayTicks: fault.retryDelayTicks,
+              nextRetryTick: fault.nextRetryTick,
+              reason: fault.reason,
+              remediation: fault.remediation,
+              retainedPlannerRevision: fault.retainedPlannerRevision,
+              targetPlannerRevision: fault.targetPlannerRevision,
+              retainedProjectionRevision: fault.retainedProjectionRevision,
+              retainedProjectionFingerprint:
+                fault.retainedProjectionFingerprint,
+              resolvedAtTick: fault.resolvedAtTick ?? null,
+              supersededByRevision: fault.supersededByRevision ?? null,
+              supersededByFingerprint: fault.supersededByFingerprint ?? null,
+            },
+          ]
+        : [];
+    })
+    .sort((left, right) => left.roomName.localeCompare(right.roomName));
+}
+
+const compactOperationalHealth = (
+  value: unknown,
+): CompactOperationalHealth | null => {
+  const record = jsonRecord(value);
+  const evidence = stringArray(record?.evidence);
+  return record &&
+    isFiniteNumber(record.score) &&
+    (record.state === "healthy" ||
+      record.state === "watch" ||
+      record.state === "degraded") &&
+    (record.trend === "new" ||
+      record.trend === "improving" ||
+      record.trend === "stable" ||
+      record.trend === "declining") &&
+    isFiniteNumber(record.measuredAt) &&
+    evidence
+    ? {
+        score: record.score,
+        state: record.state,
+        trend: record.trend,
+        measuredAt: record.measuredAt,
+        evidence,
+      }
+    : null;
+};
 
 const compactRecord = (record: {
   id: string;
   title: string;
   status: FspmStatus;
-  quality?: FspmQuality;
-}): CompactFspmRecord => ({
-  id: record.id,
-  title: record.title,
-  status: record.status,
-  ...(record.quality ? { quality: compactQuality(record.quality) } : {}),
-});
+  operationalHealth?: FspmOperationalHealth;
+}): CompactFspmRecord => {
+  const operationalHealth = compactOperationalHealth(record.operationalHealth);
+  return {
+    id: record.id,
+    title: record.title,
+    status: record.status,
+    ...(operationalHealth ? { operationalHealth } : {}),
+  };
+};
 
 const compactPortfolioP3 = (record: {
   id: string;
@@ -855,19 +1394,25 @@ const compactPortfolioP3 = (record: {
   temporalBasis: "game_tick";
   startTick: number;
   status: FspmStatus;
-  quality?: FspmQuality;
-}): CompactPortfolioP3 => ({
-  id: record.id,
-  type: record.type,
-  subType: record.subType,
-  name: record.name,
-  description: record.description,
-  parentP3Id: record.parentP3Id,
-  temporalBasis: record.temporalBasis,
-  startTick: record.startTick,
-  status: record.status,
-  ...(record.quality ? { quality: compactQuality(record.quality) } : {}),
-});
+  operationalHealth?: FspmOperationalHealth;
+  pqi?: FspmP3Pqi;
+}): CompactPortfolioP3 => {
+  const operationalHealth = compactOperationalHealth(record.operationalHealth);
+  const pqi = compactP3Pqi(record.pqi);
+  return {
+    id: record.id,
+    type: record.type,
+    subType: record.subType,
+    name: record.name,
+    description: record.description,
+    parentP3Id: record.parentP3Id,
+    temporalBasis: record.temporalBasis,
+    startTick: record.startTick,
+    status: record.status,
+    ...(operationalHealth ? { operationalHealth } : {}),
+    ...(pqi ? { pqi } : {}),
+  };
+};
 
 export function activityTraceDisposition(
   activity: FspmActivityRecord,
@@ -904,7 +1449,9 @@ const compactActivity = (value: unknown): CompactActivity | null => {
     (record.kpiScore !== undefined &&
       record.kpiScore !== "exceptional" &&
       record.kpiScore !== "satisfactory" &&
-      record.kpiScore !== "unsatisfactory") ||
+      record.kpiScore !== "marginal" &&
+      record.kpiScore !== "unsatisfactory" &&
+      record.kpiScore !== "rejected") ||
     (record.holdReason !== undefined &&
       typeof record.holdReason !== "string") ||
     (record.currentTargetKey !== undefined &&
@@ -1103,7 +1650,8 @@ function fspmSummaries(empireRootAuthoritative: boolean): {
       const receiptRegistry = jsonRecord(portfolio.deliverableReceipts) ?? {};
       const receiptDecisionRegistry =
         jsonRecord(portfolio.deliverableReceiptDecisions) ?? {};
-      const qualityHistoryRegistry = jsonRecord(portfolio.qualityHistory) ?? {};
+      const operationalHealthHistoryRegistry =
+        jsonRecord(portfolio.operationalHealthHistory) ?? {};
       const governedRequirements = Object.values(requirementRegistry).filter(
         hasCompactRequirementShape,
       );
@@ -1233,11 +1781,13 @@ function fspmSummaries(empireRootAuthoritative: boolean): {
           receiptRegistryErrors.length === 0 &&
           receiptDecisionRegistryErrors.length === 0,
       };
-      const qualityHistoryFor = (recordId: string): FspmQualitySample[] => {
-        const samples = qualityHistoryRegistry[recordId];
+      const operationalHealthHistoryFor = (
+        recordId: string,
+      ): FspmOperationalHealthSample[] => {
+        const samples = operationalHealthHistoryRegistry[recordId];
         return Array.isArray(samples)
           ? samples.slice(-12).flatMap((sample) => {
-              const compact = compactQualitySample(sample);
+              const compact = compactOperationalHealthSample(sample);
               return compact ? [compact] : [];
             })
           : [];
@@ -1306,10 +1856,12 @@ function fspmSummaries(empireRootAuthoritative: boolean): {
                   governedTasks.every((record) => record.status === "active"),
               }
             : null,
-          p3History: compactP3 ? qualityHistoryFor(compactP3.id) : [],
-          contractHistory:
+          p3OperationalHealthHistory: compactP3
+            ? operationalHealthHistoryFor(compactP3.id)
+            : [],
+          contractOperationalHealthHistory:
             portfolio.contract && hasCompactFspmRecordShape(portfolio.contract)
-              ? qualityHistoryFor(portfolio.contract.id)
+              ? operationalHealthHistoryFor(portfolio.contract.id)
               : [],
           requirements: governedRequirements
             .flatMap((record) =>
@@ -1356,6 +1908,7 @@ function fspmSummaries(empireRootAuthoritative: boolean): {
           deliverables: governedDeliverables
             .flatMap((record) => {
               if (!record) return [];
+              const dqi = compactDeliverableQi(record.dqi);
               const receiptValidation = compactReceiptValidation(
                 record.receiptValidation,
               );
@@ -1386,6 +1939,7 @@ function fspmSummaries(empireRootAuthoritative: boolean): {
                       : ("invalid" as const),
                   taskWeightBasisPoints:
                     taskWeightByDeliverable.get(record.id) ?? 0,
+                  ...(dqi ? { dqi } : {}),
                   ...(receiptValidation ? { receiptValidation } : {}),
                   ...(acceptancePolicy
                     ? { servicePrincipalAcceptance: acceptancePolicy }
@@ -1559,7 +2113,10 @@ export function publishTickTrace(
       measurementBoundary: "before_segment_fit_and_write",
       previousTickFinal,
     },
-    settlement: { plans: roomPlanSummaries() },
+    settlement: {
+      plans: roomPlanSummaries(),
+      faults: settlementProjectionFaultSummaries(),
+    },
     fspm: {
       rootP3: empireAuthority.rootP3,
       integrity: integritySummary([...empireAuthority.issues, ...fspm.issues]),

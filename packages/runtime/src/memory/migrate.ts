@@ -3,6 +3,8 @@ import {
   createEmpirePortfolioP3,
   EMPIRE_PORTFOLIO_ID,
 } from "../planning/fspm";
+import { validateRoomDevelopmentPlan } from "../planning/room-development";
+import { migrateRoomPlanProjection } from "../planning/room-plan-projection";
 import { createRuntimeSupervisorMemory } from "../runtime/supervisor";
 import { MEMORY_VERSION } from "./schema";
 
@@ -213,6 +215,64 @@ export function migrateMemory(): void {
       delete portfolio.governanceBinding;
     }
     memory.version = 8;
+  }
+
+  if (memory.version === 8) {
+    for (const colony of Object.values(memory.colonies ?? {})) {
+      if (!colony.roomPlan) continue;
+      // RoomPlan is a mutable execution projection. This migration adds only
+      // operational epoch identity and leaves Deliverable trace linkage and
+      // every authoritative FSPM record untouched. Incomplete projections stay
+      // pre-epoch so the settlement planner regenerates them from room evidence;
+      // migration must never self-fingerprint a truncated mature horizon.
+      let issues: string[];
+      try {
+        issues = validateRoomDevelopmentPlan(colony.roomPlan);
+      } catch {
+        continue;
+      }
+      if (issues.length === 0) {
+        colony.roomPlan = migrateRoomPlanProjection(colony.roomPlan);
+      }
+    }
+    memory.version = 9;
+  }
+
+  if (memory.version === 9) {
+    for (const colony of Object.values(memory.colonies ?? {})) {
+      const portfolio = colony.fspm;
+      if (!portfolio) continue;
+
+      // v9 room-state/readiness percentages were mislabeled as canonical FSPM
+      // quality. They cannot be promoted into Activity KPI evidence. Preserve
+      // all authority and receipt ledgers, but restart derived telemetry under
+      // explicit operational-health and EQVM contracts.
+      portfolio.qualityHistory = {};
+      portfolio.operationalHealthHistory = {};
+      portfolio.activityKpiHistory = {};
+      portfolio.eqvmResearchTelemetry = {};
+      if (portfolio.p3) {
+        delete portfolio.p3.quality;
+        delete portfolio.p3.operationalHealth;
+        delete portfolio.p3.pqi;
+      }
+      for (const requirement of Object.values(portfolio.requirements)) {
+        if (!requirement) continue;
+        delete requirement.quality;
+        delete requirement.operationalHealth;
+      }
+      for (const deliverable of Object.values(portfolio.deliverables)) {
+        if (!deliverable) continue;
+        delete deliverable.quality;
+        delete deliverable.operationalHealth;
+        delete deliverable.dqi;
+      }
+      for (const task of Object.values(portfolio.tasks)) {
+        if (!task) continue;
+        delete task.qi;
+      }
+    }
+    memory.version = 10;
   }
 
   if (memory.version !== MEMORY_VERSION) {

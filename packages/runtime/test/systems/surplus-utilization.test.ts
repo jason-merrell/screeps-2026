@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Intent } from "../../src/intents/types";
-import type { WorldSnapshot } from "../../src/runtime/context";
 import { activateApprovedColonyGovernance } from "../../src/planning/fspm";
+import {
+  ROOM_DEVELOPMENT_STAGES,
+  type RoomDevelopmentStageId,
+  type RoomPlan,
+  type RoomPlanStructure,
+} from "../../src/planning/room-plan";
+import type { WorldSnapshot } from "../../src/runtime/context";
 import { planSurplusLaborUtilization } from "../../src/systems/economy/surplus-utilization";
+import { currentRoomPlanFixture } from "../fixtures/current-room-plan";
 
 vi.stubGlobal("WORK", "work");
 vi.stubGlobal("CARRY", "carry");
@@ -17,6 +24,120 @@ vi.stubGlobal("STRUCTURE_CONTAINER", "container");
 
 let containerEnergy = 0;
 let secondContainerEnergy = 0;
+
+function requiredStructure(
+  id: string,
+  stage: RoomDevelopmentStageId,
+  structureType: BuildableStructureConstant,
+  x: number,
+  y: number,
+  minRcl: number,
+  phase: RoomPlanStructure["phase"],
+): RoomPlanStructure {
+  return {
+    id,
+    stage,
+    structureType,
+    x,
+    y,
+    minRcl,
+    priority: 1_000 - minRcl,
+    strategicWeight: 5,
+    requiredForStage: true,
+    activation: structureType === "container" ? "demand" : "automatic",
+    reservation: "hard",
+    phase,
+    reason: `${id} current projection fixture`,
+  };
+}
+
+function currentPlan(): RoomPlan {
+  return currentRoomPlanFixture({
+    version: 4,
+    horizonRcl: 8,
+    roomName: "W1N1",
+    generatedAt: 100,
+    generatedReason: "surplus utilization current projection fixture",
+    stages: ROOM_DEVELOPMENT_STAGES.map((stage) => ({
+      ...stage,
+      prerequisiteStageIds: [...stage.prerequisiteStageIds],
+    })),
+    anchors: {
+      spawn: { name: "Spawn1", x: 25, y: 25 },
+      hub: { x: 24, y: 25 },
+      controller: { x: 40, y: 40, service: { x: 39, y: 40 } },
+      sources: [
+        {
+          sourceId: "source-1",
+          x: 9,
+          y: 11,
+          container: { x: 10, y: 11 },
+        },
+        {
+          sourceId: "source-2",
+          x: 19,
+          y: 21,
+          container: { x: 20, y: 21 },
+        },
+      ],
+    },
+    reservations: [],
+    structures: [
+      requiredStructure(
+        "spawn-1",
+        "bootstrap",
+        "spawn",
+        25,
+        25,
+        1,
+        "bootstrap-capacity",
+      ),
+      requiredStructure(
+        "source-container-1",
+        "logistics",
+        "container",
+        10,
+        11,
+        2,
+        "source-logistics",
+      ),
+      requiredStructure(
+        "storage-1",
+        "core-economy",
+        "storage",
+        24,
+        25,
+        4,
+        "core-economy",
+      ),
+      requiredStructure(
+        "terminal-1",
+        "advanced-operations",
+        "terminal",
+        23,
+        25,
+        6,
+        "advanced-operations",
+      ),
+      requiredStructure(
+        "observer-1",
+        "mature-rcl8",
+        "observer",
+        22,
+        25,
+        8,
+        "mature-operations",
+      ),
+    ],
+    roads: [],
+    roadGraph: { nodes: [], edges: [] },
+    defense: {
+      strategy: "terrain-mincut-v1",
+      protectedTiles: [{ x: 25, y: 25 }],
+      perimeter: [],
+    },
+  });
+}
 
 function installWorld(): WorldSnapshot {
   containerEnergy = 0;
@@ -71,20 +192,7 @@ function installWorld(): WorldSnapshot {
         W1N1: {
           roomName: "W1N1",
           discoveredAt: 1,
-          roomPlan: {
-            anchors: {
-              sources: [
-                {
-                  sourceId: "source-1",
-                  container: { x: 10, y: 11 },
-                },
-                {
-                  sourceId: "source-2",
-                  container: { x: 20, y: 21 },
-                },
-              ],
-            },
-          },
+          roomPlan: currentPlan(),
         },
       },
     },

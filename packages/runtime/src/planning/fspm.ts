@@ -33,29 +33,48 @@ export type FspmActivityStatus =
   | "in_progress"
   | "on_hold"
   | "completed";
-export type FspmQualityState = "healthy" | "watch" | "degraded";
-export type FspmQualityTrend = "new" | "improving" | "stable" | "declining";
+export type FspmOperationalHealthState = "healthy" | "watch" | "degraded";
+export type FspmOperationalHealthTrend =
+  | "new"
+  | "improving"
+  | "stable"
+  | "declining";
+/** @deprecated Use FspmOperationalHealthState. */
+export type FspmQualityState = FspmOperationalHealthState;
+/** @deprecated Use FspmOperationalHealthTrend. */
+export type FspmQualityTrend = FspmOperationalHealthTrend;
 export type FspmKpiRating =
   | "exceptional"
   | "satisfactory"
+  | "marginal"
   | "unsatisfactory"
+  | "rejected"
   | "in_progress";
 
 export const EMPIRE_PORTFOLIO_ID = "portfolio:empire:operations";
 
-export interface FspmQuality {
+export interface FspmOperationalHealth {
   score: number;
-  state: FspmQualityState;
-  trend: FspmQualityTrend;
+  state: FspmOperationalHealthState;
+  trend: FspmOperationalHealthTrend;
   measuredAt: number;
   evidence: string[];
 }
 
-export interface FspmQualitySample {
+/**
+ * Legacy type name retained at decoder boundaries. This shape is operational
+ * readiness telemetry, never an Activity-derived FSPM Quality Index.
+ */
+export type FspmQuality = FspmOperationalHealth;
+
+export interface FspmOperationalHealthSample {
   tick: number;
   score: number;
-  state: FspmQualityState;
+  state: FspmOperationalHealthState;
 }
+
+/** @deprecated Use FspmOperationalHealthSample. */
+export type FspmQualitySample = FspmOperationalHealthSample;
 
 export interface FspmTaskKpiRubric {
   metric: string;
@@ -79,6 +98,10 @@ export interface FspmActivityKpiSample {
   rating: FspmKpiRating;
   value: number | null;
   evidence: string;
+  /** Present only for terminal, governed Activity KPI evidence. */
+  source?: "terminal_activity_kpi";
+  activityCompletedAtTick?: number;
+  activityWeightPolicyId?: FspmActivityKpiAggregationPolicy["id"];
   outcome?: {
     metric: string;
     actual: number;
@@ -88,15 +111,172 @@ export interface FspmActivityKpiSample {
   };
 }
 
-export interface FspmTaskQi {
-  score: number;
+/**
+ * Local research configuration for recurring Activity sample aggregation.
+ * It is deliberately not part of approved Task authority: accountable approval
+ * of concrete Activity weights/cohort semantics remains outstanding.
+ */
+interface FspmActivityKpiAggregationPolicyBase {
+  id: "eqvm:activity-weight:equal-terminal-samples:v1";
+  model: "equal_weight";
+  evidenceScope: "terminal_activity_kpi_samples";
+  activityWeightUnits: 1;
+  historyLimit: 24;
+  freshnessWindowTicks: 1_500;
+  frameworkReferenceSha: string;
+  rationale: string;
+}
+
+/**
+ * Evidence that accountable management approved one exact EQVM policy.
+ * A naked `approved` flag is intentionally insufficient: every canonical
+ * quality index must retain who approved which policy, under which authority,
+ * and when.
+ */
+export interface FspmEqvmPolicyApproval {
+  status: "approved";
+  approvalEventId: string;
+  approvalAuthorityOuId: string;
+  accountablePositionId: string;
+  signerPrincipalId: string;
+  approvedAtTick: number;
+  approvedPolicyContentHash: string;
+}
+
+export interface FspmEqvmPolicyAuthorizationDebt {
+  status: "unapproved";
+  authorizationDebt: string;
+}
+
+export type FspmEqvmPolicyAuthorization =
+  | FspmEqvmPolicyApproval
+  | FspmEqvmPolicyAuthorizationDebt;
+
+/**
+ * Research configurations cannot silently acquire canonical authority. An
+ * approved policy is a different, governed configuration with durable approval
+ * provenance.
+ */
+export type FspmActivityKpiAggregationPolicy =
+  FspmActivityKpiAggregationPolicyBase &
+    (
+      | {
+          configurationClass: "implementation_research_configuration";
+          policyAuthorization: FspmEqvmPolicyAuthorizationDebt;
+        }
+      | {
+          configurationClass: "governed_configuration";
+          policyAuthorization: FspmEqvmPolicyApproval;
+        }
+    );
+
+export type FspmEqvmCoverageStatus =
+  | "unavailable"
+  | "partial"
+  | "complete"
+  | "stale"
+  | "invalid";
+
+interface FspmTaskQiEvidenceSummary {
+  score: number | null;
+  status: FspmEqvmCoverageStatus;
   measuredAt: number;
+  activityWeightPolicyId: FspmActivityKpiAggregationPolicy["id"];
+  activityWeightModel: FspmActivityKpiAggregationPolicy["model"];
+  frameworkReferenceSha: string;
+  evidenceWindowTicks: number;
   ratedActivities: number;
   totalActivities: number;
+  freshActivities: number;
+  staleActivities: number;
+  unratedActivities: number;
+  invalidActivities: number;
   exceptional: number;
   satisfactory: number;
+  marginal: number;
   unsatisfactory: number;
+  rejected: number;
+  evidence: string[];
 }
+
+interface FspmApprovedTaskQiBase extends FspmTaskQiEvidenceSummary {
+  configurationClass: "governed_configuration";
+  policyAuthorization: FspmEqvmPolicyApproval;
+  unavailabilityReason?: never;
+}
+
+/**
+ * Canonical Task QI. Its discriminants make an unapproved numeric score or an
+ * approved complete-without-score state unrepresentable in trusted code.
+ */
+export type FspmTaskQi =
+  | (FspmApprovedTaskQiBase & { status: "complete"; score: number })
+  | (FspmApprovedTaskQiBase & {
+      status: Exclude<FspmEqvmCoverageStatus, "complete">;
+      score: null;
+    })
+  | (FspmTaskQiEvidenceSummary & {
+      score: null;
+      status: "unavailable";
+      configurationClass: "implementation_research_configuration";
+      policyAuthorization: FspmEqvmPolicyAuthorizationDebt;
+      unavailabilityReason: "activity_weight_policy_unapproved";
+    });
+
+/** Non-authoritative diagnostic only; never a canonical Task QI. */
+export interface FspmEqvmResearchEstimate extends FspmTaskQiEvidenceSummary {
+  configurationClass: "implementation_research_configuration";
+  policyAuthorization: FspmEqvmPolicyAuthorizationDebt;
+  unavailabilityReason?: never;
+}
+
+export interface FspmWeightedEqvmCoverage {
+  status: FspmEqvmCoverageStatus;
+  expectedWeightBasisPoints: number;
+  coveredWeightBasisPoints: number;
+  missingIds: string[];
+  staleIds: string[];
+  invalidIds: string[];
+  evidence: string[];
+}
+
+export type FspmCanonicalEqvmRollupState =
+  | {
+      score: number;
+      policyAuthorization: FspmEqvmPolicyApproval;
+      coverage: FspmWeightedEqvmCoverage & { status: "complete" };
+    }
+  | {
+      score: null;
+      policyAuthorization: FspmEqvmPolicyApproval;
+      coverage: FspmWeightedEqvmCoverage & {
+        status: Exclude<FspmEqvmCoverageStatus, "complete">;
+      };
+    }
+  | {
+      score: null;
+      policyAuthorization: FspmEqvmPolicyAuthorizationDebt;
+      coverage: FspmWeightedEqvmCoverage & {
+        status: Exclude<FspmEqvmCoverageStatus, "complete">;
+      };
+    };
+
+interface FspmDeliverableQiBase {
+  measuredAt: number;
+  activityWeightPolicyId: FspmActivityKpiAggregationPolicy["id"];
+  taskWeightBasisPoints: number;
+}
+
+export type FspmDeliverableQi = FspmDeliverableQiBase &
+  FspmCanonicalEqvmRollupState;
+
+interface FspmP3PqiBase {
+  measuredAt: number;
+  activityWeightPolicyId: FspmActivityKpiAggregationPolicy["id"];
+  deliverableWeightBasisPoints: number;
+}
+
+export type FspmP3Pqi = FspmP3PqiBase & FspmCanonicalEqvmRollupState;
 
 export interface FspmActivityMetrics {
   inProgressTicks: number;
@@ -120,6 +300,8 @@ export interface FspmActivityRecord {
   qualityMetric: string;
   kpiMetric: FspmTaskKpiRubric;
   kpiScore?: Exclude<FspmKpiRating, "in_progress">;
+  /** Rating reason/evidence retained with the terminal KPI decision. */
+  kpiEvidence?: string;
   createdAt: number;
   updatedAt: number;
   startedAt?: number;
@@ -134,6 +316,9 @@ interface FspmRecordBase {
   status: FspmStatus;
   completionCriterion: string;
   statusReason?: string;
+  /** Room-state readiness signal; explicitly outside the EQVM hierarchy. */
+  operationalHealth?: FspmOperationalHealth;
+  /** Pre-v10 compatibility only; migration removes this synthetic label. */
   quality?: FspmQuality;
   createdAt: number;
   updatedAt: number;
@@ -154,6 +339,11 @@ interface PortfolioP3Base {
   startTick: number;
   status: FspmStatus;
   statusReason: string;
+  /** Room-state readiness signal; explicitly outside the EQVM hierarchy. */
+  operationalHealth?: FspmOperationalHealth;
+  /** Activity -> Task -> Deliverable -> P3 quality rollup. */
+  pqi?: FspmP3Pqi;
+  /** Pre-v10 compatibility only; migration removes this synthetic label. */
   quality?: FspmQuality;
   createdAt: number;
   updatedAt: number;
@@ -305,6 +495,8 @@ export interface ColonyDeliverable extends FspmRecordBase {
   receiptValidation: FspmReceiptValidationContract;
   servicePrincipalAcceptance: FspmServicePrincipalAcceptancePolicy;
   siblingWeightBasisPoints: number;
+  /** EQVM Deliverable Quality Index calculated only from verified Task QI. */
+  dqi?: FspmDeliverableQi;
   parentDeliverableId?: string;
   childDeliverableIds: string[];
 }
@@ -481,8 +673,15 @@ export interface ColonyFspmPortfolio {
   authorityQuarantine?: FspmAuthorityQuarantine[];
   tasks: Record<string, ColonyTask>;
   activities?: Record<string, FspmActivityRecord>;
+  /** Pre-v10 synthetic-quality history retained only for migration/quarantine. */
   qualityHistory?: Record<string, FspmQualitySample[]>;
+  operationalHealthHistory?: Record<string, FspmOperationalHealthSample[]>;
   activityKpiHistory?: Record<string, FspmActivityKpiSample[]>;
+  /**
+   * Non-authoritative diagnostics, segregated from governed Task records and
+   * never consumed by DQI/PQI or execution authorization.
+   */
+  eqvmResearchTelemetry?: Record<string, FspmEqvmResearchEstimate>;
 }
 
 export type FspmAuthorityDenialCode =
@@ -671,6 +870,8 @@ function targetIdOf(intent: Intent): string | undefined {
     case "repair":
     case "towerAttack":
       return String(intent.targetId);
+    case "linkTransfer":
+      return String(intent.targetLinkId);
     case "harvest":
       return String(intent.sourceId);
     case "upgrade":
@@ -756,6 +957,41 @@ function validateIntentScope(
       return denyAuthority(
         "scope_executor_mismatch",
         `tower executor ${intent.towerId} is not an owned tower in governed room ${governedRoom}`,
+      );
+    }
+  }
+
+  if (intent.type === "linkTransfer") {
+    const executor = Game.getObjectById(intent.linkId);
+    const target = Game.getObjectById(intent.targetLinkId);
+    const executorRoom = roomNameOf(executor);
+    const targetRoom = roomNameOf(target);
+    if (!executor || !executorRoom) {
+      return denyAuthority(
+        "scope_executor_missing",
+        `link executor ${intent.linkId} cannot be resolved to governed room ${governedRoom}`,
+      );
+    }
+    if (
+      executorRoom !== governedRoom ||
+      executor.my !== true ||
+      executor.structureType !== STRUCTURE_LINK
+    ) {
+      return denyAuthority(
+        "scope_executor_mismatch",
+        `link executor ${intent.linkId} is not an owned link in governed room ${governedRoom}`,
+      );
+    }
+    if (
+      !target ||
+      !targetRoom ||
+      targetRoom !== governedRoom ||
+      target.my !== true ||
+      target.structureType !== STRUCTURE_LINK
+    ) {
+      return denyAuthority(
+        "scope_target_mismatch",
+        `link target ${intent.targetLinkId} is not an owned link in governed room ${governedRoom}`,
       );
     }
   }
@@ -2866,7 +3102,7 @@ export function activateApprovedColonyGovernance(
           deliverables: {},
           tasks: {},
           activities: existing.activities ?? {},
-          qualityHistory: existing.qualityHistory ?? {},
+          operationalHealthHistory: existing.operationalHealthHistory ?? {},
           activityKpiHistory: existing.activityKpiHistory ?? {},
           requirementApprovalLedger: {},
           deliverableReceipts: {},
@@ -2880,7 +3116,7 @@ export function activateApprovedColonyGovernance(
           deliverables: {},
           tasks: {},
           activities: {},
-          qualityHistory: {},
+          operationalHealthHistory: {},
           activityKpiHistory: {},
           requirementApprovalLedger: {},
           deliverableReceipts: {},
@@ -4276,7 +4512,7 @@ function ensureColonyPortfolioImpl(roomName: string): ColonyFspmPortfolio {
       deliverables: {},
       tasks: {},
       activities: {},
-      qualityHistory: {},
+      operationalHealthHistory: {},
       activityKpiHistory: {},
       requirementApprovalLedger: {},
       deliverableReceipts: {},
@@ -4300,7 +4536,7 @@ function ensureColonyPortfolioImpl(roomName: string): ColonyFspmPortfolio {
     portfolio.p3.updatedAt = Game.time;
   }
   portfolio.activities ??= {};
-  portfolio.qualityHistory ??= {};
+  portfolio.operationalHealthHistory ??= {};
   portfolio.activityKpiHistory ??= {};
   portfolio.requirementApprovalLedger ??= {};
   portfolio.deliverableReceipts ??= {};

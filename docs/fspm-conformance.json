@@ -374,7 +374,7 @@
         {
           "key": "deliverable_weight",
           "status": "adapted",
-          "adaptation": "Exact integer basis points preserve canonical percentage weighting without floating-point ambiguity; DQI/PQI roll-up remains #136.",
+          "adaptation": "Exact integer basis points preserve canonical percentage weighting without floating-point ambiguity and feed the fail-closed DQI/P3-PQI roll-up; human-reviewed durable quality history remains #136.",
           "evidence": [
             "packages/runtime/src/planning/fspm-governance.ts",
             "packages/runtime/src/planning/fspm.ts"
@@ -410,7 +410,7 @@
         {
           "key": "receipt_evidence_integrity",
           "status": "adapted",
-          "adaptation": "Hash-chained received evidence must derive uniquely from a completed Activity under the Deliverable and retain its compact terminal chronology, Quality Metric, KPI, and evidence hash after bounded live-Activity pruning. A separate immutable accepted/rejected/disputed ledger binds the receipt and exact Deliverable revision; accepted requires the package-pinned satisfactory-or-exceptional predicate and closes one recurring-service occurrence without completing its definition. Both ledgers use retained count/digest anchors to expose suffix deletion. The accountable Screeps service principal remains an adaptation until canonical human acceptance exists under #164; DQI/PQI remains #136.",
+          "adaptation": "Hash-chained received evidence must derive uniquely from a completed Activity under the Deliverable and retain its compact terminal chronology, Quality Metric, KPI, and evidence hash after bounded live-Activity pruning. A separate immutable accepted/rejected/disputed ledger binds the receipt and exact Deliverable revision; accepted requires the package-pinned satisfactory-or-exceptional predicate and closes one recurring-service occurrence without completing its definition. Both ledgers use retained count/digest anchors to expose suffix deletion. The accountable Screeps service principal remains an adaptation until canonical human acceptance exists under #164; human-reviewed lossless quality history remains #136.",
           "evidence": [
             "packages/runtime/src/planning/fspm.ts",
             "packages/runtime/test/planning/fspm-governed-authority.test.ts"
@@ -781,23 +781,34 @@
         {
           "key": "activity_kpi_rating",
           "status": "adapted",
-          "adaptation": "Terminal Activity ratings use the governed three-level catalog scale.",
+          "adaptation": "Terminal Activity evidence uses the FSPM 1.50, 1.00, 0.75, 0.50, and 0.00 multiplier scale. Runtime terminal predicates assign the currently exercised ratings through the disclosed service-principal adaptation; in-progress work receives no multiplier.",
           "evidence": [
             "packages/runtime/src/planning/activity-lifecycle.ts",
+            "packages/runtime/src/planning/eqvm.ts",
             "docs/adr-fspm-activity-execution.md"
           ]
         },
         {
           "key": "activity_weight",
           "status": "not_implemented",
-          "rationale": "Activities have no explicit weights or documented equal-weight adaptation.",
+          "rationale": "Accountable management has not approved the recurring Activity weights, cohort length, or freshness period required for canonical Task QI, and no governed EQVM policy-approval ledger exists to resolve such an approval before the rated cohort.",
+          "adaptation": "The approved authority package contains no accountable approval of recurring Activity weights, cohort length, or freshness period and no EQVM approval ledger/resolver. A segregated, explicitly unapproved research configuration applies one equal unit to each of the latest 24 verified terminal samples inside 1,500 ticks, but it cannot earn canonical quality. Structurally valid self-asserted approval fields are rejected as non-authoritative.",
+          "evidence": [
+            "packages/runtime/src/planning/eqvm.ts",
+            "packages/runtime/test/planning/fspm-task-kpi.test.ts"
+          ],
           "issue": "#136"
         },
         {
           "key": "task_qi",
-          "status": "adapted",
-          "adaptation": "Task QI is currently an unweighted mean of rated completed Activities and excludes incomplete evidence.",
-          "evidence": ["packages/runtime/src/planning/task-kpi.ts"],
+          "status": "not_implemented",
+          "rationale": "Canonical Task QI cannot be earned until a concrete Activity-weight and reporting-period policy receives accountable approval and that event can be resolved from a governed ledger before the complete rated Activity cohort.",
+          "adaptation": "The canonical formula and evidence classifier are implemented, but the only concrete recurring-Activity weighting configuration is unapproved and no governed EQVM approval ledger exists. Its numeric result is segregated as non-authoritative research telemetry; canonical Task QI is null/unavailable with explicit activity_weight_policy_unapproved debt, null is never coerced to zero, and nested approval-shaped claims are rejected.",
+          "evidence": [
+            "packages/runtime/src/planning/eqvm.ts",
+            "packages/runtime/src/planning/task-kpi.ts",
+            "packages/runtime/test/planning/fspm-task-kpi.test.ts"
+          ],
           "issue": "#136"
         },
         {
@@ -807,32 +818,39 @@
         },
         {
           "key": "dqi",
-          "status": "not_implemented",
-          "rationale": "Task QI is not rolled up by Task Weight into Deliverable Quality Index.",
-          "issue": "#136"
+          "status": "adapted",
+          "adaptation": "The exact Task-weight formula, 10,000-basis-point integrity gate, and no-renormalization behavior are implemented. Production DQI remains null because canonical Task QI is unavailable pending accountable approval of Activity weights and a governed approval-ledger resolver.",
+          "evidence": [
+            "packages/runtime/src/planning/eqvm.ts",
+            "packages/runtime/test/planning/fspm-eqvm.test.ts"
+          ]
         },
         {
           "key": "deliverable_weight",
-          "status": "adapted",
-          "adaptation": "Content-pinned Corporate Deliverables carry exact integer basis-point weights, but their DQI-to-PQI roll-up remains #136.",
+          "status": "implemented",
           "evidence": [
             "packages/runtime/src/planning/fspm-governance.ts",
-            "packages/runtime/src/planning/fspm.ts"
-          ],
-          "issue": "#136"
+            "packages/runtime/src/planning/fspm.ts",
+            "packages/runtime/test/planning/fspm-governed-authority.test.ts"
+          ]
         },
         {
           "key": "pqi",
-          "status": "not_implemented",
-          "rationale": "No Deliverable Weight by DQI rollup exists at the P3 level.",
+          "status": "adapted",
+          "adaptation": "The colony's continuously managed OU Portfolio P3 implements the PQI weighted-average formula and exact 10,000-basis-point Deliverable weight gate. It extends the guide's project/program reporting label to Portfolio, but production PQI remains null because upstream canonical Task QI is unavailable and self-asserted approval-shaped evidence is rejected without a governed EQVM approval ledger.",
+          "evidence": [
+            "packages/runtime/src/planning/eqvm.ts",
+            "packages/runtime/test/planning/fspm-eqvm.test.ts"
+          ],
           "issue": "#136"
         },
         {
           "key": "rating_evidence",
           "status": "adapted",
-          "adaptation": "Activity outcome and KPI evidence plus package-bound service-principal accepted/rejected/disputed occurrence decisions are retained. Accepted decisions require satisfactory or exceptional terminal KPI evidence and do not complete recurring service definitions. Canonical human reviewer identity, governed service closure, and complete durable EQVM evidence links remain incomplete.",
+          "adaptation": "Each research sample cross-verifies terminal Activity identity, Task, actor, type, completion tick, rating, multiplier, evidence reason, and configured policy identity. It cannot enter canonical Task QI while that policy is unapproved. Package-bound service-principal occurrence decisions remain a disclosed adaptation; canonical human reviewer identity and lossless durable acknowledgment remain incomplete.",
           "evidence": [
             "packages/runtime/src/planning/activity-lifecycle.ts",
+            "packages/runtime/src/planning/eqvm.ts",
             "packages/runtime/src/planning/fspm.ts",
             "packages/runtime/test/planning/fspm-governed-authority.test.ts",
             "supabase/migrations/20260828192232_fspm_v2_durable_history.sql"
@@ -844,24 +862,33 @@
         {
           "key": "value_only_earned_when_quality_demonstrated",
           "status": "adapted",
-          "adaptation": "Production Task KPI credit is recorded only from terminal Activity evidence; the complete EQVM value hierarchy remains absent.",
+          "adaptation": "No production quality credit is recorded under the unapproved Activity-weight configuration. Canonical Task QI, DQI, and PQI remain null; formula diagnostics are segregated as research telemetry, incomplete or invalid weights never renormalize around a gap, and approval-shaped payloads are rejected until resolved from a governed EQVM approval ledger.",
           "evidence": [
             "packages/runtime/src/main.ts",
-            "packages/runtime/test/planning/fspm-task-kpi.test.ts"
+            "packages/runtime/src/planning/eqvm.ts",
+            "packages/runtime/test/planning/fspm-task-kpi.test.ts",
+            "packages/runtime/test/planning/fspm-eqvm.test.ts"
           ],
           "issue": "#136"
         },
         {
           "key": "operational_health_is_not_eqvm",
-          "status": "not_implemented",
-          "rationale": "The current quality module assigns room-health measurements to Requirement, Deliverable, and P3 quality records.",
-          "issue": "#136"
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/quality.ts",
+            "packages/runtime/src/memory/migrate.ts",
+            "packages/runtime/test/planning/fspm-quality.test.ts",
+            "packages/runtime/test/memory/migrate.test.ts"
+          ]
         },
         {
           "key": "no_evidence_cannot_appear_healthy",
-          "status": "not_implemented",
-          "rationale": "Missing domains are omitted and can produce a green 100 rollup.",
-          "issue": "#136"
+          "status": "implemented",
+          "evidence": [
+            "packages/runtime/src/planning/eqvm.ts",
+            "packages/runtime/test/planning/fspm-task-kpi.test.ts",
+            "packages/runtime/test/planning/fspm-eqvm.test.ts"
+          ]
         }
       ]
     },

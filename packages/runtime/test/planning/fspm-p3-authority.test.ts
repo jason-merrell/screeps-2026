@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createIntentTrace } from "../../src/intents/trace";
 import { migrateMemory } from "../../src/memory/migrate";
+import { MEMORY_VERSION } from "../../src/memory/schema";
 import {
   activateApprovedColonyGovernance,
   type ColonyFspmPortfolio,
@@ -162,7 +163,7 @@ describe("FSPM colony P3 authority", () => {
     const portfolio = Memory.colonies.W1N1?.fspm;
     if (!portfolio) throw new Error("expected migrated colony portfolio");
 
-    expect(Memory.version).toBe(8);
+    expect(Memory.version).toBe(MEMORY_VERSION);
     expect(Memory.runtimeSupervisor).toEqual({ version: 1, phases: {} });
     expect(portfolio.p3).toMatchObject({
       id: "portfolio:colony:W1N1",
