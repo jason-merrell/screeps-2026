@@ -56,7 +56,10 @@ export async function activatePtrRuntime({
   );
 
   const statusResponse = await fetchImpl(statusUrl, { headers });
-  const statusBody = await parseResponseBody(statusResponse, "PTR world status");
+  const statusBody = await parseResponseBody(
+    statusResponse,
+    "PTR world status",
+  );
   assertSuccessfulResponse(statusResponse, statusBody, "PTR world status");
   if (
     typeof statusBody?.status !== "string" ||

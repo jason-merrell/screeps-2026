@@ -11,9 +11,7 @@ describe("PTR runtime activation", () => {
   it("activates PTR and verifies the resulting world status", async () => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce(
-        jsonResponse({ ok: 1, result: { nModified: 0 } }),
-      )
+      .mockResolvedValueOnce(jsonResponse({ ok: 1, result: { nModified: 0 } }))
       .mockResolvedValueOnce(jsonResponse({ ok: 1, status: "normal" }));
 
     await expect(
@@ -39,9 +37,9 @@ describe("PTR runtime activation", () => {
   });
 
   it("fails before reading status when activation is rejected", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(
-      jsonResponse({ ok: 0, error: "rejected" }, 403),
-    );
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ ok: 0, error: "rejected" }, 403));
 
     await expect(
       activatePtrRuntime({ token: "test-token", fetchImpl }),
@@ -90,9 +88,7 @@ describe("PTR runtime activation", () => {
   it("rejects world status without an explicit API acknowledgement", async () => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce(
-        jsonResponse({ ok: 1, result: { nModified: 0 } }),
-      )
+      .mockResolvedValueOnce(jsonResponse({ ok: 1, result: { nModified: 0 } }))
       .mockResolvedValueOnce(jsonResponse({ status: "normal" }));
 
     await expect(
@@ -103,9 +99,9 @@ describe("PTR runtime activation", () => {
   it("requires a token without making a request", async () => {
     const fetchImpl = vi.fn();
 
-    await expect(
-      activatePtrRuntime({ token: "", fetchImpl }),
-    ).rejects.toThrow("SCREEPS_TOKEN is required for PTR activation");
+    await expect(activatePtrRuntime({ token: "", fetchImpl })).rejects.toThrow(
+      "SCREEPS_TOKEN is required for PTR activation",
+    );
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

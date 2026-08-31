@@ -22,10 +22,12 @@ Add one secret there:
 
 `SCREEPS_TOKEN`
 
-Use a persistent Screeps auth token scoped as narrowly as possible. Deployment and post-deploy verification require access to:
+Use a persistent Screeps auth token scoped as narrowly as possible. PTR deployment, verification, and activation require access to:
 
-- `POST /api/user/code` to upload code
-- `GET /api/user/code` to read the uploaded branch back and verify it
+- `POST /ptr/api/user/code` to upload code
+- `GET /ptr/api/user/code` to read the uploaded branch back and verify it
+- `POST /ptr/api/user/activate-ptr` to request CPU activation after verification
+- `GET /ptr/api/user/world-status` to require a normal authenticated PTR account state
 
 Do not add the token to GitHub, the repository, or a local `.env` file.
 
@@ -73,7 +75,7 @@ The workflow:
 5. Uploads that module to the configured Screeps code branch using `X-Token` authentication.
 6. Reads the same branch back with `GET /api/user/code`.
 7. Compares the returned `main` module byte-for-byte with the local build and fails if they differ.
-8. For PTR deployments, requests idempotent activation only after byte verification and requires the owned-colony world status to be `normal`. That status is not proof of CPU execution: tick advancement and runtime provenance remain observability-snapshot evidence, not deployment claims.
+8. For PTR deployments, requests idempotent activation only after byte verification and requires the authenticated PTR account status to be `normal`. That status is not proof of CPU execution: tick advancement and runtime provenance remain observability-snapshot evidence, not deployment claims.
 
 Verification logs only a short SHA-256 fingerprint of the deployed module, never the module contents or `SCREEPS_TOKEN`.
 
